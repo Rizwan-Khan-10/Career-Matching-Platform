@@ -1,0 +1,37 @@
+name: CI - Node Services
+
+on:
+  push:
+    paths: ['apps/*-service/**', 'apps/websocket-gateway/**']
+  pull_request:
+    paths: ['apps/*-service/**', 'apps/websocket-gateway/**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - auth-service
+          - user-service
+          - resume-service
+          - job-service
+          - matching-results-service
+          - notification-service
+          - websocket-gateway
+          - chat-service
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: apps/${{ matrix.service }}/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build

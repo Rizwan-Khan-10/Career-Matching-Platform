@@ -1,0 +1,29 @@
+name: CI - Python Agents
+
+on:
+  push:
+    paths: ['apps/*-agent/**']
+  pull_request:
+    paths: ['apps/*-agent/**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        agent:
+          - resume-parser-agent
+          - jd-extractor-agent
+          - matching-agent
+          - feedback-agent
+          - chatbot-agent
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.agent }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -c "import app.main"

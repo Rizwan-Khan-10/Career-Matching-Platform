@@ -4,8 +4,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({})],
-  providers: [JwtStrategy],
-  exports: [PassportModule],
+    imports: [PassportModule, JwtModule.register({})],
+    providers: [JwtStrategy],
+    exports: [JwtStrategy],
 })
-export class AuthModule {}
+export class AuthModule { }

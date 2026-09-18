@@ -4,4 +4,4 @@ import { ResumeService } from './resume.service';
 import { StorageService } from '../storage/storage.service';
 
 @Module({ controllers: [ResumeController], providers: [ResumeService, StorageService] })
-export class ResumeModule {}
+export class ResumeModule { }

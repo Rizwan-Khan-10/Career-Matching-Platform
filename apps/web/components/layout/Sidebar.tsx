@@ -7,12 +7,14 @@ import { cn } from '@/lib/cn';
 const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
     APPLICANT: [
         { label: 'Dashboard', href: '/applicant/dashboard' },
+        { label: 'Profile', href: '/applicant/profile' },
         { label: 'Resume', href: '/applicant/resume' },
         { label: 'Matches', href: '/applicant/matches' },
         { label: 'Feedback', href: '/applicant/feedback' },
     ],
     COMPANY: [
         { label: 'Dashboard', href: '/company/dashboard' },
+        { label: 'Profile', href: '/company/profile' },
         { label: 'Jobs', href: '/company/jobs' },
     ],
     ADMIN: [

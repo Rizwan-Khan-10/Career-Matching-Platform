@@ -11,11 +11,13 @@ const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
         { label: 'Resume', href: '/applicant/resume' },
         { label: 'Matches', href: '/applicant/matches' },
         { label: 'Feedback', href: '/applicant/feedback' },
+        { label: 'Chat', href: '/applicant/chat' },
     ],
     COMPANY: [
         { label: 'Dashboard', href: '/company/dashboard' },
         { label: 'Profile', href: '/company/profile' },
         { label: 'Jobs', href: '/company/jobs' },
+        { label: 'Ask AI', href: '/company/ask' },
     ],
     ADMIN: [
         { label: 'Dashboard', href: '/admin/dashboard' },

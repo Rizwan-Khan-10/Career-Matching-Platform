@@ -2,9 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
-  '@parcel/watcher': false
+  '@parcel/watcher': true
   '@prisma/engines': true
   bcrypt: true
   esbuild: false
   prisma: false
   unrs-resolver: true
+  

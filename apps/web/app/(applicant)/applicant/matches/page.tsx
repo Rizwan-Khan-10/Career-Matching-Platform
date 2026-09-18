@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { useAuthStore } from '@/store/authStore';
 import { getSocket } from '@/lib/socket';
+import { motion } from 'motion/react';
+import { FadeIn } from '@/components/motion/FadeIn';
 
 interface Match {
   id: string;
@@ -49,22 +51,24 @@ export default function MatchesPage() {
       )}
 
       <div className="flex flex-col gap-3">
-        {matches?.map((match) => (
-          <div
-            key={match.id}
-            className="bg-paper-raised border border-hairline rounded-xl p-4 flex items-center justify-between"
-          >
-            <div>
-              <p className="text-sm font-medium text-ink">Role ID: {match.jobRoleId}</p>
-              <p className="text-xs text-ink-grey font-mono mt-0.5">Score: {match.score.toFixed(2)}</p>
+        {matches?.map((match, i) => (
+          <FadeIn key={match.id} delay={i * 0.05}>
+            <div className="bg-paper-raised border border-hairline rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-ink">Role ID: {match.jobRoleId}</p>
+                <p className="text-xs text-ink-grey font-mono mt-0.5">Score: {match.score.toFixed(2)}</p>
+              </div>
+              <motion.span
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                className={`text-xs font-medium px-2.5 py-1 rounded-full ${match.eligible ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'
+                  }`}
+              >
+                {match.eligible ? 'Eligible' : 'Not eligible'}
+              </motion.span>
             </div>
-            <span
-              className={`text-xs font-medium px-2.5 py-1 rounded-full ${match.eligible ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'
-                }`}
-            >
-              {match.eligible ? 'Eligible' : 'Not eligible'}
-            </span>
-          </div>
+          </FadeIn>
         ))}
       </div>
     </div>

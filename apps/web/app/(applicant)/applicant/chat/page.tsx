@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
+import { toast } from '@/lib/toast';
 
 interface Conversation {
     id: string;
@@ -29,6 +30,7 @@ export default function ChatListPage() {
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
             setEditingId(null);
         },
+        onError: () => toast.error('Could not rename conversation'),
     });
 
     return (

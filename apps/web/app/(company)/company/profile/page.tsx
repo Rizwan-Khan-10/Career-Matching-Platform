@@ -9,6 +9,8 @@ import { companyProfileSchema, CompanyProfileValues } from '@/lib/schemas/profil
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
+import { toast } from '@/lib/toast';
+import { FadeIn } from '@/components/motion/FadeIn';
 
 export default function CompanyProfilePage() {
     const queryClient = useQueryClient();
@@ -36,36 +38,39 @@ export default function CompanyProfilePage() {
         mutationFn: (values: CompanyProfileValues) => apiClient.patch('/companies/me', values),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['companyProfile'] });
+            toast.success('Company profile updated');
         },
+        onError: () => toast.error('Could not save profile'),
     });
 
     if (isLoading) return <p className="text-sm text-ink-grey">Loading...</p>;
 
     return (
-        <div className="max-w-md">
-            <h1 className="font-heading text-2xl text-ink mb-1">Company Profile</h1>
-            <p className="text-sm text-ink-grey mb-6">Keep your company details up to date.</p>
+        <FadeIn>
+            <div className="max-w-md">
+                <h1 className="font-heading text-2xl text-ink mb-1">Company Profile</h1>
+                <p className="text-sm text-ink-grey mb-6">Keep your company details up to date.</p>
 
-            <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-                <div>
-                    <label className="text-xs text-ink-grey mb-1 block">Company name</label>
-                    <Input {...register('name')} />
-                    <FieldError message={errors.name?.message} />
-                </div>
-                <div>
-                    <label className="text-xs text-ink-grey mb-1 block">Industry</label>
-                    <Input {...register('industry')} placeholder="e.g. Software, Finance" />
-                </div>
-                <div>
-                    <label className="text-xs text-ink-grey mb-1 block">Contact</label>
-                    <Input {...register('contact')} placeholder="Email or phone" />
-                </div>
+                <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+                    <div>
+                        <label className="text-xs text-ink-grey mb-1 block">Company name</label>
+                        <Input {...register('name')} />
+                        <FieldError message={errors.name?.message} />
+                    </div>
+                    <div>
+                        <label className="text-xs text-ink-grey mb-1 block">Industry</label>
+                        <Input {...register('industry')} placeholder="e.g. Software, Finance" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-ink-grey mb-1 block">Contact</label>
+                        <Input {...register('contact')} placeholder="Email or phone" />
+                    </div>
 
-                <Button type="submit" disabled={mutation.isPending}>
-                    {mutation.isPending ? 'Saving...' : 'Save changes'}
-                </Button>
-                {mutation.isSuccess && <p className="text-sm text-success">Saved.</p>}
-            </form>
-        </div>
+                    <Button type="submit" disabled={mutation.isPending}>
+                        {mutation.isPending ? 'Saving...' : 'Save changes'}
+                    </Button>
+                </form>
+            </div>
+        </FadeIn>
     );
 }

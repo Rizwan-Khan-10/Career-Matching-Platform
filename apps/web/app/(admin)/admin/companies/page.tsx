@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
+import { FadeIn } from '@/components/motion/FadeIn';
 
 interface CompanyProfile {
   id: string;
@@ -30,18 +31,17 @@ export default function AdminCompaniesPage() {
           <p className="text-sm text-ink-grey p-4">No companies registered yet.</p>
         )}
         {companies?.map((company, i) => (
-          <div
-            key={company.id}
-            className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-hairline' : ''}`}
-          >
-            <div>
-              <p className="text-sm font-medium text-ink">{company.name || 'Unnamed'}</p>
-              <p className="text-xs text-ink-grey">{company.industry || 'Industry not set'}</p>
+          <FadeIn key={company.id} delay={i * 0.03}>
+            <div className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-hairline' : ''}`}>
+              <div>
+                <p className="text-sm font-medium text-ink">{company.name || 'Unnamed'}</p>
+                <p className="text-xs text-ink-grey">{company.industry || 'Industry not set'}</p>
+              </div>
+              <span className="text-xs text-ink-grey">
+                Joined {new Date(company.createdAt).toLocaleDateString()}
+              </span>
             </div>
-            <span className="text-xs text-ink-grey">
-              Joined {new Date(company.createdAt).toLocaleDateString()}
-            </span>
-          </div>
+          </FadeIn>
         ))}
       </div>
     </div>

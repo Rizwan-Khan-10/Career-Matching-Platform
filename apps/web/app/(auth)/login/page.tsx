@@ -12,6 +12,8 @@ import { loginSchema, LoginFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
+import { FadeIn } from '@/components/motion/FadeIn';
+import { toast } from '@/lib/toast';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,39 +36,43 @@ export default function LoginPage() {
       else router.push('/admin/dashboard');
     },
     onError: (err: any) => {
-      setServerError(err.response?.data?.message || 'Login failed');
+      const msg = err.response?.data?.message || 'Something went wrong';
+      setServerError(msg);
+      toast.error(msg);
     },
   });
 
   return (
-    <div className="w-full max-w-sm">
-      <h1 className="font-heading text-2xl text-ink mb-1">Welcome back</h1>
-      <p className="text-sm text-ink-grey mb-6">Log in to continue.</p>
+    <FadeIn>
+      <div className="w-full max-w-sm">
+        <h1 className="font-heading text-2xl text-ink mb-1">Welcome back</h1>
+        <p className="text-sm text-ink-grey mb-6">Log in to continue.</p>
 
-      <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-        <div>
-          <Input type="email" placeholder="Email" {...register('email')} />
-          <FieldError message={errors.email?.message} />
-        </div>
-        <div>
-          <Input type="password" placeholder="Password" {...register('password')} />
-          <FieldError message={errors.password?.message} />
-        </div>
+        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+          <div>
+            <Input type="email" placeholder="Email" {...register('email')} />
+            <FieldError message={errors.email?.message} />
+          </div>
+          <div>
+            <Input type="password" placeholder="Password" {...register('password')} />
+            <FieldError message={errors.password?.message} />
+          </div>
 
-        {serverError && <p className="text-sm text-danger">{serverError}</p>}
+          {serverError && <p className="text-sm text-danger">{serverError}</p>}
 
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Logging in...' : 'Log in'}
-        </Button>
-      </form>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Logging in...' : 'Log in'}
+          </Button>
+        </form>
 
-      <p className="text-sm text-ink-grey mt-4">
-        Don&apos;t have an account?{' '}
-        <Link href="/signup" className="text-ink font-medium underline">Sign up</Link>
-      </p>
-      <Link href="/forgot-password" className="text-sm text-ink-grey underline mt-2 inline-block">
-        Forgot password?
-      </Link>
-    </div>
+        <p className="text-sm text-ink-grey mt-4">
+          Don&apos;t have an account?{' '}
+          <Link href="/signup" className="text-ink font-medium underline">Sign up</Link>
+        </p>
+        <Link href="/forgot-password" className="text-sm text-ink-grey underline mt-2 inline-block">
+          Forgot password?
+        </Link>
+      </div>
+    </FadeIn>
   );
 }

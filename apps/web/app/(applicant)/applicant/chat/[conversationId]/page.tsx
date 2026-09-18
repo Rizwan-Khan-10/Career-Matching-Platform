@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
+import { motion } from 'motion/react';
+import { toast } from '@/lib/toast';
 
 interface Message {
     id: string;
@@ -31,8 +33,9 @@ export default function ChatThreadPage() {
         onSuccess: () => {
             setInput('');
             queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-            queryClient.invalidateQueries({ queryKey: ['conversations'] }); // updatedAt changed, reorders list
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
         },
+        onError: () => toast.error('Message failed to send, try again'),
     });
 
     useEffect(() => {
@@ -53,15 +56,16 @@ export default function ChatThreadPage() {
                 )}
 
                 {messages?.map((msg) => (
-                    <div
+                    <motion.div
                         key={msg.id}
-                        className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm ${msg.sender === 'user'
-                                ? 'bg-accent text-white self-end'
-                                : 'bg-paper-raised border border-hairline text-ink self-start'
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm ${msg.sender === 'user' ? 'bg-accent text-white self-end' : 'bg-paper-raised border border-hairline text-ink self-start'
                             }`}
                     >
                         {msg.content}
-                    </div>
+                    </motion.div>
                 ))}
 
                 {sendMutation.isPending && (

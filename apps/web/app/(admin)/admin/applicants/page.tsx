@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
+import { FadeIn } from '@/components/motion/FadeIn';
 
 interface ApplicantProfile {
   id: string;
@@ -29,18 +30,17 @@ export default function AdminApplicantsPage() {
           <p className="text-sm text-ink-grey p-4">No applicants registered yet.</p>
         )}
         {applicants?.map((applicant, i) => (
-          <div
-            key={applicant.id}
-            className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-hairline' : ''}`}
-          >
-            <div>
-              <p className="text-sm font-medium text-ink">{applicant.name || 'Unnamed'}</p>
-              <p className="text-xs text-ink-grey">{applicant.education || 'Education not set'}</p>
+          <FadeIn key={applicant.id} delay={i * 0.03}>
+            <div className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-hairline' : ''}`}>
+              <div>
+                <p className="text-sm font-medium text-ink">{applicant.name || 'Unnamed'}</p>
+                <p className="text-xs text-ink-grey">{applicant.education || 'Education not set'}</p>
+              </div>
+              <span className="text-xs text-ink-grey">
+                Joined {new Date(applicant.createdAt).toLocaleDateString()}
+              </span>
             </div>
-            <span className="text-xs text-ink-grey">
-              Joined {new Date(applicant.createdAt).toLocaleDateString()}
-            </span>
-          </div>
+          </FadeIn>
         ))}
       </div>
     </div>

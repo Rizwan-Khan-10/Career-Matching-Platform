@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
+import { toast } from '@/lib/toast';
 
 export default function CompanyAskPage() {
     const [input, setInput] = useState('');
@@ -12,6 +13,7 @@ export default function CompanyAskPage() {
     const mutation = useMutation({
         mutationFn: (message: string) => apiClient.post('/chat/quick', { message }),
         onSuccess: (res) => setReply(res.data.reply),
+        onError: () => toast.error('Could not get a response, try again'),
     });
 
     return (

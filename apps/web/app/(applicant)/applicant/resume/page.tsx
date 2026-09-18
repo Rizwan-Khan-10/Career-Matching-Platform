@@ -6,6 +6,9 @@ import { apiClient } from '@/lib/apiClient';
 import { useAuthStore } from '@/store/authStore';
 import { getSocket } from '@/lib/socket';
 import { Button } from '@/components/ui/Button';
+import { toast } from '@/lib/toast';
+import { FadeIn } from '@/components/motion/FadeIn';
+import { motion } from 'motion/react';
 
 interface Resume {
   id: string;
@@ -36,7 +39,9 @@ export default function ResumePage() {
     onSuccess: () => {
       setFile(null);
       queryClient.invalidateQueries({ queryKey: ['resumes'] });
+      toast.success('Resume uploaded — processing started');
     },
+    onError: () => toast.error('Upload failed, try again'),
   });
 
   useEffect(() => {
@@ -57,40 +62,44 @@ export default function ResumePage() {
       <h1 className="font-heading text-2xl text-ink mb-1">Resume</h1>
       <p className="text-sm text-ink-grey mb-6">Upload your resume to get matched against open roles.</p>
 
-      <div className="bg-paper-raised border border-hairline rounded-xl p-5 mb-6">
-        <input
-          type="file"
-          accept=".pdf"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="text-sm text-ink-grey mb-3 block"
-        />
-        <Button
-          disabled={!file || uploadMutation.isPending}
-          onClick={() => file && uploadMutation.mutate(file)}
-        >
-          {uploadMutation.isPending ? 'Uploading...' : 'Upload resume'}
-        </Button>
-      </div>
+      <FadeIn>
+        <div className="bg-paper-raised border border-hairline rounded-xl p-5 mb-6">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="text-sm text-ink-grey mb-3 block"
+          />
+          <Button
+            disabled={!file || uploadMutation.isPending}
+            onClick={() => file && uploadMutation.mutate(file)}
+          >
+            {uploadMutation.isPending ? 'Uploading...' : 'Upload resume'}
+          </Button>
+        </div>
+      </FadeIn>
 
       {latest && (
-        <div className="bg-paper-raised border border-hairline rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-ink">Latest resume</span>
-            <StatusBadge status={latest.status} />
-          </div>
-
-          {latest.status === 'pending' && (
-            <p className="text-sm text-ink-grey">Processing your resume — this updates automatically.</p>
-          )}
-
-          {latest.status === 'parsed' && latest.parsedData && (
-            <div className="text-sm text-ink-grey space-y-2">
-              <p><span className="text-ink font-medium">Skills:</span> {latest.parsedData.skills?.join(', ')}</p>
-              <p><span className="text-ink font-medium">Education:</span> {latest.parsedData.education}</p>
-              <p><span className="text-ink font-medium">CGPA:</span> {latest.parsedData.cgpa ?? '—'}</p>
+        <FadeIn delay={0.05}>
+          <div className="bg-paper-raised border border-hairline rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-ink">Latest resume</span>
+              <StatusBadge status={latest.status} />
             </div>
-          )}
-        </div>
+
+            {latest.status === 'pending' && (
+              <p className="text-sm text-ink-grey">Processing your resume — this updates automatically.</p>
+            )}
+
+            {latest.status === 'parsed' && latest.parsedData && (
+              <div className="text-sm text-ink-grey space-y-2">
+                <p><span className="text-ink font-medium">Skills:</span> {latest.parsedData.skills?.join(', ')}</p>
+                <p><span className="text-ink font-medium">Education:</span> {latest.parsedData.education}</p>
+                <p><span className="text-ink font-medium">CGPA:</span> {latest.parsedData.cgpa ?? '—'}</p>
+              </div>
+            )}
+          </div>
+        </FadeIn>
       )}
     </div>
   );
@@ -103,8 +112,14 @@ function StatusBadge({ status }: { status: string }) {
     failed: 'bg-danger-soft text-danger',
   };
   return (
-    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${styles[status] || ''}`}>
+    <motion.span
+      key={status}
+      initial={{ opacity: 0, scale: 0.85 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className={`text-xs font-medium px-2.5 py-1 rounded-full ${styles[status] || ''}`}
+    >
       {status}
-    </span>
+    </motion.span>
   );
 }

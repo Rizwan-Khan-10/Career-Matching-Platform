@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
+import { FadeIn } from '@/components/motion/FadeIn';
 
 interface Match {
   id: string;
@@ -30,11 +31,13 @@ export default function FeedbackPage() {
       )}
 
       <div className="flex flex-col gap-3">
-        {withFeedback?.map((match) => (
-          <div key={match.id} className="bg-paper-raised border border-hairline rounded-xl p-4">
-            <p className="text-xs text-ink-grey font-mono mb-2">Role ID: {match.jobRoleId}</p>
-            <p className="text-sm text-ink">{match.feedback}</p>
-          </div>
+        {withFeedback?.map((match, i) => (
+          <FadeIn key={match.id} delay={i * 0.05}>
+            <div className="bg-paper-raised border border-hairline rounded-xl p-4">
+              <p className="text-xs text-ink-grey font-mono mb-2">Role ID: {match.jobRoleId}</p>
+              <p className="text-sm text-ink">{match.feedback}</p>
+            </div>
+          </FadeIn>
         ))}
       </div>
     </div>

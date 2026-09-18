@@ -9,6 +9,7 @@ import { applicantProfileSchema, ApplicantProfileValues } from '@/lib/schemas/pr
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
+import { toast } from '@/lib/toast';
 
 export default function ApplicantProfilePage() {
     const queryClient = useQueryClient();
@@ -36,7 +37,9 @@ export default function ApplicantProfilePage() {
         mutationFn: (values: ApplicantProfileValues) => apiClient.patch('/applicants/me', values),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['applicantProfile'] });
+            toast.success('Profile updated');
         },
+        onError: () => toast.error('Could not save profile'),
     });
 
     if (isLoading) return <p className="text-sm text-ink-grey">Loading...</p>;
@@ -64,7 +67,6 @@ export default function ApplicantProfilePage() {
                 <Button type="submit" disabled={mutation.isPending}>
                     {mutation.isPending ? 'Saving...' : 'Save changes'}
                 </Button>
-                {mutation.isSuccess && <p className="text-sm text-success">Saved.</p>}
             </form>
         </div>
     );

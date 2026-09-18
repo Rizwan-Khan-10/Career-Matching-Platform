@@ -12,6 +12,8 @@ import { signupSchema, SignupFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
+import { FadeIn } from '@/components/motion/FadeIn';
+import { toast } from '@/lib/toast';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -33,47 +35,51 @@ export default function SignupPage() {
             else router.push('/company/dashboard');
         },
         onError: (err: any) => {
-            setServerError(err.response?.data?.message || 'Signup failed');
+            const msg = err.response?.data?.message || 'Something went wrong';
+            setServerError(msg);
+            toast.error(msg);
         },
     });
 
     return (
-        <div className="w-full max-w-sm">
-            <h1 className="font-heading text-2xl text-ink mb-1">Create an account</h1>
-            <p className="text-sm text-ink-grey mb-6">Get started in a minute.</p>
+        <FadeIn>
+            <div className="w-full max-w-sm">
+                <h1 className="font-heading text-2xl text-ink mb-1">Create an account</h1>
+                <p className="text-sm text-ink-grey mb-6">Get started in a minute.</p>
 
-            <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-                <div className="flex gap-2">
-                    <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
-                        <input type="radio" value="APPLICANT" {...register('role')} className="hidden" />
-                        Applicant
-                    </label>
-                    <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
-                        <input type="radio" value="COMPANY" {...register('role')} className="hidden" />
-                        Company
-                    </label>
-                </div>
+                <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+                    <div className="flex gap-2">
+                        <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
+                            <input type="radio" value="APPLICANT" {...register('role')} className="hidden" />
+                            Applicant
+                        </label>
+                        <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
+                            <input type="radio" value="COMPANY" {...register('role')} className="hidden" />
+                            Company
+                        </label>
+                    </div>
 
-                <div>
-                    <Input type="email" placeholder="Email" {...register('email')} />
-                    <FieldError message={errors.email?.message} />
-                </div>
-                <div>
-                    <Input type="password" placeholder="Password" {...register('password')} />
-                    <FieldError message={errors.password?.message} />
-                </div>
+                    <div>
+                        <Input type="email" placeholder="Email" {...register('email')} />
+                        <FieldError message={errors.email?.message} />
+                    </div>
+                    <div>
+                        <Input type="password" placeholder="Password" {...register('password')} />
+                        <FieldError message={errors.password?.message} />
+                    </div>
 
-                {serverError && <p className="text-sm text-danger">{serverError}</p>}
+                    {serverError && <p className="text-sm text-danger">{serverError}</p>}
 
-                <Button type="submit" disabled={mutation.isPending}>
-                    {mutation.isPending ? 'Creating account...' : 'Sign up'}
-                </Button>
-            </form>
+                    <Button type="submit" disabled={mutation.isPending}>
+                        {mutation.isPending ? 'Creating account...' : 'Sign up'}
+                    </Button>
+                </form>
 
-            <p className="text-sm text-ink-grey mt-4">
-                Already have an account?{' '}
-                <Link href="/login" className="text-ink font-medium underline">Log in</Link>
-            </p>
-        </div>
+                <p className="text-sm text-ink-grey mt-4">
+                    Already have an account?{' '}
+                    <Link href="/login" className="text-ink font-medium underline">Log in</Link>
+                </p>
+            </div>
+        </FadeIn>
     );
 }

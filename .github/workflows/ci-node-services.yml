@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder"
     strategy:
       matrix:
         service:

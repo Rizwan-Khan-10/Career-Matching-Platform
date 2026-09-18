@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder"
     strategy:
       matrix:
         service:
@@ -31,4 +33,8 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: |
+          if [ -f "apps/${{ matrix.service }}/prisma/schema.prisma" ]; then
+            pnpm --filter ${{ matrix.service }} exec prisma generate
+          fi
       - run: pnpm --filter ${{ matrix.service }} run build

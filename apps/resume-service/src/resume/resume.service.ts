@@ -5,29 +5,29 @@ import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class ResumeService {
-  constructor(
-    private prisma: PrismaService,
-    private redis: RedisService,
-    private storage: StorageService,
-  ) {}
+    constructor(
+        private prisma: PrismaService,
+        private redis: RedisService,
+        private storage: StorageService,
+    ) { }
 
-  async upload(applicantId: string, file: Express.Multer.File) {
-    const fileUrl = await this.storage.uploadResume(applicantId, file);
-    const resume = await this.prisma.resume.create({
-      data: { applicantId, fileUrl, status: 'pending' },
-    });
+    async upload(applicantId: string, file: Express.Multer.File) {
+        const fileUrl = await this.storage.uploadResume(applicantId, file);
+        const resume = await this.prisma.resume.create({
+            data: { applicantId, fileUrl, status: 'pending' },
+        });
 
-    await this.redis.client.xadd(
-      'resume.uploaded',
-      '*',
-      'data',
-      JSON.stringify({ resumeId: resume.id, applicantId, fileUrl }),
-    );
+        await this.redis.client.xadd(
+            'resume.uploaded',
+            '*',
+            'data',
+            JSON.stringify({ resumeId: resume.id, applicantId, fileUrl }),
+        );
 
-    return resume;
-  }
+        return resume;
+    }
 
-  async getByApplicant(applicantId: string) {
-    return this.prisma.resume.findMany({ where: { applicantId }, orderBy: { createdAt: 'desc' } });
-  }
+    async getByApplicant(applicantId: string) {
+        return this.prisma.resume.findMany({ where: { applicantId }, orderBy: { createdAt: 'desc' } });
+    }
 }

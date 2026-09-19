@@ -3,19 +3,17 @@ import { Redis } from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-  public client: Redis;
+    public client: Redis;
 
-  constructor() {
-    this.client = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-      lazyConnect: true,
-      retryStrategy: () => null,
-    });
-    this.client.connect().catch(() => {
-      console.warn('Redis not reachable yet.');
-    });
-  }
+    constructor() {
+        this.client = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+            lazyConnect: true,
+            retryStrategy: () => null,
+        });
+        this.client.connect().catch(() => {
+            console.warn('Redis not reachable yet.');
+        });
+    }
 
-  onModuleDestroy() {
-    this.client.disconnect();
-  }
+    onModuleDestroy() { this.client.disconnect(); }
 }

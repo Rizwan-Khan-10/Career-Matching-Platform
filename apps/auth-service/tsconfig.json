@@ -19,5 +19,9 @@
       "vitest/globals",
       "node"
     ]
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

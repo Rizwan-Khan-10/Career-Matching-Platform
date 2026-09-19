@@ -1,9 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas = ["matches_service"]
 }
 
 model Match {
@@ -14,4 +16,6 @@ model Match {
   eligible    Boolean
   feedback    String?
   createdAt   DateTime @default(now())
+
+  @@schema("matches_service")
 }

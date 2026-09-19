@@ -1,9 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas = ["chat_service"]
 }
 
 model ChatConversation {
@@ -16,6 +18,7 @@ model ChatConversation {
   messages    ChatMessage[]
 
   @@unique([applicantId, jobRoleId])
+  @@schema("chat_service")
 }
 
 model ChatMessage {
@@ -25,4 +28,6 @@ model ChatMessage {
   sender         String
   content        String
   createdAt      DateTime         @default(now())
+
+  @@schema("chat_service")
 }

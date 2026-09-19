@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Match {
+  id          String   @id @default(uuid())
+  applicantId String
+  jobRoleId   String
+  score       Float
+  eligible    Boolean
+  feedback    String?
+  createdAt   DateTime @default(now())
+}

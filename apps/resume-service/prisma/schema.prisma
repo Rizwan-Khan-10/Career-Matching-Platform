@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Resume {
+  id          String   @id @default(uuid())
+  applicantId String
+  fileUrl     String
+  status      String   @default("pending")
+  parsedData  Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

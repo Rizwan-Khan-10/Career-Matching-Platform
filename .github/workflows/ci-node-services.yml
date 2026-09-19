@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder"
     strategy:
       matrix:
         service:
@@ -20,9 +22,6 @@ jobs:
           - notification-service
           - websocket-gateway
           - chat-service
-    defaults:
-      run:
-        working-directory: apps/${{ matrix.service }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,6 +31,10 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-          cache-dependency-path: apps/${{ matrix.service }}/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
+      - run: |
+          if [ -f "apps/${{ matrix.service }}/prisma/schema.prisma" ]; then
+            pnpm --filter ${{ matrix.service }} exec prisma generate
+          fi
+      - run: pnpm --filter ${{ matrix.service }} run build

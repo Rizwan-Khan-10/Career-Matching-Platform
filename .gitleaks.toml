@@ -1,0 +1,5 @@
+[allowlist]
+description = "Ignore NestJS default README badge tokens"
+regexes = [
+  '''circleci/build/github/nestjs/nest/master\?token=''',
+]

@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model JobPosting {
+  id        String    @id @default(uuid())
+  companyId String
+  fileUrl   String
+  status    String    @default("pending") // pending | extracted | failed
+  createdAt DateTime  @default(now())
+  roles     JobRole[]
+}
+
+model JobRole {
+  id           String     @id @default(uuid())
+  jobPostingId String
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id])
+  title        String
+  requirements Json?
+  createdAt    DateTime   @default(now())
+}

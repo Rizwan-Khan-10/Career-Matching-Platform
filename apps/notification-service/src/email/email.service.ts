@@ -3,8 +3,9 @@ import { Resend } from 'resend';
 
 @Injectable()
 export class EmailService {
-  private resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder_key');
-    async sendEligibilityResult(to: string, eligible: boolean) {
+  private resend = new Resend(process.env.RESEND_API_KEY);
+
+  async sendEligibilityResult(to: string, eligible: boolean) {
     await this.resend.emails.send({
       from: 'noreply@yourdomain.com',
       to,

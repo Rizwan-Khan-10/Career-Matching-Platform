@@ -4,11 +4,11 @@
 generator client {
   provider     = "prisma-client"
   output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas = ["users_service"]
 }
 
 model ApplicantProfile {
@@ -19,6 +19,8 @@ model ApplicantProfile {
   education String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("users_service")
 }
 
 model CompanyProfile {
@@ -29,4 +31,6 @@ model CompanyProfile {
   contact   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("users_service")
 }

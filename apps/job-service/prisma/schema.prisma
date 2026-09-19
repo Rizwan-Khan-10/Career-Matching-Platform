@@ -1,9 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas = ["jobs_service"]
 }
 
 model JobPosting {
@@ -13,6 +15,8 @@ model JobPosting {
   status    String    @default("pending") // pending | extracted | failed
   createdAt DateTime  @default(now())
   roles     JobRole[]
+
+  @@schema("jobs_service")
 }
 
 model JobRole {
@@ -22,4 +26,6 @@ model JobRole {
   title        String
   requirements Json?
   createdAt    DateTime   @default(now())
+
+  @@schema("jobs_service")
 }

@@ -1,9 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas = ["resumes_service"]
 }
 
 model Resume {
@@ -14,4 +16,6 @@ model Resume {
   parsedData  Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@schema("resumes_service")
 }

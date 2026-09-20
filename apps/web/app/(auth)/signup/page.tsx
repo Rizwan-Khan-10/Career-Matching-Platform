@@ -12,7 +12,7 @@ import { signupSchema, SignupFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 
 export default function SignupPage() {
@@ -20,10 +20,12 @@ export default function SignupPage() {
     const setAuth = useAuthStore((s) => s.setAuth);
     const [serverError, setServerError] = useState<string | null>(null);
 
-    const { register, handleSubmit, formState: { errors } } = useForm<SignupFormValues>({
+    const { register, handleSubmit, watch, formState: { errors } } = useForm<SignupFormValues>({
         resolver: zodResolver(signupSchema),
         defaultValues: { role: 'APPLICANT' },
     });
+
+    const role = watch('role');
 
     const mutation = useMutation({
         mutationFn: (values: SignupFormValues) => apiClient.post('/auth/signup', values),
@@ -42,44 +44,60 @@ export default function SignupPage() {
     });
 
     return (
-        <FadeIn>
-            <div className="w-full max-w-sm">
+        <Stagger className="w-full max-w-sm">
+            <StaggerItem>
                 <h1 className="font-heading text-2xl text-ink mb-1">Create an account</h1>
-                <p className="text-sm text-ink-grey mb-6">Get started in a minute.</p>
+                <p className="text-sm text-ink-grey mb-8">Get started in a minute.</p>
+            </StaggerItem>
 
-                <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-                    <div className="flex gap-2">
-                        <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
+            <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+                <StaggerItem>
+                    <div className="flex gap-2 p-1 bg-hairline-soft rounded-lg">
+                        <label
+                            className={`flex-1 rounded-md px-3 py-2 text-sm font-body text-center cursor-pointer transition-colors ${role === 'APPLICANT' ? 'bg-paper-raised text-ink shadow-sm' : 'text-ink-grey'
+                                }`}
+                        >
                             <input type="radio" value="APPLICANT" {...register('role')} className="hidden" />
                             Applicant
                         </label>
-                        <label className="flex-1 border border-hairline rounded px-3 py-2.5 text-sm font-body text-center cursor-pointer has-[:checked]:bg-accent has-[:checked]:text-white transition-colors">
+                        <label
+                            className={`flex-1 rounded-md px-3 py-2 text-sm font-body text-center cursor-pointer transition-colors ${role === 'COMPANY' ? 'bg-paper-raised text-ink shadow-sm' : 'text-ink-grey'
+                                }`}
+                        >
                             <input type="radio" value="COMPANY" {...register('role')} className="hidden" />
                             Company
                         </label>
                     </div>
+                </StaggerItem>
 
-                    <div>
-                        <Input type="email" placeholder="Email" {...register('email')} />
-                        <FieldError message={errors.email?.message} />
-                    </div>
-                    <div>
-                        <Input type="password" placeholder="Password" {...register('password')} />
-                        <FieldError message={errors.password?.message} />
-                    </div>
+                <StaggerItem>
+                    <Input type="email" placeholder="Email" {...register('email')} />
+                    <FieldError message={errors.email?.message} />
+                </StaggerItem>
+                <StaggerItem>
+                    <Input type="password" placeholder="Password" {...register('password')} />
+                    <FieldError message={errors.password?.message} />
+                </StaggerItem>
 
-                    {serverError && <p className="text-sm text-danger">{serverError}</p>}
+                {serverError && (
+                    <StaggerItem>
+                        <p className="text-sm text-danger">{serverError}</p>
+                    </StaggerItem>
+                )}
 
-                    <Button type="submit" disabled={mutation.isPending}>
+                <StaggerItem>
+                    <Button type="submit" disabled={mutation.isPending} className="w-full">
                         {mutation.isPending ? 'Creating account...' : 'Sign up'}
                     </Button>
-                </form>
+                </StaggerItem>
+            </form>
 
-                <p className="text-sm text-ink-grey mt-4">
+            <StaggerItem>
+                <p className="text-sm text-ink-grey mt-6">
                     Already have an account?{' '}
-                    <Link href="/login" className="text-ink font-medium underline">Log in</Link>
+                    <Link href="/login" className="text-ink font-medium underline underline-offset-2">Log in</Link>
                 </p>
-            </div>
-        </FadeIn>
+            </StaggerItem>
+        </Stagger>
     );
 }

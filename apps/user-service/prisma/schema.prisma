@@ -14,7 +14,7 @@ datasource db {
 model ApplicantProfile {
   id        String   @id @default(uuid())
   userId    String   @unique
-  name      String
+  name      String?
   phone     String?
   education String?
   createdAt DateTime @default(now())
@@ -26,7 +26,7 @@ model ApplicantProfile {
 model CompanyProfile {
   id        String   @id @default(uuid())
   userId    String   @unique
-  name      String
+  name      String?
   industry  String?
   contact   String?
   createdAt DateTime @default(now())

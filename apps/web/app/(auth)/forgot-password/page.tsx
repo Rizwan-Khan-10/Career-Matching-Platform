@@ -5,11 +5,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 
 const schema = z.object({ email: z.string().email('Enter a valid email') });
@@ -31,25 +32,41 @@ export default function ForgotPasswordPage() {
         },
     });
 
-    if (sent) {
-        return <FadeIn><p className="text-sm text-ink-grey max-w-sm">If that email exists, a reset link has been sent.</p></FadeIn>;
-    }
-
     return (
-        <FadeIn>
-            <div className="w-full max-w-sm">
-                <h1 className="font-heading text-2xl text-ink mb-1">Reset your password</h1>
-                <p className="text-sm text-ink-grey mb-6">We&apos;ll send you a reset link.</p>
-                <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-                    <div>
-                        <Input type="email" placeholder="Email" {...register('email')} />
-                        <FieldError message={errors.email?.message} />
-                    </div>
-                    <Button type="submit" disabled={mutation.isPending}>
-                        {mutation.isPending ? 'Sending...' : 'Send reset link'}
-                    </Button>
-                </form>
-            </div>
-        </FadeIn>
+        <div className="w-full max-w-sm">
+            <AnimatePresence mode="wait">
+                {sent ? (
+                    <motion.div
+                        key="sent"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease: 'easeOut' }}
+                    >
+                        <h1 className="font-heading text-2xl text-ink mb-2">Check your email</h1>
+                        <p className="text-sm text-ink-grey leading-relaxed">
+                            If that email exists, we&apos;ve sent a link to reset your password.
+                        </p>
+                    </motion.div>
+                ) : (
+                    <Stagger key="form">
+                        <StaggerItem>
+                            <h1 className="font-heading text-2xl text-ink mb-1">Reset your password</h1>
+                            <p className="text-sm text-ink-grey mb-8">We&apos;ll send you a reset link.</p>
+                        </StaggerItem>
+                        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+                            <StaggerItem>
+                                <Input type="email" placeholder="Email" {...register('email')} />
+                                <FieldError message={errors.email?.message} />
+                            </StaggerItem>
+                            <StaggerItem>
+                                <Button type="submit" disabled={mutation.isPending} className="w-full">
+                                    {mutation.isPending ? 'Sending...' : 'Send reset link'}
+                                </Button>
+                            </StaggerItem>
+                        </form>
+                    </Stagger>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }

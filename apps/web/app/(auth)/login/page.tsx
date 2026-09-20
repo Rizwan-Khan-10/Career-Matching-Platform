@@ -12,7 +12,7 @@ import { loginSchema, LoginFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 
 export default function LoginPage() {
@@ -43,36 +43,44 @@ export default function LoginPage() {
   });
 
   return (
-    <FadeIn>
-      <div className="w-full max-w-sm">
+    <Stagger className="w-full max-w-sm">
+      <StaggerItem>
         <h1 className="font-heading text-2xl text-ink mb-1">Welcome back</h1>
-        <p className="text-sm text-ink-grey mb-6">Log in to continue.</p>
+        <p className="text-sm text-ink-grey mb-8">Log in to continue.</p>
+      </StaggerItem>
 
-        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
-          <div>
-            <Input type="email" placeholder="Email" {...register('email')} />
-            <FieldError message={errors.email?.message} />
-          </div>
-          <div>
-            <Input type="password" placeholder="Password" {...register('password')} />
-            <FieldError message={errors.password?.message} />
-          </div>
+      <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+        <StaggerItem>
+          <Input type="email" placeholder="Email" {...register('email')} />
+          <FieldError message={errors.email?.message} />
+        </StaggerItem>
+        <StaggerItem>
+          <Input type="password" placeholder="Password" {...register('password')} />
+          <FieldError message={errors.password?.message} />
+        </StaggerItem>
 
-          {serverError && <p className="text-sm text-danger">{serverError}</p>}
+        {serverError && (
+          <StaggerItem>
+            <p className="text-sm text-danger">{serverError}</p>
+          </StaggerItem>
+        )}
 
-          <Button type="submit" disabled={mutation.isPending}>
+        <StaggerItem>
+          <Button type="submit" disabled={mutation.isPending} className="w-full">
             {mutation.isPending ? 'Logging in...' : 'Log in'}
           </Button>
-        </form>
+        </StaggerItem>
+      </form>
 
-        <p className="text-sm text-ink-grey mt-4">
+      <StaggerItem>
+        <p className="text-sm text-ink-grey mt-6">
           Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-ink font-medium underline">Sign up</Link>
+          <Link href="/signup" className="text-ink font-medium underline underline-offset-2">Sign up</Link>
         </p>
-        <Link href="/forgot-password" className="text-sm text-ink-grey underline mt-2 inline-block">
+        <Link href="/forgot-password" className="text-sm text-ink-grey underline underline-offset-2 mt-2 inline-block">
           Forgot password?
         </Link>
-      </div>
-    </FadeIn>
+      </StaggerItem>
+    </Stagger>
   );
 }

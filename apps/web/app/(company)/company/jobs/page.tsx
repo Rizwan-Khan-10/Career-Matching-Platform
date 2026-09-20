@@ -27,8 +27,7 @@ export default function CompanyJobsPage() {
 
   const { data: postings, isLoading } = useQuery<JobPosting[]>({
     queryKey: ['jobPostings'],
-    queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data),
-    refetchInterval: 5000, // poll every 5s since extraction happens async — swap for websocket later
+    queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data)
   });
 
   const uploadMutation = useMutation({

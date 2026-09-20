@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import axios from 'axios';
 
 @Injectable()
 export class AuthService {
@@ -13,7 +14,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private redis: RedisService,
-  ) {}
+  ) { }
 
   async signup(dto: SignupDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
@@ -23,6 +24,8 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { email: dto.email, passwordHash, role: dto.role },
     });
+
+    this.createUserProfile(user.id, user.role, user.email);
 
     return this.issueTokens(user.id, user.role);
   }
@@ -46,7 +49,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    try { await this.redis.client.del(attemptsKey); } catch {}
+    try { await this.redis.client.del(attemptsKey); } catch { }
 
     return this.issueTokens(user.id, user.role);
   }
@@ -68,7 +71,7 @@ export class AuthService {
   }
 
   async logout(userId: string) {
-    try { await this.redis.client.del(`refresh:${userId}`); } catch {}
+    try { await this.redis.client.del(`refresh:${userId}`); } catch { }
     return { message: 'Logged out' };
   }
 
@@ -96,7 +99,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
-    try { await this.redis.client.del(`reset:${resetToken}`); } catch {}
+    try { await this.redis.client.del(`reset:${resetToken}`); } catch { }
 
     return { message: 'Password updated successfully' };
   }
@@ -105,7 +108,7 @@ export class AuthService {
     try {
       const count = await this.redis.client.incr(key);
       if (count === 1) await this.redis.client.expire(key, 5 * 60); // 5 min window
-    } catch {}
+    } catch { }
   }
 
   private async safeRedisGet(key: string): Promise<string | null> {
@@ -119,8 +122,20 @@ export class AuthService {
 
     try {
       await this.redis.client.set(`refresh:${userId}`, refreshToken, 'EX', 7 * 24 * 60 * 60);
-    } catch {}
+    } catch { }
 
     return { accessToken, refreshToken, role };
+  }
+
+  private async createUserProfile(userId: string, role: string, email: string) {
+    try {
+      await axios.post(`${process.env.USER_SERVICE_URL}/internal/profiles`, {
+        userId,
+        role,
+        email,
+      });
+    } catch (err: any) {
+      console.warn(`Failed to create profile in user-service for ${userId}:`, err?.message || err);
+    }
   }
 }

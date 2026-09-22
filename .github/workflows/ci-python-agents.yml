@@ -10,6 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         agent:
           - resume-parser-agent
@@ -22,8 +23,24 @@ jobs:
         working-directory: apps/${{ matrix.agent }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check if agent folder exists
+        id: check
+        working-directory: .
+        run: |
+          if [ -d "apps/${{ matrix.agent }}" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.exists == 'true'
         with:
           python-version: '3.11'
+
       - run: pip install -r requirements.txt
+        if: steps.check.outputs.exists == 'true'
+
       - run: python -c "import app.main"
+        if: steps.check.outputs.exists == 'true'

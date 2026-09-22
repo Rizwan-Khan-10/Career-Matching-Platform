@@ -3,7 +3,13 @@ import time
 import redis
 from app.core.config import REDIS_URL
 
-r = redis.from_url(REDIS_URL, decode_responses=True)
+r = redis.from_url(
+    REDIS_URL,
+    decode_responses=True,
+    socket_timeout=10,
+    socket_connect_timeout=10,
+    socket_keepalive=True,
+)
 
 def ensure_group(stream: str, group: str):
     try:

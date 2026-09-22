@@ -1,7 +1,7 @@
 from app.core.redis_stream import consume_loop, publish
 from app.core.db import get_connection
 from app.core.embeddings import embed
-from app.services.pdf_extractor import extract_text_from_url
+from app.services.file_router import extract_text
 from app.services.resume_parser import parse_resume
 import json
 
@@ -23,7 +23,11 @@ def handle(data: dict):
     applicant_id = data["applicantId"]
     file_url = data["fileUrl"]
 
-    text = extract_text_from_url(file_url)
+    text = extract_text(file_url)
+
+    if not text or not text.strip():
+        raise ValueError(f"No text could be extracted from resume {resume_id} ({file_url})")
+
     parsed = parse_resume(text)
     vector = embed(text[:2000])
 

@@ -1,7 +1,7 @@
-import app
 from app.core.redis_stream import consume_loop, publish
 from app.core.db import get_connection
 from app.services.gap_analyzer import generate_feedback
+from app.models.feedback import MatchComputedEvent
 
 
 def get_role_requirements(job_role_id: str) -> dict:
@@ -44,21 +44,20 @@ def get_selected_profiles(job_role_id: str, exclude_applicant_id: str, limit: in
 
 
 def handle(data: dict):
-    if data.get("eligible"):
-        return
+    event = MatchComputedEvent(**data)  # validates incoming event shape
 
-    applicant_id = data["applicantId"]
-    job_role_id = data["jobRoleId"]
+    if event.eligible:
+        return  # feedback only needed for non-eligible outcomes
 
-    requirements = get_role_requirements(job_role_id)
-    applicant_data = get_applicant_resume_data(applicant_id)
-    selected = get_selected_profiles(job_role_id, applicant_id)
+    requirements = get_role_requirements(event.jobRoleId)
+    applicant_data = get_applicant_resume_data(event.applicantId)
+    selected = get_selected_profiles(event.jobRoleId, event.applicantId)
 
     feedback = generate_feedback(applicant_data, requirements, selected)
 
     publish("feedback.ready", {
-        "applicantId": applicant_id,
-        "jobRoleId": job_role_id,
+        "applicantId": event.applicantId,
+        "jobRoleId": event.jobRoleId,
         "feedback": feedback,
     })
 

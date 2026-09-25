@@ -1,5 +1,5 @@
 import json
-from app.core.llm_client import client
+from app.core.llm_client import call_chat_completion
 
 SYSTEM_PROMPT_APPLICANT = """You are a career assistant helping a job applicant discuss a specific
 role they were evaluated for. Use ONLY the context provided (their resume, and this role's match
@@ -18,9 +18,5 @@ def respond(role: str, message: str, context: dict, history: list[dict] | None =
             "content": turn["content"],
         })
 
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=messages,
-        temperature=0.4,
-    )
+    response = call_chat_completion(messages, model="openai/gpt-oss-120b", temperature=0.4)
     return response.choices[0].message.content

@@ -24,6 +24,6 @@ def chat(req: ChatRequest):
     else:
         context = get_context_for_company(req.userId)
 
-    history = [h.dict() for h in req.history] if req.history else None
+    history = [h.model_dump() for h in req.history] if req.history else None
     reply = respond(req.role, req.message, context, history)
     return {"reply": reply}

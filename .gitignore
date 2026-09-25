@@ -171,6 +171,4 @@ dist
 
 # End of https://www.toptal.com/developers/gitignore/api/nextjs,node
 
-apps/*/src/generated/apps/feedback-agent/venv/
-apps/feedback-agent/venv/
-apps/chatbot-agent/venv/
+apps/*/src/generated/

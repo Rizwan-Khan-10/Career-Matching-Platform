@@ -1,5 +1,6 @@
 import json
 from app.core.llm_client import ask_llm
+from app.models.feedback import FeedbackResult
 
 SYSTEM_PROMPT = """You write a specific, actionable improvement guide for a job applicant who was
 not selected for a role. Compare their resume data against the role's requirements, and against
@@ -14,4 +15,6 @@ def generate_feedback(applicant_data: dict, requirements: dict, selected_profile
         "selectedCandidates": selected_profiles,
     })
     raw = ask_llm(SYSTEM_PROMPT, prompt)
-    return json.loads(raw)["feedback"]
+    data = json.loads(raw)
+    result = FeedbackResult(**data)  # validates shape; raises clear error if Groq's output is malformed
+    return result.feedback

@@ -173,3 +173,4 @@ dist
 
 apps/*/src/generated/apps/feedback-agent/venv/
 apps/feedback-agent/venv/
+apps/chatbot-agent/venv/

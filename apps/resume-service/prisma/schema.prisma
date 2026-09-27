@@ -9,13 +9,14 @@ datasource db {
 }
 
 model Resume {
-  id          String   @id @default(uuid())
-  applicantId String
-  fileUrl     String
-  status      String   @default("pending")
-  parsedData  Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  applicantId        String
+  cloudinaryPublicId String
+  fileUrl            String
+  status             String   @default("pending")
+  parsedData         Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@schema("resumes_service")
 }

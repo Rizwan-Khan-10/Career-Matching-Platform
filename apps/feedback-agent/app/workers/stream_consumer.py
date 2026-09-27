@@ -7,7 +7,7 @@ from app.models.feedback import MatchComputedEvent
 def get_role_requirements(job_role_id: str) -> dict:
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute('SELECT requirements FROM "jobs"."JobRole" WHERE id = %s', (job_role_id,))
+    cur.execute('SELECT requirements FROM "jobs_service"."JobRole" WHERE id = %s', (job_role_id,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -18,7 +18,7 @@ def get_applicant_resume_data(applicant_id: str) -> dict:
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        'SELECT "parsedData" FROM "resumes"."Resume" WHERE "applicantId" = %s ORDER BY "createdAt" DESC LIMIT 1',
+        'SELECT "parsedData" FROM "resumes_service"."Resume" WHERE "applicantId" = %s ORDER BY "createdAt" DESC LIMIT 1',
         (applicant_id,),
     )
     row = cur.fetchone()
@@ -31,8 +31,8 @@ def get_selected_profiles(job_role_id: str, exclude_applicant_id: str, limit: in
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        '''SELECT r."parsedData" FROM "matches"."Match" m
-           JOIN "resumes"."Resume" r ON r."applicantId" = m."applicantId"
+        '''SELECT r."parsedData" FROM "matches_service"."Match" m
+           JOIN "resumes_service"."Resume" r ON r."applicantId" = m."applicantId"
            WHERE m."jobRoleId" = %s AND m.eligible = true AND m."applicantId" != %s
            ORDER BY r."createdAt" DESC LIMIT %s''',
         (job_role_id, exclude_applicant_id, limit),

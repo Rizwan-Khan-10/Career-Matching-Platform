@@ -9,12 +9,13 @@ datasource db {
 }
 
 model JobPosting {
-  id        String    @id @default(uuid())
-  companyId String
-  fileUrl   String
-  status    String    @default("pending") // pending | extracted | failed
-  createdAt DateTime  @default(now())
-  roles     JobRole[]
+  id           String    @id @default(uuid())
+  companyId    String
+  fileUrl      String
+  status       String    @default("pending") // pending | extracted | failed
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  roles        JobRole[]
 
   @@schema("jobs_service")
 }

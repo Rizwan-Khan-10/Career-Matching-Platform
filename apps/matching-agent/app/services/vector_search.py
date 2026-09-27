@@ -9,7 +9,7 @@ def find_matching_roles_for_resume(resume_id: str, top_k: int = 10):
         SELECT jr.id, jr.title, jr.requirements, jre.embedding <=> re.embedding AS distance
         FROM resume_embeddings re
         CROSS JOIN job_role_embeddings jre
-        JOIN "jobs"."JobRole" jr ON jr.id = jre.job_role_id
+        JOIN "jobs_service"."JobRole" jr ON jr.id = jre.job_role_id
         WHERE re.resume_id = %s
         ORDER BY distance ASC
         LIMIT %s
@@ -28,7 +28,7 @@ def find_matching_resumes_for_role(job_role_id: str, top_k: int = 50):
         SELECT r.id, r."applicantId", r."parsedData", re.embedding <=> jre.embedding AS distance
         FROM job_role_embeddings jre
         CROSS JOIN resume_embeddings re
-        JOIN "resumes"."Resume" r ON r.id = re.resume_id
+        JOIN "resumes_service"."Resume" r ON r.id = re.resume_id
         WHERE jre.job_role_id = %s AND r.status = 'parsed'
         ORDER BY distance ASC
         LIMIT %s

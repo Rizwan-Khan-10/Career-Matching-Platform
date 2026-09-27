@@ -19,21 +19,41 @@ def ensure_embedding_table():
     cur.close()
     conn.close()
 
+def mark_failed(resume_id: str, reason: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        'UPDATE "resumes_service"."Resume" SET status = %s, "parsedData" = %s, "updatedAt" = NOW() WHERE id = %s',
+        ("failed", json.dumps({"error": reason}), resume_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def handle(data: dict):
     event = ResumeUploadedEvent(**data)  # validates incoming event shape
 
-    text = extract_text(event.fileUrl)
+    # Content-level failures (bad file, unsupported format, expired URL, bad LLM
+    # output) can never succeed on retry, so we mark the resume "failed" and ack
+    # the message instead of letting it retry forever while stuck on "pending".
+    try:
+        text = extract_text(event.fileUrl)
+        if not text or not text.strip():
+            raise ValueError(f"No text could be extracted from resume {event.resumeId} ({event.fileUrl})")
+        parsed = parse_resume(text)  # returns a validated ParsedResumeData object
+    except ValueError as e:
+        mark_failed(event.resumeId, str(e))
+        return
+    except json.JSONDecodeError as e:
+        mark_failed(event.resumeId, f"Could not parse resume content: {e}")
+        return
 
-    if not text or not text.strip():
-        raise ValueError(f"No text could be extracted from resume {event.resumeId} ({event.fileUrl})")
-
-    parsed = parse_resume(text)  # returns a validated ParsedResumeData object
     vector = embed(text[:2000])
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        'UPDATE "resumes"."Resume" SET status = %s, "parsedData" = %s, "updatedAt" = NOW() WHERE id = %s',
+        'UPDATE "resumes_service"."Resume" SET status = %s, "parsedData" = %s, "updatedAt" = NOW() WHERE id = %s',
         ("parsed", parsed.model_dump_json(), event.resumeId),
     )
     cur.execute(

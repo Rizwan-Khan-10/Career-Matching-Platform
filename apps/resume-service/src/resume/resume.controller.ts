@@ -1,9 +1,10 @@
-import { Controller, Post, Get, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ResumeService } from './resume.service';
+import { UpdateResumeDto } from './dto/update-resume.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -21,5 +22,10 @@ export class ResumeController {
     @Get('mine')
     mine(@Req() req: AuthenticatedRequest) {
         return this.service.getByApplicant(req.user.userId);
+    }
+
+    @Patch(':id')
+    update(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateResumeDto) {
+        return this.service.updateOwn(id, req.user.userId, dto);
     }
 }

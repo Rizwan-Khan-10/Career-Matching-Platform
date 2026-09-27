@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateResumeDto } from './dto/update-resume.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma';
 
 @Injectable()
 export class ResumeService {

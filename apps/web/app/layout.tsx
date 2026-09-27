@@ -1,6 +1,5 @@
 import { Space_Grotesk, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
-import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata = {
@@ -31,7 +30,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${headingFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body>
         <Providers>
-          <Toaster />
           {children}
         </Providers>
       </body>

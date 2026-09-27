@@ -1,31 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
-import { useAuthStore } from '@/store/authStore';
-import { getSocket } from '@/lib/socket';
-import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
 import { FadeIn } from '@/components/motion/FadeIn';
-import { motion } from 'motion/react';
-
-interface Resume {
-  id: string;
-  status: 'pending' | 'parsed' | 'failed';
-  fileUrl: string;
-  parsedData: any;
-  createdAt: string;
-}
+import { UploadDropzone } from '@/components/resume/UploadDropzone';
+import { ResumeCard } from '@/components/resume/ResumeCard';
+import { ResumeHistory } from '@/components/resume/ResumeHistory';
+import type { Resume } from '@/types/resume';
+import type { UpdateResumeValues } from '@/lib/schemas/resume';
 
 export default function ResumePage() {
-  const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
 
-  const { data: resumes } = useQuery<Resume[]>({
+  // Poll while the latest resume is still processing. There's no
+  // socket/notification service wired up to push "resume.parsed" events, so
+  // polling is what actually keeps this in sync with the parser worker.
+  const { data: resumes, isLoading } = useQuery<Resume[]>({
     queryKey: ['resumes'],
     queryFn: () => apiClient.get('/resumes/mine').then((r) => r.data),
+    refetchInterval: (query) => (query.state.data?.[0]?.status === 'pending' ? 4000 : false),
   });
 
   const uploadMutation = useMutation({
@@ -37,25 +31,24 @@ export default function ResumePage() {
       });
     },
     onSuccess: () => {
-      setFile(null);
       queryClient.invalidateQueries({ queryKey: ['resumes'] });
       toast.success('Resume uploaded — processing started');
     },
     onError: () => toast.error('Upload failed, try again'),
   });
 
-  useEffect(() => {
-    if (!token) return;
-    const socket = getSocket(token);
-    socket.on('resume.parsed', () => {
+  const updateMutation = useMutation({
+    mutationFn: ({ id, values }: { id: string; values: UpdateResumeValues }) =>
+      apiClient.patch(`/resumes/${id}`, values),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resumes'] });
-    });
-    return () => {
-      socket.off('resume.parsed');
-    };
-  }, [token, queryClient]);
+      toast.success('Resume updated');
+    },
+    onError: () => toast.error('Could not save changes, try again'),
+  });
 
   const latest = resumes?.[0];
+  const previous = resumes?.slice(1) ?? [];
 
   return (
     <div className="max-w-2xl">
@@ -63,63 +56,36 @@ export default function ResumePage() {
       <p className="text-sm text-ink-grey mb-6">Upload your resume to get matched against open roles.</p>
 
       <FadeIn>
-        <div className="bg-paper-raised border border-hairline rounded-xl p-5 mb-6">
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="text-sm text-ink-grey mb-3 block"
-          />
-          <Button
-            disabled={!file || uploadMutation.isPending}
-            onClick={() => file && uploadMutation.mutate(file)}
-          >
-            {uploadMutation.isPending ? 'Uploading...' : 'Upload resume'}
-          </Button>
-        </div>
+        <UploadDropzone
+          onUpload={(file) => uploadMutation.mutate(file)}
+          isUploading={uploadMutation.isPending}
+        />
       </FadeIn>
+
+      {isLoading && (
+        <div className="mt-6 h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />
+      )}
+
+      {!isLoading && !latest && (
+        <FadeIn delay={0.05}>
+          <p className="text-sm text-ink-grey mt-6">
+            No resume uploaded yet — add one above to get started.
+          </p>
+        </FadeIn>
+      )}
 
       {latest && (
         <FadeIn delay={0.05}>
-          <div className="bg-paper-raised border border-hairline rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-ink">Latest resume</span>
-              <StatusBadge status={latest.status} />
-            </div>
-
-            {latest.status === 'pending' && (
-              <p className="text-sm text-ink-grey">Processing your resume — this updates automatically.</p>
-            )}
-
-            {latest.status === 'parsed' && latest.parsedData && (
-              <div className="text-sm text-ink-grey space-y-2">
-                <p><span className="text-ink font-medium">Skills:</span> {latest.parsedData.skills?.join(', ')}</p>
-                <p><span className="text-ink font-medium">Education:</span> {latest.parsedData.education}</p>
-                <p><span className="text-ink font-medium">CGPA:</span> {latest.parsedData.cgpa ?? '—'}</p>
-              </div>
-            )}
+          <div className="mt-6">
+            <ResumeCard
+              resume={latest}
+              isSaving={updateMutation.isPending}
+              onSave={(values) => updateMutation.mutate({ id: latest.id, values })}
+            />
+            <ResumeHistory resumes={previous} />
           </div>
         </FadeIn>
       )}
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    pending: 'bg-accent-soft text-accent',
-    parsed: 'bg-success-soft text-success',
-    failed: 'bg-danger-soft text-danger',
-  };
-  return (
-    <motion.span
-      key={status}
-      initial={{ opacity: 0, scale: 0.85 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-      className={`text-xs font-medium px-2.5 py-1 rounded-full ${styles[status] || ''}`}
-    >
-      {status}
-    </motion.span>
   );
 }

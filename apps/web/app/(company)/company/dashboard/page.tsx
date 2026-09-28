@@ -1,15 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { ProfileBanner } from '@/components/ProfileBanner';
+import { CompanyProfileModal } from '@/components/profile/CompanyProfileModal';
 import { FadeIn } from '@/components/motion/FadeIn';
 
 export default function CompanyDashboard() {
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
   const { data: profile } = useQuery({
     queryKey: ['companyProfile'],
     queryFn: () => apiClient.get('/companies/me').then((r) => r.data),
   });
+
   const { data: postings } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data),
@@ -19,7 +24,8 @@ export default function CompanyDashboard() {
 
   return (
     <div>
-      {profile && !profile.name && <ProfileBanner href="/company/profile" />}
+      {profile && !profile.name && <ProfileBanner onClick={() => setIsProfileOpen(true)} />}
+      <CompanyProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
       <h1 className="font-heading text-2xl text-ink mb-6">Dashboard</h1>
 
       <div className="grid grid-cols-2 gap-4">

@@ -5,7 +5,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
-import { SkillsInput } from '@/components/resume/SkillsInput';
+import { SkillsInput } from '@/components/ui/SkillsInput';
 import { updateResumeSchema, type UpdateResumeValues } from '@/lib/schemas/resume';
 import type { ParsedResumeData } from '@/types/resume';
 

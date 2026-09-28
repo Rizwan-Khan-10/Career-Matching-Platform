@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
+import { SidebarProfileCard } from './SidebarProfileCard';
 
 const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
     APPLICANT: [
         { label: 'Dashboard', href: '/applicant/dashboard' },
-        { label: 'Profile', href: '/applicant/profile' },
         { label: 'Resume', href: '/applicant/resume' },
         { label: 'Matches', href: '/applicant/matches' },
         { label: 'Feedback', href: '/applicant/feedback' },
@@ -15,7 +15,6 @@ const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
     ],
     COMPANY: [
         { label: 'Dashboard', href: '/company/dashboard' },
-        { label: 'Profile', href: '/company/profile' },
         { label: 'Jobs', href: '/company/jobs' },
         { label: 'Ask AI', href: '/company/ask' },
     ],
@@ -35,6 +34,7 @@ export function Sidebar({ role }: { role: 'ADMIN' | 'COMPANY' | 'APPLICANT' }) {
             <div className="px-5 py-6 font-heading font-bold text-lg text-ink border-b border-hairline">
                 CareerMatch
             </div>
+            <SidebarProfileCard role={role} />
             <nav className="flex-1 px-2 py-4 flex flex-col gap-1">
                 {items.map((item) => (
                     <Link

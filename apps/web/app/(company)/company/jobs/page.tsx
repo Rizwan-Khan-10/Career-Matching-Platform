@@ -1,34 +1,40 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
-import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
+import { useAuthStore } from '@/store/authStore';
+import { getSocket } from '@/lib/socket';
 import { FadeIn } from '@/components/motion/FadeIn';
-import { motion } from 'motion/react';
-
-interface JobRole {
-  id: string;
-  title: string;
-}
-
-interface JobPosting {
-  id: string;
-  status: 'pending' | 'extracted' | 'failed';
-  createdAt: string;
-  roles: JobRole[];
-}
+import { UploadJobDropzone } from '@/components/jobs/UploadJobDropzone';
+import { JobPostingCard } from '@/components/jobs/JobPostingCard';
+import type { JobPosting } from '@/types/job';
+import type { JobRoleValues } from '@/lib/schemas/job';
 
 export default function CompanyJobsPage() {
+  const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
 
   const { data: postings, isLoading } = useQuery<JobPosting[]>({
     queryKey: ['jobPostings'],
-    queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data)
+    queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data),
+    // websocket-gateway pushes "jd.extracted" the moment the agent finishes;
+    // this poll is just a safety net in case that socket is ever down.
+    refetchInterval: (query) =>
+      query.state.data?.some((p) => p.status === 'pending') ? 15000 : false,
   });
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    socket.on('jd.extracted', () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+    });
+    return () => {
+      socket.off('jd.extracted');
+    };
+  }, [token, queryClient]);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
@@ -39,91 +45,83 @@ export default function CompanyJobsPage() {
       });
     },
     onSuccess: () => {
-      setFile(null);
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       toast.success('Requirement doc uploaded — extracting roles');
     },
     onError: () => toast.error('Upload failed, try again'),
   });
 
+  const addRoleMutation = useMutation({
+    mutationFn: ({ postingId, values }: { postingId: string; values: JobRoleValues }) =>
+      apiClient.post(`/jobs/${postingId}/roles`, values),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+      toast.success('Role added');
+    },
+    onError: () => toast.error('Could not add role, try again'),
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ roleId, values }: { roleId: string; values: JobRoleValues }) =>
+      apiClient.patch(`/jobs/roles/${roleId}`, values),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+      toast.success('Role updated');
+    },
+    onError: () => toast.error('Could not save changes, try again'),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (roleId: string) => apiClient.delete(`/jobs/roles/${roleId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+      toast.success('Role removed');
+    },
+    onError: () => toast.error('Could not remove role, try again'),
+  });
+
+  const isMutating =
+    addRoleMutation.isPending || updateRoleMutation.isPending || deleteRoleMutation.isPending;
+
   return (
     <div className="max-w-2xl">
       <h1 className="font-heading text-2xl text-ink mb-1">Job Postings</h1>
       <p className="text-sm text-ink-grey mb-6">
-        Upload a requirement document — one file can describe multiple roles.
+        Upload a requirement document — one file can describe multiple roles. You can edit or add roles anytime.
       </p>
 
       <FadeIn>
-        <div className="bg-paper-raised border border-hairline rounded-xl p-5 mb-6">
-          <input
-            type="file"
-            accept=".pdf,.docx"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="text-sm text-ink-grey mb-3 block"
-          />
-          <Button
-            disabled={!file || uploadMutation.isPending}
-            onClick={() => file && uploadMutation.mutate(file)}
-          >
-            {uploadMutation.isPending ? 'Uploading...' : 'Upload requirement doc'}
-          </Button>
-        </div>
+        <UploadJobDropzone
+          onUpload={(file) => uploadMutation.mutate(file)}
+          isUploading={uploadMutation.isPending}
+        />
       </FadeIn>
 
-      {isLoading && <p className="text-sm text-ink-grey">Loading...</p>}
+      {isLoading && (
+        <div className="mt-6 h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />
+      )}
 
-      <div className="flex flex-col gap-3">
-        {postings?.map((posting) => (
-          <FadeIn>
-            <div key={posting.id} className="bg-paper-raised border border-hairline rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-ink-grey">
-                  {new Date(posting.createdAt).toLocaleDateString()}
-                </span>
-                <StatusBadge status={posting.status} />
-              </div>
+      {!isLoading && postings?.length === 0 && (
+        <FadeIn delay={0.05}>
+          <p className="text-sm text-ink-grey mt-6">
+            No requirement docs uploaded yet — add one above to get started.
+          </p>
+        </FadeIn>
+      )}
 
-              {posting.status === 'pending' && (
-                <p className="text-sm text-ink-grey">Extracting roles from this document...</p>
-              )}
-
-              {posting.roles?.length > 0 && (
-                <ul className="flex flex-col gap-1.5 mt-2">
-                  {posting.roles.map((role) => (
-                    <li key={role.id}>
-                      <Link
-                        href={`/company/roles/${role.id}/applicants`}
-                        className="text-sm text-accent hover:underline"
-                      >
-                        {role.title} — view applicants
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+      <div className="flex flex-col gap-4 mt-6">
+        {postings?.map((posting, i) => (
+          <FadeIn key={posting.id} delay={i * 0.05}>
+            <JobPostingCard
+              posting={posting}
+              isMutating={isMutating}
+              onAddRole={(values) => addRoleMutation.mutate({ postingId: posting.id, values })}
+              onUpdateRole={(roleId, values) => updateRoleMutation.mutate({ roleId, values })}
+              onDeleteRole={(roleId) => deleteRoleMutation.mutate(roleId)}
+            />
           </FadeIn>
         ))}
       </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    pending: 'bg-accent-soft text-accent',
-    parsed: 'bg-success-soft text-success',
-    failed: 'bg-danger-soft text-danger',
-  };
-  return (
-    <motion.span
-      key={status}
-      initial={{ opacity: 0, scale: 0.85 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-      className={`text-xs font-medium px-2.5 py-1 rounded-full ${styles[status] || ''}`}
-    >
-      {status}
-    </motion.span>
   );
 }

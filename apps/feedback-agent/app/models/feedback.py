@@ -8,6 +8,10 @@ class MatchComputedEvent(BaseModel):
     jobRoleId: str
     score: float
     eligible: bool
+    reason: str = ""
+    matchedSkills: list[str] = []
+    partialSkills: list[str] = []
+    missingSkills: list[str] = []
 
 
 class FeedbackResult(BaseModel):

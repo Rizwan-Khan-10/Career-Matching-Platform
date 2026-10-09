@@ -1,27 +1,36 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, PauseCircle, Plus } from 'lucide-react';
 import { JobStatusBadge } from '@/components/jobs/JobStatusBadge';
 import { RoleCard } from '@/components/jobs/RoleCard';
 import { RoleForm } from '@/components/jobs/RoleForm';
 import type { JobPosting } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
+import type { RoleStats } from '@/types/stats';
 
 export function JobPostingCard({
     posting,
     onAddRole,
     onUpdateRole,
     onDeleteRole,
+    onStop,
+    onReopen,
+    statsByRole,
     isMutating,
 }: {
     posting: JobPosting;
     onAddRole: (values: JobRoleValues) => void;
     onUpdateRole: (roleId: string, values: JobRoleValues) => void;
     onDeleteRole: (roleId: string) => void;
+    onStop: () => void;
+    onReopen: () => void;
+    statsByRole?: Record<string, RoleStats>;
     isMutating: boolean;
 }) {
     const [isAdding, setIsAdding] = useState(false);
+    const [confirmingStop, setConfirmingStop] = useState(false);
+    const isStopped = !!posting.stoppedAt;
 
     return (
         <div className="bg-paper-raised border border-hairline rounded-xl p-5">
@@ -29,8 +38,22 @@ export function JobPostingCard({
                 <span className="text-sm font-medium text-ink">
                     Requirement doc · {new Date(posting.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </span>
-                <JobStatusBadge status={posting.status} />
+                {isStopped ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-paper text-ink-grey border border-hairline">
+                        <PauseCircle className="size-3.5" />
+                        Stopped
+                    </span>
+                ) : (
+                    <JobStatusBadge status={posting.status} />
+                )}
             </div>
+
+            {isStopped && (
+                <p className="text-sm text-ink-grey bg-paper rounded-lg px-3.5 py-3 mb-3">
+                    This job is stopped: its document is not scanned and no new resumes are matched. Applicants can no longer apply.
+                    Existing candidates stay visible. Reopen it to start matching again.
+                </p>
+            )}
 
             {posting.status === 'pending' && (
                 <p className="text-sm text-ink-grey">
@@ -59,6 +82,7 @@ export function JobPostingCard({
                             role={role}
                             isSaving={isMutating}
                             isDeleting={isMutating}
+                            stats={statsByRole?.[role.id]}
                             onSave={(values) => onUpdateRole(role.id, values)}
                             onDelete={() => onDeleteRole(role.id)}
                         />
@@ -90,6 +114,46 @@ export function JobPostingCard({
                     </button>
                 )
             )}
+
+            <div className="border-t border-hairline mt-4 pt-3 flex items-center justify-end gap-3">
+                {isStopped ? (
+                    <button
+                        type="button"
+                        disabled={isMutating}
+                        onClick={onReopen}
+                        className="text-xs font-medium text-accent hover:underline disabled:opacity-50"
+                    >
+                        Reopen job
+                    </button>
+                ) : confirmingStop ? (
+                    <>
+                        <span className="text-xs text-ink-grey">Stop scanning and matching for this job?</span>
+                        <button
+                            type="button"
+                            disabled={isMutating}
+                            onClick={() => {
+                                setConfirmingStop(false);
+                                onStop();
+                            }}
+                            className="text-xs font-medium text-danger hover:underline disabled:opacity-50"
+                        >
+                            Yes, stop
+                        </button>
+                        <button type="button" onClick={() => setConfirmingStop(false)} className="text-xs font-medium text-ink-grey hover:text-ink">
+                            Cancel
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        type="button"
+                        disabled={isMutating}
+                        onClick={() => setConfirmingStop(true)}
+                        className="text-xs font-medium text-ink-grey hover:text-danger disabled:opacity-50"
+                    >
+                        Stop job
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

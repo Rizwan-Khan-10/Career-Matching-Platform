@@ -5,6 +5,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApplicantsService } from './applicants.service';
 import { UpdateApplicantDto } from './dto/update-applicant.dto';
+import { ApplicantSummariesDto } from './dto/summaries.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -29,5 +30,13 @@ export class ApplicantsController {
   @UseInterceptors(FileInterceptor('file'))
   updateAvatar(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
     return this.service.updateAvatar(req.user.userId, file);
+  }
+
+  // Lets a company see WHO an applicant is, but ONLY applicants who approved sharing with that company
+  // (name/headline only, never phone or links).
+  @Roles('COMPANY', 'ADMIN')
+  @Post('summaries')
+  summaries(@Body() dto: ApplicantSummariesDto, @Req() req: AuthenticatedRequest) {
+    return this.service.getSummaries(dto.ids, req.user.userId, req.user.role);
   }
 }

@@ -11,6 +11,7 @@ import { UploadJobDropzone } from '@/components/jobs/UploadJobDropzone';
 import { JobPostingCard } from '@/components/jobs/JobPostingCard';
 import type { JobPosting } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
+import type { CompanyStats, RoleStats } from '@/types/stats';
 
 export default function CompanyJobsPage() {
   const token = useAuthStore((s) => s.token);
@@ -24,6 +25,14 @@ export default function CompanyJobsPage() {
     refetchInterval: (query) =>
       query.state.data?.some((p) => p.status === 'pending') ? 15000 : false,
   });
+
+  // scanned / matched / applied per role
+  const { data: stats } = useQuery<CompanyStats>({
+    queryKey: ['companyStats'],
+    queryFn: () => apiClient.get('/stats/company').then((r) => r.data),
+    refetchInterval: 30000,
+  });
+  const statsByRole: Record<string, RoleStats> = Object.fromEntries((stats?.roles ?? []).map((r) => [r.jobRoleId, r]));
 
   useEffect(() => {
     if (!token) return;
@@ -80,8 +89,32 @@ export default function CompanyJobsPage() {
     onError: () => toast.error('Could not remove role, try again'),
   });
 
+  const stopMutation = useMutation({
+    mutationFn: (postingId: string) => apiClient.post(`/jobs/${postingId}/stop`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+      queryClient.invalidateQueries({ queryKey: ['companyStats'] });
+      toast.success('Job stopped — no more scanning or matching');
+    },
+    onError: () => toast.error('Could not stop the job, try again'),
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: (postingId: string) => apiClient.post(`/jobs/${postingId}/reopen`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+      queryClient.invalidateQueries({ queryKey: ['companyStats'] });
+      toast.success('Job reopened — matching resumes again');
+    },
+    onError: () => toast.error('Could not reopen the job, try again'),
+  });
+
   const isMutating =
-    addRoleMutation.isPending || updateRoleMutation.isPending || deleteRoleMutation.isPending;
+    addRoleMutation.isPending ||
+    updateRoleMutation.isPending ||
+    deleteRoleMutation.isPending ||
+    stopMutation.isPending ||
+    reopenMutation.isPending;
 
   return (
     <div className="max-w-2xl">
@@ -118,6 +151,9 @@ export default function CompanyJobsPage() {
               onAddRole={(values) => addRoleMutation.mutate({ postingId: posting.id, values })}
               onUpdateRole={(roleId, values) => updateRoleMutation.mutate({ roleId, values })}
               onDeleteRole={(roleId) => deleteRoleMutation.mutate(roleId)}
+              onStop={() => stopMutation.mutate(posting.id)}
+              onReopen={() => reopenMutation.mutate(posting.id)}
+              statsByRole={statsByRole}
             />
           </FadeIn>
         ))}

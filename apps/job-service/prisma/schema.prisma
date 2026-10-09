@@ -14,6 +14,7 @@ model JobPosting {
   fileUrl      String
   status       String    @default("pending") // pending | extracted | failed
   errorMessage String?
+  stoppedAt    DateTime? // set = company stopped this job: no scanning of the document, no matching
   createdAt    DateTime  @default(now())
   roles        JobRole[]
 

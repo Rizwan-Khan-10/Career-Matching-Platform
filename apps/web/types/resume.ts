@@ -5,9 +5,21 @@ export interface ResumeProject {
   description: string;
 }
 
+export interface ResumeExperience {
+  title: string;
+  company?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  description?: string;
+}
+
 export interface ParsedResumeData {
+  currentTitle?: string | null;
+  summary?: string | null;
   skills?: string[];
   projects?: ResumeProject[];
+  experience?: ResumeExperience[];
+  certifications?: string[];
   education?: string | null;
   cgpa?: number | null;
   experienceYears?: number | null;

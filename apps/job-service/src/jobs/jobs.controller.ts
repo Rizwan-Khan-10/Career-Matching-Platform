@@ -25,6 +25,18 @@ export class JobsController {
         return this.service.getByCompany(req.user.userId);
     }
 
+    // company stops scanning/matching for this job at any time ...
+    @Post(':id/stop')
+    stop(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+        return this.service.stop(id, req.user.userId);
+    }
+
+    // ... and can reopen it later
+    @Post(':id/reopen')
+    reopen(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+        return this.service.reopen(id, req.user.userId);
+    }
+
     @Get(':id/roles')
     roles(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
         return this.service.getRoles(id, req.user.userId);

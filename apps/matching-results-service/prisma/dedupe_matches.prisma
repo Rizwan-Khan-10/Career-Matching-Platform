@@ -1,0 +1,7 @@
+-- Run ONCE before `prisma db push` (the new @@unique([applicantId, jobRoleId]) fails if duplicates exist).
+-- Keeps the newest row per (applicantId, jobRoleId).
+DELETE FROM "matches_service"."Match" m
+USING "matches_service"."Match" newer
+WHERE m."applicantId" = newer."applicantId"
+  AND m."jobRoleId"   = newer."jobRoleId"
+  AND (m."createdAt" < newer."createdAt" OR (m."createdAt" = newer."createdAt" AND m.id < newer.id));

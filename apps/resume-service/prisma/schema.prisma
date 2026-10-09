@@ -13,6 +13,7 @@ model Resume {
   applicantId        String
   cloudinaryPublicId String
   fileUrl            String
+  pdfPublicId        String?   // PDF version used when the applicant approves sharing (set by resume-parser-agent)
   status             String   @default("pending")
   parsedData         Json?
   createdAt          DateTime @default(now())

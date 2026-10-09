@@ -60,6 +60,28 @@ export function ResumeSummary({
                 )}
             </div>
 
+            {(data.experience?.length ?? 0) > 0 && (
+                <div>
+                    <p className="text-xs text-ink-grey mb-1.5">Experience</p>
+                    <div className="space-y-3">
+                        {data.experience!.map((job, i) => (
+                            <div key={i} className="border-l-2 border-hairline pl-3">
+                                <p className="text-sm font-medium text-ink">
+                                    {job.title}
+                                    {job.company ? ` · ${job.company}` : ''}
+                                </p>
+                                {(job.startDate || job.endDate) && (
+                                    <p className="text-xs text-ink-grey">
+                                        {job.startDate ?? '?'} – {job.endDate ?? 'Present'}
+                                    </p>
+                                )}
+                                {job.description && <p className="text-sm text-ink-grey">{job.description}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div>
                 <p className="text-xs text-ink-grey mb-1.5">Projects</p>
                 {hasProjects ? (

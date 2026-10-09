@@ -24,6 +24,13 @@ export class ResumeController {
         return this.service.getByApplicant(req.user.userId);
     }
 
+    // Company/admin: signed link to the PDF of a resume the applicant approved sharing with them
+    @Roles('COMPANY', 'ADMIN')
+    @Get(':id/pdf')
+    sharedPdf(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+        return this.service.getSharedPdfLink(id, req.user.userId, req.user.role);
+    }
+
     @Patch(':id')
     update(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateResumeDto) {
         return this.service.updateOwn(id, req.user.userId, dto);

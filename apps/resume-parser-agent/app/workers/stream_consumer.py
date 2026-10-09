@@ -1,10 +1,12 @@
 from app.core.redis_stream import consume_loop, publish
 from app.core.db import get_connection
-from app.core.embeddings import embed
+from app.core.embeddings import embed, to_pgvector
 from app.services.file_router import extract_text
 from app.services.resume_parser import parse_resume
+from app.services.profile_text import resume_profile_text
 from app.models.resume import ResumeUploadedEvent
 import json
+
 
 def ensure_embedding_table():
     conn = get_connection()
@@ -19,6 +21,7 @@ def ensure_embedding_table():
     cur.close()
     conn.close()
 
+
 def mark_failed(resume_id: str, reason: str):
     conn = get_connection()
     cur = conn.cursor()
@@ -29,6 +32,12 @@ def mark_failed(resume_id: str, reason: str):
     conn.commit()
     cur.close()
     conn.close()
+
+
+def on_dead(data: dict, error: Exception):
+    """Called when a message failed MAX_DELIVERIES times (e.g. Groq down) so it never sits on 'pending' forever."""
+    mark_failed(data.get("resumeId", ""), f"Processing failed after several attempts: {error}")
+
 
 def handle(data: dict):
     event = ResumeUploadedEvent(**data)  # validates incoming event shape
@@ -48,7 +57,8 @@ def handle(data: dict):
         mark_failed(event.resumeId, f"Could not parse resume content: {e}")
         return
 
-    vector = embed(text[:2000])
+    # Embed the STRUCTURED profile (same builder as the role side), not the first 2000 raw characters.
+    vector = embed(resume_profile_text(parsed.model_dump()))
 
     conn = get_connection()
     cur = conn.cursor()
@@ -57,9 +67,9 @@ def handle(data: dict):
         ("parsed", parsed.model_dump_json(), event.resumeId),
     )
     cur.execute(
-        "INSERT INTO resume_embeddings (resume_id, embedding) VALUES (%s, %s) "
+        "INSERT INTO resume_embeddings (resume_id, embedding) VALUES (%s, %s::vector) "
         "ON CONFLICT (resume_id) DO UPDATE SET embedding = EXCLUDED.embedding",
-        (event.resumeId, vector),
+        (event.resumeId, to_pgvector(vector)),
     )
     conn.commit()
     cur.close()
@@ -71,6 +81,7 @@ def handle(data: dict):
         **parsed.model_dump(),
     })
 
+
 def run():
     ensure_embedding_table()
-    consume_loop("resume.uploaded", "resume-parser-group", "consumer-1", handle)
+    consume_loop("resume.uploaded", "resume-parser-group", "consumer-1", handle, on_dead=on_dead)

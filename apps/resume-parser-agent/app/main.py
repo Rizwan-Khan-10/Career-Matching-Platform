@@ -21,4 +21,15 @@ def start_consumer():
         print(f"Resume-parser consumer startup failed: {exc}")
 
 
+def start_pdf_consumer():
+    if os.getenv("ENABLE_RESUME_PDF_CONSUMER", "true").lower() != "true":
+        return
+    try:
+        from app.workers.pdf_consumer import run
+        run()
+    except Exception as exc:
+        print(f"Resume-PDF consumer startup failed: {exc}")
+
+
 threading.Thread(target=start_consumer, daemon=True).start()
+threading.Thread(target=start_pdf_consumer, daemon=True).start()

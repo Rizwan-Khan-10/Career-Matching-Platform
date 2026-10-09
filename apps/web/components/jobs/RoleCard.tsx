@@ -6,6 +6,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { RoleForm } from '@/components/jobs/RoleForm';
 import type { JobRole } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
+import type { RoleStats } from '@/types/stats';
 
 export function RoleCard({
     role,
@@ -13,15 +14,18 @@ export function RoleCard({
     onDelete,
     isSaving,
     isDeleting,
+    stats,
 }: {
     role: JobRole;
     onSave: (values: JobRoleValues) => void;
     onDelete: () => void;
     isSaving: boolean;
     isDeleting: boolean;
+    stats?: RoleStats;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const skills = role.requirements?.requiredSkills ?? [];
+    const preferredSkills = role.requirements?.preferredSkills ?? [];
 
     if (isEditing) {
         return (
@@ -89,8 +93,34 @@ export function RoleCard({
                 </div>
             )}
 
+            {preferredSkills.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-xs text-ink-grey">Nice to have:</span>
+                    {preferredSkills.map((skill) => (
+                        <span key={skill} className="bg-paper text-ink-grey border border-hairline text-xs px-2 py-0.5 rounded-full">
+                            {skill}
+                        </span>
+                    ))}
+                </div>
+            )}
+
             {role.requirements?.qualifications && (
                 <p className="text-xs text-ink-grey mt-2">{role.requirements.qualifications}</p>
+            )}
+
+            {stats && (
+                <div className="grid grid-cols-3 gap-2 mt-3">
+                    {[
+                        ['Scanned', stats.scanned],
+                        ['Matched', stats.matched],
+                        ['Applied', stats.applied],
+                    ].map(([label, value]) => (
+                        <div key={label as string} className="bg-paper rounded-lg px-3 py-2">
+                            <p className="text-lg font-heading font-bold text-ink leading-tight">{value}</p>
+                            <p className="text-xs text-ink-grey">{label}</p>
+                        </div>
+                    ))}
+                </div>
             )}
 
             <Link

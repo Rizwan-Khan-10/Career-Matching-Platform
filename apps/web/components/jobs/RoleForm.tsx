@@ -23,6 +23,7 @@ export function RoleForm({
 }) {
     const [title, setTitle] = useState(initial?.title ?? '');
     const [skills, setSkills] = useState<string[]>(initial?.requirements?.requiredSkills ?? []);
+    const [preferred, setPreferred] = useState<string[]>(initial?.requirements?.preferredSkills ?? []);
     const [minExperienceYears, setMinExperienceYears] = useState(
         initial?.requirements?.minExperienceYears != null ? String(initial.requirements.minExperienceYears) : '',
     );
@@ -33,8 +34,10 @@ export function RoleForm({
         const parsed = jobRoleSchema.safeParse({
             title: title.trim(),
             requiredSkills: skills,
-            minExperienceYears: minExperienceYears.trim() === '' ? undefined : Number(minExperienceYears),
-            qualifications: qualifications.trim() || undefined,
+            preferredSkills: preferred,
+            // null (not undefined) so that emptying a field really clears it on the server
+            minExperienceYears: minExperienceYears.trim() === '' ? null : Number(minExperienceYears),
+            qualifications: qualifications.trim() || null,
         });
 
         if (!parsed.success) {
@@ -61,6 +64,12 @@ export function RoleForm({
                 <label className="text-xs text-ink-grey mb-1.5 block">Required skills</label>
                 <SkillsInput value={skills} onChange={setSkills} />
                 <FieldError message={errors.requiredSkills} />
+            </div>
+
+            <div>
+                <label className="text-xs text-ink-grey mb-1.5 block">Preferred skills (nice to have)</label>
+                <SkillsInput value={preferred} onChange={setPreferred} />
+                <FieldError message={errors.preferredSkills} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

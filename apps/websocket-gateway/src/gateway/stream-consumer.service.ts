@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import { EventsGateway } from './events.gateway';
 
-const STREAMS = ['resume.parsed', 'jd.extracted', 'match.computed', 'feedback.ready'];
+const STREAMS = ['resume.parsed', 'jd.extracted', 'match.computed', 'feedback.ready', 'candidate.ready'];
 
 @Injectable()
 export class GatewayStreamConsumerService implements OnModuleInit {

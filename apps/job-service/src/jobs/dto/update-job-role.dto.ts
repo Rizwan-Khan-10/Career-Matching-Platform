@@ -1,8 +1,10 @@
-import { IsArray, IsOptional, IsString, IsNumber } from 'class-validator';
+import { IsArray, IsOptional, IsString, IsNumber, Min, Max, MaxLength } from 'class-validator';
 
+// Note: IsOptional() lets BOTH undefined ("don't touch") and null ("clear this field") through.
 export class UpdateJobRoleDto {
     @IsOptional()
     @IsString()
+    @MaxLength(150)
     title?: string;
 
     @IsOptional()
@@ -11,10 +13,18 @@ export class UpdateJobRoleDto {
     requiredSkills?: string[];
 
     @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    preferredSkills?: string[];
+
+    @IsOptional()
     @IsNumber()
-    minExperienceYears?: number;
+    @Min(0)
+    @Max(60)
+    minExperienceYears?: number | null;
 
     @IsOptional()
     @IsString()
-    qualifications?: string;
+    @MaxLength(300)
+    qualifications?: string | null;
 }

@@ -9,13 +9,50 @@ datasource db {
 }
 
 model Match {
-  id          String   @id @default(uuid())
-  applicantId String
-  jobRoleId   String
-  score       Float
-  eligible    Boolean
-  feedback    String?
-  createdAt   DateTime @default(now())
+  id            String   @id @default(uuid())
+  applicantId   String
+  jobRoleId     String
+  roleTitle     String?
+  resumeId      String?
+  score         Float
+  eligible      Boolean
+  reason        String?
+  matchedSkills String[] @default([])
+  partialSkills String[] @default([])
+  missingSkills String[] @default([])
+  breakdown     Json?
+  modelVersion  String?
+  feedback      String?
+  // consent flow: the company sees a match ONLY after the applicant approved it
+  applicantStatus String  @default("pending") // 'pending' | 'approved' | 'declined'
+  approvedAt    DateTime?
+  resumeStatus  String   @default("none")      // after approval: 'none' (preparing) | 'ready' (PDF sent) | 'failed'
+  resumeSharedAt DateTime?
+  decision      String?   // recruiter verdict: 'shortlisted' | 'rejected' (null = undecided) -> real training labels
+  decidedAt     DateTime?
+  decidedBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
+  // one row per (applicant, role): re-matching updates it instead of piling up duplicates
+  @@unique([applicantId, jobRoleId])
+  @@index([jobRoleId, eligible, applicantStatus, score])
+  @@schema("matches_service")
+}
+
+// One row per (role, applicant) the matching-agent EVALUATED, eligible or not. Source of the "scanned / matched"
+// numbers on the company and admin dashboards (Match only holds the pairs worth showing to people).
+model RoleScan {
+  id          String   @id @default(uuid())
+  jobRoleId   String
+  applicantId String
+  resumeId    String?
+  eligible    Boolean
+  score       Float
+  scannedAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@unique([jobRoleId, applicantId])
+  @@index([jobRoleId, eligible])
   @@schema("matches_service")
 }

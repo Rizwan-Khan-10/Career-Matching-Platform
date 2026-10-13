@@ -92,12 +92,15 @@ export class MatchesService {
     }
 
     async saveFeedback(data: { applicantId: string; jobRoleId: string; feedback: string }) {
-        const match = await this.prisma.match.updateMany({
-            where: { applicantId: data.applicantId, jobRoleId: data.jobRoleId },
-            data: { feedback: data.feedback },
+        const match = await this.prisma.match.findUnique({
+            where: { applicantId_jobRoleId: { applicantId: data.applicantId, jobRoleId: data.jobRoleId } },
         });
-        await this.emailQueue.enqueueFeedbackEmail(data.applicantId, data.feedback);
-        return match;
+        // not saved yet (or the role was deleted): throw so handleWithRetry retries with back-off, then dead-letters
+        if (!match) throw new Error(`match ${data.applicantId}/${data.jobRoleId} not found for feedback`);
+        if (match.eligible) return; // became eligible meanwhile: "how to improve" is obsolete
+        await this.prisma.match.update({ where: { id: match.id }, data: { feedback: data.feedback } });
+        // e-mail only the FIRST guide per role, later re-matches just refresh the text on the website
+        if (!match.feedback) await this.emailQueue.enqueueFeedbackEmail(data.applicantId, data.feedback, match.roleTitle);
     }
 
     // ------------------------------------------------------------------ reads
@@ -250,9 +253,13 @@ export class MatchesService {
         });
     }
 
-    /** The role was deleted in job-service -> its matches are meaningless now. */
+    /** The role was deleted in job-service -> its matches AND its scan rows (dashboard numbers) are meaningless now. */
     async deleteForRole(jobRoleId: string) {
-        return this.prisma.match.deleteMany({ where: { jobRoleId } });
+        const [matches] = await this.prisma.$transaction([
+            this.prisma.match.deleteMany({ where: { jobRoleId } }),
+            this.prisma.roleScan.deleteMany({ where: { jobRoleId } }),
+        ]);
+        return matches;
     }
 
     // ------------------------------------------------------------------ cross-schema lookups (same DB)

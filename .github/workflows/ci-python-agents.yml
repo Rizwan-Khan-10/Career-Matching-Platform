@@ -48,3 +48,8 @@ jobs:
 
       - run: python -c "import app.main"
         if: steps.check.outputs.exists == 'true'
+
+      - name: Unit tests
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          if [ -d tests ]; then EMBEDDING_BACKEND=hash python -m unittest discover -s tests -t .; fi

@@ -7,6 +7,7 @@ import { ChatService } from './chat.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { RenameConversationDto } from '../conversations/dto/rename-conversation.dto';
+import { ChatRateLimitGuard } from './chat-rate-limit.guard';
 
 @UseGuards(JwtAuthGuard)
 @Controller('chat')
@@ -37,14 +38,14 @@ export class ChatController {
         return this.conversationsService.getMessages(id, req.user.userId);
     }
 
-    @UseGuards(RolesGuard)
+    @UseGuards(RolesGuard, ChatRateLimitGuard)
     @Roles('APPLICANT')
     @Post('conversations/:id/messages')
     sendMessage(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: SendMessageDto) {
         return this.chatService.sendMessage(id, req.user.userId, req.user.role, dto.message);
     }
 
-    @UseGuards(RolesGuard)
+    @UseGuards(RolesGuard, ChatRateLimitGuard)
     @Roles('COMPANY')
     @Post('quick')
     quickAsk(@Req() req: AuthenticatedRequest, @Body() dto: SendMessageDto) {

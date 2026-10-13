@@ -28,7 +28,10 @@ export class EmailWorker implements OnModuleInit {
                         score: job.data.score,
                         jobRoleId: job.data.jobRoleId,
                     });
-                } else {
+                } else if (job.name === 'password-reset') {
+                    await this.emailService.sendPasswordReset(job.data.email, job.data.resetToken);
+                }
+                else {
                     this.logger.warn(`unknown email job "${job.name}"`);
                 }
             },
@@ -38,7 +41,7 @@ export class EmailWorker implements OnModuleInit {
     }
 
     private async resolveEmail(userId: string): Promise<string> {
-        const res = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${userId}/email`);
+        const res = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${userId}/email`, { timeout: 10_000 });
         return res.data.email;
     }
 }

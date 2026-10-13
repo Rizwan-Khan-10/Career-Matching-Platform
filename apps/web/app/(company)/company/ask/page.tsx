@@ -13,13 +13,16 @@ export default function CompanyAskPage() {
     const mutation = useMutation({
         mutationFn: (message: string) => apiClient.post('/chat/quick', { message }),
         onSuccess: (res) => setReply(res.data.reply),
-        onError: () => toast.error('Could not get a response, try again'),
+        onError: (err: any) => {
+            const m = err?.response?.data?.message;
+            toast.error((Array.isArray(m) ? m[0] : m) || 'Could not get a response, try again');
+        },
     });
 
     return (
         <div className="max-w-2xl">
             <h1 className="font-heading text-2xl text-ink mb-1">Ask AI</h1>
-            <p className="text-sm text-ink-grey mb-6">Ask about your posted roles and applicant matches.</p>
+            <p className="text-sm text-ink-grey mb-6">Ask about your posted roles and how many candidates were scanned, matched and shared.</p>
 
             <form
                 onSubmit={(e) => {
@@ -40,7 +43,7 @@ export default function CompanyAskPage() {
             </form>
 
             {reply && (
-                <div className="bg-paper-raised border border-hairline rounded-xl p-4 text-sm text-ink">
+                <div className="bg-paper-raised border border-hairline rounded-xl p-4 text-sm text-ink whitespace-pre-wrap">
                     {reply}
                 </div>
             )}

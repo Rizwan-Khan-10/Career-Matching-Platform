@@ -4,6 +4,7 @@ import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateResumeDto } from './dto/update-resume.dto';
 import { Prisma } from '../generated/prisma';
+import { validateUpload } from '../common/upload';
 
 @Injectable()
 export class ResumeService {
@@ -14,6 +15,7 @@ export class ResumeService {
     ) { }
 
     async upload(applicantId: string, file: Express.Multer.File) {
+        validateUpload(file);
         const { publicId, fileUrl } = await this.storage.uploadResume(applicantId, file);
         const resume = await this.prisma.resume.create({
             data: { applicantId, cloudinaryPublicId: publicId, fileUrl, status: 'pending' },

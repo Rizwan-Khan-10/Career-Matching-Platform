@@ -15,11 +15,17 @@ interface Message {
     createdAt: string;
 }
 
+function errorText(err: any, fallback: string): string {
+    const m = err?.response?.data?.message;
+    return (Array.isArray(m) ? m[0] : m) || fallback;
+}
+
 export default function ChatThreadPage() {
     const params = useParams();
     const conversationId = params.conversationId as string;
     const queryClient = useQueryClient();
     const [input, setInput] = useState('');
+    const [pending, setPending] = useState<string | null>(null); // the question being answered: shown immediately
     const bottomRef = useRef<HTMLDivElement>(null);
 
     const { data: messages, isLoading } = useQuery<Message[]>({
@@ -28,19 +34,33 @@ export default function ChatThreadPage() {
     });
 
     const sendMutation = useMutation({
-        mutationFn: (message: string) =>
-            apiClient.post(`/chat/conversations/${conversationId}/messages`, { message }),
-        onSuccess: () => {
-            setInput('');
-            queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        mutationFn: (message: string) => apiClient.post(`/chat/conversations/${conversationId}/messages`, { message }),
+        onSuccess: async () => {
+            // wait for the fresh list BEFORE removing the optimistic bubble -> no flicker / double bubble
+            await queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+            setPending(null);
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
         },
-        onError: () => toast.error('Message failed to send, try again'),
+        onError: (err: any, message) => {
+            setPending(null);
+            setInput((cur) => cur || message); // nothing was saved server-side: give the text back so the user can retry
+            toast.error(errorText(err, 'Message failed to send, try again'));
+        },
     });
+
+    const submit = () => {
+        const text = input.trim();
+        if (!text || sendMutation.isPending) return;
+        setPending(text);
+        setInput('');
+        sendMutation.mutate(text);
+    };
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [messages, pending]);
+
+    const bubble = 'max-w-[80%] px-4 py-2.5 rounded-xl text-sm whitespace-pre-wrap break-words';
 
     return (
         <div className="max-w-2xl flex flex-col h-[calc(100vh-8rem)]">
@@ -49,7 +69,7 @@ export default function ChatThreadPage() {
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 mb-4">
                 {isLoading && <p className="text-sm text-ink-grey">Loading...</p>}
 
-                {messages?.length === 0 && (
+                {messages?.length === 0 && !pending && (
                     <p className="text-sm text-ink-grey">
                         Ask anything about this role — why you were or weren't a match, or what to improve.
                     </p>
@@ -61,17 +81,17 @@ export default function ChatThreadPage() {
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2 }}
-                        className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm ${msg.sender === 'user' ? 'bg-accent text-white self-end' : 'bg-paper-raised border border-hairline text-ink self-start'
-                            }`}
+                        className={`${bubble} ${msg.sender === 'user' ? 'bg-accent text-white self-end' : 'bg-paper-raised border border-hairline text-ink self-start'}`}
                     >
                         {msg.content}
                     </motion.div>
                 ))}
 
-                {sendMutation.isPending && (
-                    <div className="bg-paper-raised border border-hairline text-ink-grey self-start px-4 py-2.5 rounded-xl text-sm">
-                        Thinking...
-                    </div>
+                {pending && (
+                    <>
+                        <div className={`${bubble} bg-accent text-white self-end`}>{pending}</div>
+                        <div className={`${bubble} bg-paper-raised border border-hairline text-ink-grey self-start`}>Thinking...</div>
+                    </>
                 )}
 
                 <div ref={bottomRef} />
@@ -80,13 +100,14 @@ export default function ChatThreadPage() {
             <form
                 onSubmit={(e) => {
                     e.preventDefault();
-                    if (input.trim()) sendMutation.mutate(input.trim());
+                    submit();
                 }}
                 className="flex gap-2"
             >
                 <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
+                    maxLength={2000}
                     placeholder="Type a message..."
                     className="flex-1 border border-hairline bg-paper-raised rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
                 />

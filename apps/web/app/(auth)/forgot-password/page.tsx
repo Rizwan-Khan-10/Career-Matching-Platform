@@ -24,7 +24,7 @@ export default function ForgotPasswordPage() {
         mutationFn: (values: FormValues) => apiClient.post('/auth/forgot-password', values),
         onSuccess: () => {
             setSent(true);
-            toast.success('Reset link sent (check terminal logs for now)');
+            toast.success('If that email exists, a reset link is on its way');
         },
         onError: (err: any) => {
             const msg = err.response?.data?.message || 'Something went wrong';

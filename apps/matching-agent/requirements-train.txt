@@ -1,2 +1,4 @@
 -r requirements.txt
 scikit-learn==1.9.1
+scipy
+datasets

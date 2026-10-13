@@ -1,82 +1,100 @@
-"""Trains the eligibility scorer (logistic regression over semantic features).
+"""Trains the eligibility scorer on REAL labelled pairs.
 
-    pip install -r requirements-train.txt
-    python -m training.generate_dataset --roles 500
-    python -m training.train --data training/data/dataset.jsonl
-    # later, with real recruiter decisions mixed in (same jsonl format, 3x weight):
-    python -m training.train --data training/data/dataset.jsonl --extra training/data/real_labels.jsonl
+    python -m training.build_real_dataset ...                        # -> training/data/real_pairs.jsonl
+    python -m scripts.export_real_labels --out training/data/recruiter_labels.jsonl   # Shortlist / Reject clicks
+    python -m training.train --real training/data/real_pairs.jsonl training/data/recruiter_labels.jsonl \
+                             --recruiter training/data/recruiter_labels.jsonl --recruiter-weight 5
 
-Output: app/artifacts/scorer.json  (picked up automatically by the agent; restart it, check GET /model)
-Run it with the SAME embedding backend you deploy with (EMBEDDING_BACKEND=minilm, the default).
+Output: app/artifacts/scorer.json (picked up by the agent; restart it and open GET /model).
+Run with the SAME embedder you deploy with (EMBEDDING_BACKEND=minilm / bge).
 """
 import argparse
 import datetime as dt
 import json
 import numpy as np
-from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
 
 from app.core.embeddings import model_name
 from app.services.features import FEATURE_NAMES
-from training.common import load_rows, build_matrix, split_by_group, metrics, best_threshold
+from training import bounded_logreg
+from training.common import (load_rows, build_matrix, split_by_group, metrics, best_threshold,
+                             ranking_metrics, calibration_error)
+
+NONNEG = np.array([n != "has_req_skills" for n in FEATURE_NAMES])   # every quality feature must help, never hurt
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", nargs="+", default=["training/data/dataset.jsonl"])
-    ap.add_argument("--extra", nargs="*", default=[], help="real labelled pairs (same format), up-weighted")
-    ap.add_argument("--extra-weight", type=float, default=3.0)
-    ap.add_argument("--beta", type=float, default=1.0, help="F-beta for threshold; <1 favours precision")
+    ap.add_argument("--real", nargs="+", required=True, help="real labelled pairs (jsonl)")
+    ap.add_argument("--recruiter", nargs="*", default=[], help="subset of --real that are recruiter decisions (gold)")
+    ap.add_argument("--recruiter-weight", type=float, default=5.0)
+    ap.add_argument("--synthetic", nargs="*", default=[])
+    ap.add_argument("--synthetic-weight", type=float, default=0.2)
+    ap.add_argument("--beta", type=float, default=0.5, help="F-beta for the threshold; <1 favours precision (default 0.5)")
     ap.add_argument("--out", default="app/artifacts/scorer.json")
     a = ap.parse_args()
 
-    rows = load_rows(*a.data) + load_rows(*a.extra)
-    extra_names = {r["_src"] for r in load_rows(*a.extra)} if a.extra else set()
-    print(f"{len(rows)} labelled pairs | embedder = {model_name()}")
+    real = load_rows(*a.real)
+    syn = load_rows(*a.synthetic) if a.synthetic else []
+    gold = {r["_src"] for r in load_rows(*a.recruiter)} if a.recruiter else set()
+    rows = real + syn
+    print(f"{len(real)} real pairs | {len(syn)} synthetic | embedder = {model_name()}")
+    if len(real) < 300:
+        print("WARNING: <300 real pairs - metrics below are unreliable, do not ship this model.")
+
     M = build_matrix(rows)
-    X, y, groups = M["X"], M["y"], M["groups"]
-    w = np.array([a.extra_weight if r["_src"] in extra_names else 1.0 for r in rows])
+    X, y, groups, splits = M["X"], M["y"], M["groups"], M["splits"]
+    src_w = np.array([1.0 if i < len(real) else a.synthetic_weight for i in range(len(rows))])
+    gold_w = np.array([a.recruiter_weight if r["_src"] in gold else 1.0 for r in rows])
+    w = src_w * gold_w * np.array([float(r.get("weight", 1.0)) for r in rows])
+    is_real = np.arange(len(rows)) < len(real)
 
-    tr, te = split_by_group(groups)
-    print(f"train={tr.sum()}  held-out test={te.sum()} (split by role, no leakage)")
+    tr, te = split_by_group(splits)                  # keeps ALL pairs of one resume (real data) / role (synthetic) on one side
+    te_real = te & is_real
+    print(f"train={tr.sum()}  held-out={te.sum()} (real held-out={te_real.sum()})")
 
-    # 1) pick regularisation + threshold from out-of-fold predictions on TRAIN only
+    # 1) C + threshold from out-of-fold predictions on TRAIN (real rows only decide the threshold)
     best = None
-    for C in (0.3, 1.0, 3.0, 10.0, 30.0):
+    for C in (0.1, 0.3, 1.0, 3.0, 10.0):
         oof = np.zeros(tr.sum())
-        Xt, yt, gt, wt = X[tr], y[tr], groups[tr], w[tr]
-        for fit_i, val_i in GroupKFold(n_splits=5).split(Xt, yt, gt):
-            m = LogisticRegression(C=C, max_iter=2000).fit(Xt[fit_i], yt[fit_i], sample_weight=wt[fit_i])
-            oof[val_i] = m.predict_proba(Xt[val_i])[:, 1]
-        thr, f = best_threshold(yt, oof, a.beta)
+        Xt, yt, st, wt = X[tr], y[tr], splits[tr], w[tr]
+        for fit_i, val_i in GroupKFold(n_splits=5).split(Xt, yt, st):
+            coef, b = bounded_logreg.fit(Xt[fit_i], yt[fit_i], wt[fit_i], C=C, nonneg=NONNEG)
+            oof[val_i] = bounded_logreg.predict_proba(Xt[val_i], coef, b)
+        sel = is_real[tr]
+        thr, f = best_threshold(yt[sel], oof[sel], a.beta)
         if best is None or f > best[0]:
             best = (f, C, thr)
     f_cv, C, thr = best
     print(f"chosen C={C}  threshold={thr}  (cv F{a.beta:g}={f_cv})")
 
-    # 2) honest score on the held-out roles
-    m = LogisticRegression(C=C, max_iter=2000).fit(X[tr], y[tr], sample_weight=w[tr])
-    p_te = m.predict_proba(X[te])[:, 1]
-    test_metrics = metrics(y[te], (p_te >= thr).astype(int), p_te)
-    print("held-out:", json.dumps(test_metrics))
+    # 2) honest numbers on held-out REAL pairs
+    coef, b = bounded_logreg.fit(X[tr], y[tr], w[tr], C=C, nonneg=NONNEG)
+    p = bounded_logreg.predict_proba(X[te_real], coef, b)
+    test_metrics = metrics(y[te_real], (p >= thr).astype(int), p)
+    test_metrics["ece"] = calibration_error(y[te_real], p)
+    test_metrics["ranking"] = ranking_metrics(y[te_real], p, groups[te_real], k=5)
+    print("held-out (real):", json.dumps(test_metrics))
 
-    # 3) final model on ALL data with the chosen hyper-parameters
-    final = LogisticRegression(C=C, max_iter=2000).fit(X, y, sample_weight=w)
+    # 3) final model on everything
+    coef, b = bounded_logreg.fit(X, y, w, C=C, nonneg=NONNEG)
     artifact = {
-        "version": f"lr-{dt.date.today().isoformat()}-n{len(rows)}",
+        "version": f"blr-{dt.date.today().isoformat()}-real{len(real)}",
         "embedding_model": model_name(),
         "features": FEATURE_NAMES,
-        "weights": {n: round(float(c), 5) for n, c in zip(FEATURE_NAMES, final.coef_[0])},
-        "bias": round(float(final.intercept_[0]), 5),
+        "weights": {n: round(float(c), 5) for n, c in zip(FEATURE_NAMES, coef)},
+        "bias": round(float(b), 5),
         "threshold": thr,
-        "metrics": {"held_out": test_metrics, "cv_f_beta": f_cv, "beta": a.beta, "C": C, "n_train_pairs": int(len(rows))},
+        "metrics": {"held_out_real": test_metrics, "cv_f_beta": f_cv, "beta": a.beta, "C": C,
+                    "n_real_pairs": len(real), "n_synthetic_pairs": len(syn), "n_recruiter_pairs": int(sum(r["_src"] in gold for r in rows))},
     }
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(artifact, f, indent=2)
-    print(f"saved -> {a.out}")
-    print("feature weights:")
+    print(f"saved -> {a.out}\nfeature weights:")
     for n, c in sorted(artifact["weights"].items(), key=lambda kv: -abs(kv[1])):
         print(f"  {n:16s} {c:+.3f}")
+    bad = [n for n, c in artifact["weights"].items() if n != "has_req_skills" and c < 0]
+    assert not bad, f"negative weights slipped through: {bad}"
 
 
 if __name__ == "__main__":

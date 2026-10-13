@@ -5,6 +5,7 @@ import { StorageService } from '../storage/storage.service';
 import { CreateJobRoleDto } from './dto/create-job-role.dto';
 import { UpdateJobRoleDto } from './dto/update-job-role.dto';
 import { Prisma } from '../generated/prisma';
+import { validateUpload } from '../common/upload';
 
 @Injectable()
 export class JobsService {
@@ -15,6 +16,7 @@ export class JobsService {
     ) { }
 
     async upload(companyId: string, file: Express.Multer.File) {
+        validateUpload(file);
         const fileUrl = await this.storage.uploadJobDoc(companyId, file);
         const posting = await this.prisma.jobPosting.create({
             data: { companyId, fileUrl, status: 'pending' },

@@ -7,6 +7,7 @@ import { JobsService } from './jobs.service';
 import { CreateJobRoleDto } from './dto/create-job-role.dto';
 import { UpdateJobRoleDto } from './dto/update-job-role.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
+import { uploadOptions } from '../common/upload';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('COMPANY')
@@ -15,7 +16,7 @@ export class JobsController {
     constructor(private service: JobsService) { }
 
     @Post('upload')
-    @UseInterceptors(FileInterceptor('file'))
+    @UseInterceptors(FileInterceptor('file', uploadOptions))
     upload(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
         return this.service.upload(req.user.userId, file);
     }

@@ -14,7 +14,7 @@ from app.core import config
 from app.core.embeddings import model_name
 from app.services import scorer
 from app.services.features import FEATURE_NAMES
-from training.common import load_rows, build_matrix, split_by_group, metrics, best_threshold
+from training.common import load_rows, build_matrix, split_by_group, metrics, best_threshold, ranking_metrics, calibration_error
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
     rows = load_rows(*a.data)
     M = build_matrix(rows)
     X, y, groups, kinds = M["X"], M["y"], M["groups"], M["kinds"]
-    tr, te = split_by_group(groups)
+    tr, te = split_by_group(M["splits"])        # same split train.py used (real data: never shares a resume)
     col = {n: i for i, n in enumerate(FEATURE_NAMES)}
     print(f"embedder={model_name()} scorer={scorer.model_version()} held-out pairs={te.sum()}\n")
 
@@ -51,6 +51,12 @@ def main():
     for name, m in results:
         print(f"{name:22s} {m['accuracy']:6.3f} {m['precision']:6.3f} {m['recall']:6.3f} {m['f1']:6.3f} {m.get('roc_auc', float('nan')):6.3f}")
 
+    print("\nranking quality per job (held-out; the product ranks candidates, not just accepts/rejects):")
+    for name, sc in (("A cosine-only", X[te, col["global_sim"]]), ("B keyword overlap", X[te, col["req_exact"]]), ("ours: model", probs)):
+        r = ranking_metrics(y[te], sc, groups[te], k=5)
+        print(f"  {name:22s} precision@5={r['precision@5']}  ndcg@5={r['ndcg@5']}  mrr={r['mrr']}  (jobs={r['roles']})")
+    print(f"calibration error (ECE, lower is better): {calibration_error(y[te], probs)}")
+    
     print("\nfull pipeline accuracy by candidate type (held-out):")
     for k in sorted(set(kinds[te].tolist())):
         idx = kinds[te] == k

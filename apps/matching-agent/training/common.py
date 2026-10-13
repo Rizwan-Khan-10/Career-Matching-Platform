@@ -31,7 +31,7 @@ def _fingerprint(rows) -> str:
 def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
     """-> dict(X, y, groups, kinds, exp, min_exp). Cached per (embedder, feature list, data)."""
     os.makedirs(cache_dir, exist_ok=True)
-    key = hashlib.md5((model_name() + "|" + ",".join(FEATURE_NAMES) + "|" + _fingerprint(rows)).encode()).hexdigest()[:16]
+    key = hashlib.md5(("v2|" + model_name() + "|" + ",".join(FEATURE_NAMES) + "|" + _fingerprint(rows)).encode()).hexdigest()[:16]
     path = os.path.join(cache_dir, f"features-{key}.npz")
     if os.path.exists(path):
         z = np.load(path, allow_pickle=True)
@@ -39,7 +39,7 @@ def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
             print(f"[features] loaded cache {path}")
         return {k: z[k] for k in z.files}
 
-    X, y, groups, kinds, exp, min_exp = [], [], [], [], [], []
+    X, y, groups, splits, kinds, exp, min_exp, weights = [], [], [], [], [], [], [], []
     side_cache = {}
     for i, r in enumerate(rows):
         rk = json.dumps(r["resume"], sort_keys=True)
@@ -51,13 +51,15 @@ def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
         X.append(res.vector())
         y.append(int(r["label"]))
         groups.append(r["group"])
+        splits.append(r.get("split_group", r["group"]))   # what the train/test split keeps together (real data: the RESUME)
+        weights.append(float(r.get("weight", 1.0)))
         kinds.append(r.get("kind", r.get("_src", "?")))
         exp.append(res.detail["experienceYears"] or 0.0)
         min_exp.append(res.detail["minExperienceYears"] or 0.0)
         if verbose and (i + 1) % 500 == 0:
             print(f"[features] {i + 1}/{len(rows)}")
-    out = dict(X=np.array(X, dtype=np.float64), y=np.array(y), groups=np.array(groups), kinds=np.array(kinds),
-               exp=np.array(exp), min_exp=np.array(min_exp))
+    out = dict(X=np.array(X, dtype=np.float64), y=np.array(y), groups=np.array(groups), splits=np.array(splits), weights=np.array(weights), kinds=np.array(kinds),
+           exp=np.array(exp), min_exp=np.array(min_exp))
     np.savez(path, **out)
     return out
 
@@ -103,3 +105,39 @@ def best_threshold(y_true, y_prob, beta=1.0):
         if f > best:
             best, best_t = f, float(t)
     return round(best_t, 3), round(float(best), 4)
+
+
+def ranking_metrics(y_true, y_prob, groups, k=5):
+    """The product RANKS candidates per role, so per-role ranking quality matters as much as accuracy.
+    -> mean precision@k, NDCG@k and MRR over roles that have at least one eligible candidate."""
+    y_true, y_prob, groups = np.asarray(y_true), np.asarray(y_prob), np.asarray(groups)
+    prec, ndcg, mrr = [], [], []
+    for g in np.unique(groups):
+        idx = np.where(groups == g)[0]
+        yt = y_true[idx]
+        if yt.sum() == 0 or len(idx) < 2:
+            continue
+        order = np.argsort(-y_prob[idx], kind="stable")
+        ranked = yt[order]
+        top = ranked[:k]
+        prec.append(top.mean())
+        dcg = float(sum(r / np.log2(i + 2) for i, r in enumerate(top)))
+        ideal = np.sort(yt)[::-1][:k]
+        idcg = float(sum(r / np.log2(i + 2) for i, r in enumerate(ideal)))
+        ndcg.append(dcg / idcg if idcg else 0.0)
+        hit = np.where(ranked == 1)[0]
+        mrr.append(1.0 / (hit[0] + 1) if len(hit) else 0.0)
+    f = lambda a: round(float(np.mean(a)), 4) if a else None
+    return {"roles": len(prec), f"precision@{k}": f(prec), f"ndcg@{k}": f(ndcg), "mrr": f(mrr)}
+
+
+def calibration_error(y_true, y_prob, bins=10):
+    """Expected calibration error: when the model says 70%, is ~70% of the time the candidate really a fit?"""
+    y_true, y_prob = np.asarray(y_true, dtype=float), np.asarray(y_prob, dtype=float)
+    edges = np.linspace(0, 1, bins + 1)
+    ece = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (y_prob >= lo) & ((y_prob < hi) | (hi == 1.0))
+        if m.any():
+            ece += m.mean() * abs(y_true[m].mean() - y_prob[m].mean())
+    return round(float(ece), 4)

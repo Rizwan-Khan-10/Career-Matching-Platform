@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, IsNumber, ArrayMinSize, Min, Max, MaxLength } from 'class-validator';
+import { IsArray, IsOptional, IsString, IsNumber, ArrayMaxSize, Min, Max, MaxLength } from 'class-validator';
 
 export class CreateJobRoleDto {
     @IsString()
@@ -6,14 +6,16 @@ export class CreateJobRoleDto {
     title: string;
 
     @IsArray()
-    @ArrayMinSize(0)
+    @ArrayMaxSize(40)
     @IsString({ each: true })
+    @MaxLength(60, { each: true })
     requiredSkills: string[];
 
     // nice-to-have skills: used by matching as a (smaller) bonus, never as a hard requirement
-    @IsOptional()
     @IsArray()
+    @ArrayMaxSize(40)
     @IsString({ each: true })
+    @MaxLength(60, { each: true })
     preferredSkills?: string[];
 
     @IsOptional()

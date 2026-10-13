@@ -27,7 +27,7 @@ export class ApplicantsController {
 
   @Roles('APPLICANT')
   @Post('me/avatar')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   updateAvatar(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
     return this.service.updateAvatar(req.user.userId, file);
   }

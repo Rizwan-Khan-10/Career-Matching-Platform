@@ -54,9 +54,16 @@ export default function RoleApplicantsPage() {
     });
 
     const openPdf = useMutation({
-        mutationFn: async (resumeId: string) => (await apiClient.get(`/resumes/${resumeId}/pdf`)).data as { url: string; fileName: string },
-        onSuccess: (data) => window.open(data.url, '_blank', 'noopener'),
-        onError: (err: any) => toast.error(err?.response?.data?.message || 'Could not open the resume, try again'),
+        mutationFn: async ({ resumeId }: { resumeId: string; popup: Window | null }) =>
+            (await apiClient.get(`/resumes/${resumeId}/pdf`)).data as { url: string; fileName: string },
+        onSuccess: (data, { popup }) => {
+            if (popup) { popup.opener = null; popup.location.href = data.url; }
+            else window.location.assign(data.url);
+        },
+        onError: (err: any, { popup }) => {
+            popup?.close();
+            toast.error(err?.response?.data?.message || 'Could not open the resume, try again');
+        },
     });
 
     const buttonClass = (active: boolean, tone: 'success' | 'danger') =>
@@ -133,7 +140,14 @@ export default function RoleApplicantsPage() {
                                         <button
                                             type="button"
                                             disabled={openPdf.isPending}
-                                            onClick={() => openPdf.mutate(match.resumeId!)}
+                                            onClick={() => {
+                                                const popup = window.open("about:blank", "_blank");
+
+                                                openPdf.mutate({
+                                                    resumeId: match.resumeId!,
+                                                    popup,
+                                                });
+                                            }}
                                             className="text-xs font-medium px-3 py-1.5 rounded-full bg-accent text-white disabled:opacity-50"
                                         >
                                             Download resume (PDF)

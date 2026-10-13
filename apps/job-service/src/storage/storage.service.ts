@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import { extensionOf, safeFileName } from '../common/upload';
 
 @Injectable()
 export class StorageService {
@@ -14,10 +15,8 @@ export class StorageService {
     }
 
     async uploadJobDoc(companyId: string, file: Express.Multer.File): Promise<string> {
-        const extension = file.originalname.includes('.')
-            ? file.originalname.split('.').pop()!
-            : 'pdf';
-        const publicId = `job-docs/${companyId}/${Date.now()}-${file.originalname}`;
+        const extension = extensionOf(file.originalname) || 'pdf';
+        const publicId = `job-docs/${companyId}/${Date.now()}-${safeFileName(file.originalname)}`;
 
         await new Promise<void>((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(

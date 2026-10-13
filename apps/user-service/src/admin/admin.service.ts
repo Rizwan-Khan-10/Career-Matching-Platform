@@ -3,8 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
-  listApplicants() { return this.prisma.applicantProfile.findMany(); }
-  listCompanies() { return this.prisma.companyProfile.findMany(); }
+  listApplicants() { return this.prisma.applicantProfile.findMany({ take: 500 }); }
+  listCompanies() { return this.prisma.companyProfile.findMany({ take: 500 }); }
 }

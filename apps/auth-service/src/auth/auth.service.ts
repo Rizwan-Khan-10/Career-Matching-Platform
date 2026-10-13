@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { MailQueueService } from '../mail/mail-queue.service'
 import axios from 'axios';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private redis: RedisService,
+    private mail: MailQueueService
   ) { }
 
   async signup(dto: SignupDto) {
@@ -76,8 +78,9 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    const generic = { message: 'If that email exists, a reset link has been sent.' };
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) return { message: 'If that email exists, a reset link has been sent.' };
+    if (!user) return generic;
 
     const resetToken = randomBytes(32).toString('hex');
     try {
@@ -85,12 +88,12 @@ export class AuthService {
     } catch {
       throw new BadRequestException('Password reset temporarily unavailable, try again shortly');
     }
-
-    // TODO once notification-service's email-queue producer pattern is copied here:
-    // push a 'password-reset' job with { email, resetToken } so the actual email gets sent.
-    console.log(`Password reset token for ${email}: ${resetToken}`); // temporary, until email wired up
-
-    return { message: 'If that email exists, a reset link has been sent.' };
+    try {
+      await this.mail.enqueuePasswordReset(user.email, resetToken);
+    } catch (err) {
+      console.error('could not queue the password-reset e-mail:', (err as Error).message); // never log the token itself
+    }
+    return generic;
   }
 
   async resetPassword(resetToken: string, newPassword: string) {
@@ -99,8 +102,10 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
-    try { await this.redis.client.del(`reset:${resetToken}`); } catch { }
-
+    try {
+      await this.redis.client.del(`reset:${resetToken}`);
+      await this.redis.client.del(`refresh:${userId}`); // a reset must sign out every old session
+    } catch { }
     return { message: 'Password updated successfully' };
   }
 

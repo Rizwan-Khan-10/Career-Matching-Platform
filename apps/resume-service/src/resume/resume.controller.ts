@@ -6,6 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ResumeService } from './resume.service';
 import { UpdateResumeDto } from './dto/update-resume.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
+import { uploadOptions } from '../common/upload';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('APPLICANT')
@@ -14,7 +15,7 @@ export class ResumeController {
     constructor(private service: ResumeService) { }
 
     @Post('upload')
-    @UseInterceptors(FileInterceptor('file'))
+    @UseInterceptors(FileInterceptor('file', uploadOptions))
     upload(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
         return this.service.upload(req.user.userId, file);
     }

@@ -38,6 +38,21 @@ ALIASES = {
     "ui/ux": "ui ux design", "ux": "ux design", "ui": "ui design",
 }
 
+def _load_extra_aliases() -> dict:
+    """Optional ESCO-derived aliases (built by training/build_aliases.py). Hand-written ALIASES always win."""
+    import json
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "artifacts", "skill_aliases.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {str(k): str(v) for k, v in json.load(f).items()}
+    except (OSError, ValueError):
+        return {}
+
+
+HAND_ALIASES = dict(ALIASES)                      # the hand-written map only (training/build_aliases.py needs it pure)
+ALIASES = {**_load_extra_aliases(), **ALIASES}
+
 # Short gloss appended ONLY for embedding input — helps the model disambiguate.
 GLOSS = {
     "java": "java programming language",

@@ -82,7 +82,7 @@ class MatchTest(unittest.TestCase):
         req = {"requiredSkills": ["Kubernetes", "Terraform", "AWS", "Linux"], "minExperienceYears": 3}
         self.assertFalse(evaluate_match(evil, "DevOps Engineer", req).eligible)
 
-        def test_jd_without_skills_does_not_get_a_free_pass(self):
+    def test_jd_without_skills_does_not_get_a_free_pass(self):
         # trained scorers carry a big negative has_req_skills weight (a constant-1 column in the training data)
         import json
         m = json.loads(json.dumps(scorer.DEFAULT_MODEL))

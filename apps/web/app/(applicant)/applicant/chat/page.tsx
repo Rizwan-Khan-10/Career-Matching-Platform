@@ -33,6 +33,13 @@ export default function ChatListPage() {
         onError: () => toast.error('Could not rename conversation'),
     });
 
+    const commitRename = (id: string, original: string) => {
+        if (renameMutation.isPending) return;
+        const name = editValue.trim();
+        if (!name || name === original) { setEditingId(null); return; }
+        renameMutation.mutate({ id, name });
+    };
+
     return (
         <div className="max-w-2xl">
             <h1 className="font-heading text-2xl text-ink mb-1">Chat</h1>
@@ -60,10 +67,10 @@ export default function ChatListPage() {
                                 value={editValue}
                                 onChange={(e) => setEditValue(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter') renameMutation.mutate({ id: convo.id, name: editValue });
+                                    if (e.key === 'Enter') commitRename(convo.id, convo.name);
                                     if (e.key === 'Escape') setEditingId(null);
                                 }}
-                                onBlur={() => renameMutation.mutate({ id: convo.id, name: editValue })}
+                                onBlur={() => commitRename(convo.id, convo.name)}
                                 className="flex-1 border border-hairline rounded px-2 py-1 text-sm font-body text-ink focus:outline-none focus:border-accent"
                             />
                         ) : (

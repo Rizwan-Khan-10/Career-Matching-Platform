@@ -185,11 +185,13 @@ export default function MatchesPage() {
   useEffect(() => {
     if (!token) return;
     const socket = getSocket(token);
-    socket.on('match.computed', () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
-    });
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ['matches'] });
+    const onFeedback = () => { refresh(); setTimeout(refresh, 1500); }; // ws can beat the DB write
+    socket.on('match.computed', refresh);
+    socket.on('feedback.ready', onFeedback);
     return () => {
-      socket.off('match.computed');
+      socket.off('match.computed', refresh);
+      socket.off('feedback.ready', onFeedback);
     };
   }, [token, queryClient]);
 

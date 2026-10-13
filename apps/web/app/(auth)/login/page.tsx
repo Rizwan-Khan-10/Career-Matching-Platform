@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
+import { decodeJwtPayload } from '@/lib/jwt';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,9 +28,10 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: (values: LoginFormValues) => apiClient.post('/auth/login', values),
     onSuccess: (res) => {
-      const { accessToken, role } = res.data;
-      const payload = JSON.parse(atob(accessToken.split('.')[1]));
-      setAuth(accessToken, role, payload.sub);
+      const { accessToken, refreshToken, role } = res.data;
+      const payload = decodeJwtPayload(accessToken);
+      if (!payload) { setServerError('Login failed, please try again'); return; }
+      setAuth(accessToken, role, payload.sub, refreshToken);
       setServerError(null);
       if (role === 'APPLICANT') router.push('/applicant/dashboard');
       else if (role === 'COMPANY') router.push('/company/dashboard');

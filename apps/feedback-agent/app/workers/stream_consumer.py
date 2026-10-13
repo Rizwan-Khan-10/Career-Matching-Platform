@@ -2,8 +2,10 @@ from app.core.redis_stream import consume_loop, publish
 from app.core.db import get_connection
 from app.services.gap_analyzer import generate_feedback
 from app.models.feedback import MatchComputedEvent
+import logging
 
 
+log = logging.getLogger("feedback.worker")
 MIN_SCORE_FOR_FEEDBACK = 0.2
 
 
@@ -14,7 +16,7 @@ def get_role_requirements(job_role_id: str) -> dict:
     row = cur.fetchone()
     cur.close()
     conn.close()
-    return row[0] if row else {}
+    return row[0] if row else None 
 
 
 def get_applicant_resume_data(applicant_id: str) -> dict:
@@ -31,11 +33,16 @@ def get_applicant_resume_data(applicant_id: str) -> dict:
 
 
 def get_selected_profiles(job_role_id: str, exclude_applicant_id: str, limit: int = 5) -> list:
-    """Parsed data of the best eligible applicants for this role (latest resume of each, highest score first)."""
+    """Anonymised benchmark of the best eligible applicants for this role: ONLY skills / years / education.
+    Never their projects, employers or free text - those candidates agreed to share with the company, not with other applicants."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        '''SELECT r."parsedData" FROM "matches_service"."Match" m
+        '''SELECT jsonb_build_object(
+                  'skills', r."parsedData"->'skills',
+                  'experienceYears', r."parsedData"->'experienceYears',
+                  'education', r."parsedData"->'education')
+           FROM "matches_service"."Match" m
            JOIN LATERAL (
                SELECT "parsedData" FROM "resumes_service"."Resume"
                WHERE "applicantId" = m."applicantId" AND status = 'parsed'
@@ -60,7 +67,13 @@ def handle(data: dict):
         return  # hopeless/unrelated role: advice would be noise and costs an LLM call
 
     requirements = get_role_requirements(event.jobRoleId)
+    if requirements is None:
+        log.info("role %s no longer exists, skipping feedback", event.jobRoleId)
+        return
     applicant_data = get_applicant_resume_data(event.applicantId)
+    if not applicant_data:
+        log.info("no parsed resume for applicant %s, skipping feedback", event.applicantId)
+        return
     selected = get_selected_profiles(event.jobRoleId, event.applicantId)
 
     analysis = {"reason": event.reason, "missingSkills": event.missingSkills, "partialSkills": event.partialSkills,

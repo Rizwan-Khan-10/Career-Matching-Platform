@@ -27,8 +27,8 @@ export class EmailQueueService {
         await this.queue.add('eligibility-result', { applicantId, jobRoleId, eligible });
     }
 
-    async enqueueFeedbackEmail(applicantId: string, feedback: string) {
-        await this.queue.add('feedback-guide', { applicantId, feedback });
+    async enqueueFeedbackEmail(applicantId: string, feedback: string, roleTitle?: string | null) {
+        await this.queue.add('feedback-guide', { applicantId, feedback, roleTitle: roleTitle ?? null });
     }
 
     /** Company is INFORMED (no attachment) that an approved candidate is waiting. jobId = matchId -> never queued twice. */

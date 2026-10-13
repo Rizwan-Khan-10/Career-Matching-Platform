@@ -19,3 +19,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+.cache/
+.parse_cache/
+*.jsonl

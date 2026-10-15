@@ -5,10 +5,14 @@ from groq import Groq, RateLimitError, APIStatusError, APIConnectionError, APITi
 from app.core.config import GROQ_API_KEY
 
 client = Groq(api_key=GROQ_API_KEY)
-MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# llama-3.3-70b-versatile was shut down by Groq on 2026-08-16 (404 "model does not exist"). Override with GROQ_MODEL in .env.
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+# gpt-oss models "think" before answering; for extraction "low" is enough and uses far fewer tokens (rate limit!). low | medium | high
+REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
 
 # Controlled-call settings
-MIN_SECONDS_BETWEEN_CALLS = 1.5   # simple pacing — avoids bursts that trip the rate limit
+MIN_SECONDS_BETWEEN_CALLS = 1.5   # simple pacing: avoids bursts that trip the rate limit
 MAX_RETRIES = 4
 BASE_BACKOFF_SECONDS = 2          # doubles each retry: 2s, 4s, 8s, 16s
 
@@ -39,19 +43,28 @@ def ask_llm(system_prompt: str, user_prompt: str, json_mode: bool = True, temper
         )
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}   # only send the key when needed (None is not "unset")
+        if MODEL.startswith("openai/gpt-oss"):
+            kwargs["extra_body"] = {"reasoning_effort": REASONING_EFFORT}   # extra_body works with every groq SDK version
         try:
-            return client.chat.completions.create(**kwargs).choices[0].message.content
+            content = client.chat.completions.create(**kwargs).choices[0].message.content
+            if not content or not content.strip():
+                raise RuntimeError(f"{MODEL} returned an empty answer")   # reasoning models can run out of tokens while thinking
+            return content
         except (RateLimitError, APIConnectionError, APITimeoutError) as e:
             if attempt == MAX_RETRIES:
                 raise
             wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-            print(f"Groq {type(e).__name__} (attempt {attempt}/{MAX_RETRIES}) — waiting {wait}s before retry")
+            print(f"Groq {type(e).__name__} (attempt {attempt}/{MAX_RETRIES}) - waiting {wait}s before retry")
             time.sleep(wait)
         except APIStatusError as e:
-            # 5xx = transient -> retry; anything else (bad request, auth) -> fail fast
+            # 5xx = transient -> retry; anything else (404 model gone, bad request, auth) -> fail fast
             if e.status_code >= 500 and attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                print(f"Groq server error {e.status_code} (attempt {attempt}/{MAX_RETRIES}) — waiting {wait}s before retry")
+                print(f"Groq server error {e.status_code} (attempt {attempt}/{MAX_RETRIES}) - waiting {wait}s before retry")
                 time.sleep(wait)
             else:
                 raise
+        except RuntimeError:
+            if attempt == MAX_RETRIES:
+                raise
+            print(f"empty LLM answer (attempt {attempt}/{MAX_RETRIES}) - retrying")

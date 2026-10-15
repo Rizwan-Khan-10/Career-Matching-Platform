@@ -173,27 +173,46 @@ def _h(text):
 
 
 class DiskCache:
-    """jsonl-backed {key: value}; append-only, so killing the script never loses parsed items."""
+    """jsonl-backed {key: value}; append-only, so killing the script never loses parsed items.
+
+    Only RESULTS are cached: a parsed document, or a document the parser legitimately found nothing in ("empty").
+    A crash / API error (e.g. 404 model gone, 429, network) is NEVER cached, so fixing the cause and re-running retries it.
+    """
+    FAIL_LIMIT = 5          # this many errors in a row = a systematic problem (wrong model, bad key): stop instead of burning 600 calls
+    _in_a_row = 0           # shared by the resume and the JD cache
+
     def __init__(self, path):
-        self.path, self.data = path, {}
+        self.path, self.data, self.failed = path, {}, set()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 for line in f:
-                    k, v = json.loads(line)
-                    self.data[k] = v
+                    rec = json.loads(line)
+                    if rec[1] is None and len(rec) < 3:
+                        continue            # older runs cached errors as null: retry those
+                    self.data[rec[0]] = rec[1]
 
     def get_or_compute(self, key, fn):
-        if key not in self.data:
-            try:
-                v = fn()
-            except Exception as exc:   # one bad document must not stop a 1-hour run
-                print(f"  parse failed ({key}): {str(exc)[:120]}")
-                v = None
-            self.data[key] = v
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(json.dumps([key, v]) + "\n")
-        return self.data[key]
+        if key in self.data:
+            return self.data[key]
+        if key in self.failed:
+            return None
+        try:
+            v = fn()
+        except Exception as exc:            # one bad document must not stop a 1-hour run
+            self.failed.add(key)
+            DiskCache._in_a_row += 1
+            print(f"  parse failed ({key}): {str(exc)[:200]}")
+            if DiskCache._in_a_row >= self.FAIL_LIMIT:
+                raise SystemExit(f"\n{self.FAIL_LIMIT} parses failed in a row - stopping. Last error: {str(exc)[:300]}\n"
+                                 "Fix the cause (GROQ_MODEL / GROQ_API_KEY / network) and run the same command again: "
+                                 "everything parsed so far is cached.")
+            return None
+        DiskCache._in_a_row = 0
+        self.data[key] = v
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps([key, v] if v is not None else [key, None, "empty"]) + "\n")
+        return v
 
 
 def convert(pairs, parse_resume, parse_jd, cache_dir, potential="drop", max_resumes=None, max_jds=None):

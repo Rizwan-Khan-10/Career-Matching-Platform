@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -32,6 +32,13 @@ export class ResumeController {
     @Get('mine')
     mine(@Req() req: AuthenticatedRequest) {
         return this.service.getByApplicant(req.user.userId);
+    }
+
+    // Applicant confirms the parsed data: this is what starts matching (resume.confirmed)
+    @Post(':id/confirm')
+    @HttpCode(HttpStatus.OK)
+    confirm(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+        return this.service.confirm(id, req.user.userId);
     }
 
     // Company/admin: signed link to the PDF of a resume the applicant approved sharing with them

@@ -19,4 +19,12 @@ describe('ResumeController roles', () => {
         const body = controller.targetRoles();
         expect(body.tracks.find((t) => t.id === 'backend')?.stacks[0]).toEqual({ id: 'java', label: 'Java' });
     });
+
+    it('delegates confirm to the service with the id from the URL and the user from the JWT', async () => {
+        const confirm = jest.fn().mockResolvedValue({ id: 'r1' });
+        const controller = new ResumeController({ confirm } as any);
+        await controller.confirm('r1', { user: { userId: 'app-1', role: 'APPLICANT' } } as any);
+        expect(confirm).toHaveBeenCalledWith('r1', 'app-1');
+        expect(rolesOf(ResumeController.prototype.confirm)).toBeUndefined(); // applicant-only via the class-level role
+    });
 });

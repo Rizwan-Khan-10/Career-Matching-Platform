@@ -5,6 +5,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ResumeService } from './resume.service';
 import { UpdateResumeDto } from './dto/update-resume.dto';
+import { UploadResumeDto } from './dto/upload-resume.dto';
+import { getTargetRoles } from '../taxonomy/taxonomy';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { uploadOptions } from '../common/upload';
 
@@ -14,10 +16,17 @@ import { uploadOptions } from '../common/upload';
 export class ResumeController {
     constructor(private service: ResumeService) { }
 
+    // Taxonomy for the upload dropdowns and the company role form: any logged-in role
+    @Roles('APPLICANT', 'COMPANY', 'ADMIN')
+    @Get('target-roles')
+    targetRoles() {
+        return getTargetRoles();
+    }
+
     @Post('upload')
     @UseInterceptors(FileInterceptor('file', uploadOptions))
-    upload(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
-        return this.service.upload(req.user.userId, file);
+    upload(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File, @Body() dto: UploadResumeDto) {
+        return this.service.upload(req.user.userId, file, dto);
     }
 
     @Get('mine')

@@ -1,0 +1,12 @@
+{
+  "tracks": [
+    { "id": "frontend", "label": "Frontend", "stacks": ["javascript", "other"] },
+    { "id": "backend", "label": "Backend", "stacks": ["java", "python", "javascript", "dotnet", "go", "php", "ruby", "other"] },
+    { "id": "fullstack", "label": "Full-stack", "stacks": ["java", "python", "javascript", "dotnet", "php", "other"] },
+    { "id": "mobile", "label": "Mobile", "stacks": ["android", "ios", "cross_platform", "other"] },
+    { "id": "data_ml", "label": "Data / ML / AI", "stacks": ["data_analyst", "data_engineer", "ml_ai", "other"] },
+    { "id": "devops_cloud", "label": "DevOps / Cloud", "stacks": ["aws", "azure", "gcp", "general", "other"] },
+    { "id": "qa", "label": "QA / Testing", "stacks": ["manual", "automation", "other"] },
+    { "id": "other", "label": "Other", "stacks": [] }
+  ]
+}

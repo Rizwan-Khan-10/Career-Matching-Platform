@@ -1,12 +1,14 @@
 /// <reference types="multer" />
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
 import { extensionOf, safeFileName } from '../common/upload';
 
 @Injectable()
 export class StorageService {
+    private readonly logger = new Logger(StorageService.name);
+
     constructor() {
         cloudinary.config({
             cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -48,5 +50,23 @@ export class StorageService {
             type: 'private',
             expires_at: expiresAt,
         });
+    }
+
+    /** Deletes one private raw file. true = gone (deleted or already missing); false = Cloudinary failed, keep the DB row and retry later. */
+    async destroy(publicId: string): Promise<boolean> {
+        try {
+            const res = await cloudinary.uploader.destroy(publicId, { resource_type: 'raw', type: 'private', invalidate: true });
+            return res?.result === 'ok' || res?.result === 'not found';
+        } catch (err) {
+            this.logger.warn(`Cloudinary delete failed for ${publicId}: ${(err as Error).message}`);
+            return false;
+        }
+    }
+
+    /** Original upload and the generated PDF (if any). true only when both are gone. */
+    async destroyResumeFiles(publicId: string, pdfPublicId?: string | null): Promise<boolean> {
+        const original = await this.destroy(publicId);
+        const pdf = pdfPublicId ? await this.destroy(pdfPublicId) : true;
+        return original && pdf;
     }
 }

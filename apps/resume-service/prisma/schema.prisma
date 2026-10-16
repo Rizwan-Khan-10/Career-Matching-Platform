@@ -16,8 +16,18 @@ model Resume {
   pdfPublicId        String?   // PDF version used when the applicant approves sharing (set by resume-parser-agent)
   status             String   @default("pending")
   parsedData         Json?
+
+  // Target role (contract 4.9/4.10). Defaults keep rows that existed before this change valid
+  // ("other" = applicant opted out of gating); new uploads always send real values.
+  targetTrack        String    @default("other")
+  targetStack        String    @default("other")
+  targetKey          String    @default("other:other") // "<track>:<stack>"
+  confirmedAt        DateTime? // set by POST /resumes/:id/confirm; active resume = parsed + confirmedAt set + supersededAt null
+  supersededAt       DateTime? // set when a newer confirmed resume replaces this one but an approved match still uses it
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  @@index([applicantId, targetKey])
   @@schema("resumes_service")
 }

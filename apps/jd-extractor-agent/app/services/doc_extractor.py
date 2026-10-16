@@ -1,6 +1,7 @@
 import fitz
 import httpx
 import io
+import logging
 import pytesseract
 from PIL import Image
 from docx import Document
@@ -8,6 +9,7 @@ import docx2txt
 from urllib.parse import urlparse, parse_qs
 from app.core.config import TESSERACT_PATH
 
+log = logging.getLogger("jd.docx")
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp")
@@ -54,12 +56,12 @@ def extract_text_from_docx_bytes(docx_bytes: bytes) -> str:
         if text.strip():
             return text
     except Exception as e:
-        print(f"python-docx failed: {e}")
+        log.warning("python-docx failed: %s", e)
 
     try:
         return docx2txt.process(io.BytesIO(docx_bytes))
     except Exception as e:
-        print(f"docx2txt fallback also failed: {e}")
+        log.warning("docx2txt fallback also failed: %s", e)
         return ""
 
 

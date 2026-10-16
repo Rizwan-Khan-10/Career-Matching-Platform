@@ -1,38 +1,49 @@
-from app.core.redis_stream import consume_loop, publish
+import json
+import logging
+import uuid
+
 from app.core.db import get_connection
 from app.core.embeddings import embed, to_pgvector
+from app.core.logging_setup import bind_request_id
+from app.core.redis_stream import consume_loop, publish
+from app.models.jd import JdUploadedEvent
 from app.services.doc_extractor import extract_text_from_url
 from app.services.jd_parser import parse_jd
 from app.services.profile_text import role_profile_text
-from app.models.jd import JdUploadedEvent
-import json
-import uuid
+
+log = logging.getLogger("jd.extractor")
 
 
 def ensure_embedding_table():
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS job_role_embeddings (
-            job_role_id UUID PRIMARY KEY,
-            embedding VECTOR(384)
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS job_role_embeddings (
+                job_role_id UUID PRIMARY KEY,
+                embedding VECTOR(384)
+            );
+        """)
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
 
 
 def mark_failed(job_posting_id: str, reason: str):
+    if not job_posting_id:
+        return
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        'UPDATE "jobs_service"."JobPosting" SET status = %s, "errorMessage" = %s WHERE id = %s',
-        ("failed", reason, job_posting_id),
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'UPDATE "jobs_service"."JobPosting" SET status = %s, "errorMessage" = %s WHERE id = %s',
+            ("failed", reason, job_posting_id),
+        )
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
 
 
 def get_posting_state(job_posting_id: str):
@@ -49,21 +60,26 @@ def get_posting_state(job_posting_id: str):
 
 
 def on_dead(data: dict, error: Exception):
-    mark_failed(data.get("jobPostingId", ""), f"Processing failed after several attempts: {error}")
+    job_posting_id = (data or {}).get("jobPostingId")
+    if not job_posting_id:
+        log.warning("dead-lettered event has no jobPostingId, nothing to mark failed")
+        return
+    mark_failed(job_posting_id, f"Processing failed after several attempts: {error}")
 
 
 def handle(data: dict):
     event = JdUploadedEvent(**data)  # validates incoming event shape
+    request_id = bind_request_id(event.requestId)
 
     # The company can stop a job at any time. A stopped job is NOT scanned (saves the download + LLM call),
     # and an already extracted one is never processed twice (redelivery / reopen races).
     state = get_posting_state(event.jobPostingId)
     if state is None:
-        print(f"jd.uploaded for unknown posting {event.jobPostingId}, ignoring")
+        log.warning("jd.uploaded for unknown posting %s, ignoring", event.jobPostingId)
         return
     status, stopped = state
     if stopped:
-        print(f"job {event.jobPostingId} is stopped, skipping scan")
+        log.info("job %s is stopped, skipping scan", event.jobPostingId)
         return
     if status == "extracted":
         return
@@ -72,13 +88,11 @@ def handle(data: dict):
     try:
         text = extract_text_from_url(event.fileUrl)
         if not text or not text.strip():
-            raise ValueError(f"No text could be extracted from JD {event.jobPostingId} ({event.fileUrl})")
+            raise ValueError("No text could be extracted from the job document")
         parsed = parse_jd(text)  # validated ParsedJdData with >= 1 usable role (else ValueError)
-    except ValueError as e:
-        mark_failed(event.jobPostingId, str(e))
-        return
-    except json.JSONDecodeError as e:
-        mark_failed(event.jobPostingId, f"Could not parse job document content: {e}")
+    except ValueError as e:      # includes json.JSONDecodeError and pydantic ValidationError
+        log.warning("job %s marked failed (content error)", event.jobPostingId)
+        mark_failed(event.jobPostingId, f"Could not read the job document: {e}")
         return
 
     conn = get_connection()
@@ -91,7 +105,7 @@ def handle(data: dict):
         locked = cur.fetchone()
         if locked is None or locked[1] is not None or locked[0] == "extracted":
             conn.rollback()
-            print(f"job {event.jobPostingId} was stopped/finished while scanning, discarding the result")
+            log.info("job %s was stopped/finished while scanning, discarding the result", event.jobPostingId)
             return
 
         for role in parsed.roles:
@@ -123,7 +137,9 @@ def handle(data: dict):
         "jobPostingId": event.jobPostingId,
         "companyId": event.companyId,
         "roleIds": role_ids,
+        "requestId": request_id,
     })
+    log.info("job %s extracted: %s role(s)", event.jobPostingId, len(role_ids))
 
 
 def run():

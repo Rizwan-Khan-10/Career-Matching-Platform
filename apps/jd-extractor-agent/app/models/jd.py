@@ -1,6 +1,9 @@
 from typing import Optional
 from pydantic import BaseModel, field_validator
-from app.services.jd_numbers import coerce_min_years
+from app.services.jd_numbers import (
+    clean_branches, coerce_backlogs, coerce_cgpa, coerce_level, coerce_min_years, coerce_passing_years,
+)
+from app.services.taxonomy import clean_track
 
 
 def _str(v) -> str:
@@ -12,9 +15,12 @@ class JdUploadedEvent(BaseModel):
     jobPostingId: str
     companyId: str
     fileUrl: str
+    requestId: Optional[str] = None
 
 
 class JobRoleData(BaseModel):
+    """One role = JobRole.requirements (contract §4.1). New keys: absent / null = rule not set.
+    track / stacks come from the taxonomy (unsure -> 'other' / []); the academic rules are null unless the JD states them."""
     title: str = ""
     summary: Optional[str] = None
     requiredSkills: list[str] = []
@@ -25,6 +31,13 @@ class JobRoleData(BaseModel):
     seniority: Optional[str] = None
     location: Optional[str] = None
     employmentType: Optional[str] = None
+    level: str = "any"
+    track: str = "other"
+    stacks: list[str] = []
+    minCgpa: Optional[float] = None
+    allowedBranches: Optional[list[str]] = None
+    passingYears: Optional[list[int]] = None
+    maxBacklogs: Optional[int] = None
 
     @field_validator("requiredSkills", "preferredSkills", "responsibilities", mode="before")
     @classmethod
@@ -52,6 +65,46 @@ class JobRoleData(BaseModel):
     def v_min_exp(cls, v):
         return coerce_min_years(v)
 
+    @field_validator("level", mode="before")
+    @classmethod
+    def v_level(cls, v):
+        return coerce_level(v)
+
+    @field_validator("track", mode="before")
+    @classmethod
+    def v_track(cls, v):
+        return clean_track(v)
+
+    @field_validator("stacks", mode="before")
+    @classmethod
+    def v_stacks(cls, v):
+        # generic clean-up only; filtering by the chosen track happens in jd_parser (needs the track)
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = v.split(",")
+        return [str(x).strip().lower() for x in v if str(x).strip()] if isinstance(v, (list, tuple)) else []
+
+    @field_validator("minCgpa", mode="before")
+    @classmethod
+    def v_min_cgpa(cls, v):
+        return coerce_cgpa(v)
+
+    @field_validator("allowedBranches", mode="before")
+    @classmethod
+    def v_branches(cls, v):
+        return clean_branches(v)
+
+    @field_validator("passingYears", mode="before")
+    @classmethod
+    def v_years(cls, v):
+        return coerce_passing_years(v)
+
+    @field_validator("maxBacklogs", mode="before")
+    @classmethod
+    def v_backlogs(cls, v):
+        return coerce_backlogs(v)
+
 
 class ParsedJdData(BaseModel):
     """Shape Groq's JSON output must match."""
@@ -68,3 +121,4 @@ class JdExtractedEvent(BaseModel):
     jobPostingId: str
     companyId: str
     roleIds: list[str]
+    requestId: Optional[str] = None

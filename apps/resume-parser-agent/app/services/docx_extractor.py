@@ -1,7 +1,10 @@
 import io
+import logging
 import httpx
 from docx import Document
 import docx2txt
+
+log = logging.getLogger("resume.docx")
 
 
 def extract_text_from_docx_bytes(docx_bytes: bytes) -> str:
@@ -14,14 +17,14 @@ def extract_text_from_docx_bytes(docx_bytes: bytes) -> str:
         if text.strip():
             return text
     except Exception as e:
-        print(f"python-docx failed: {e}")
+        log.warning("python-docx failed: %s", e)
 
     # Fallback method: docx2txt (sometimes catches text python-docx misses,
     # e.g. text inside tables or text boxes)
     try:
         return docx2txt.process(io.BytesIO(docx_bytes))
     except Exception as e:
-        print(f"docx2txt fallback also failed: {e}")
+        log.warning("docx2txt fallback also failed: %s", e)
         return ""
 
 

@@ -1,9 +1,11 @@
 import os
+import logging
 import threading
 import time
 from groq import Groq, RateLimitError, APIStatusError, APIConnectionError, APITimeoutError
 from app.core.config import GROQ_API_KEY
 
+log = logging.getLogger("resume.llm")
 client = Groq(api_key=GROQ_API_KEY)
 
 # llama-3.3-70b-versatile was shut down by Groq on 2026-08-16 (404 "model does not exist"). Override with GROQ_MODEL in .env.
@@ -54,17 +56,17 @@ def ask_llm(system_prompt: str, user_prompt: str, json_mode: bool = True, temper
             if attempt == MAX_RETRIES:
                 raise
             wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-            print(f"Groq {type(e).__name__} (attempt {attempt}/{MAX_RETRIES}) - waiting {wait}s before retry")
+            log.warning("Groq %s (attempt %s/%s) - waiting %ss before retry", type(e).__name__, attempt, MAX_RETRIES, wait)
             time.sleep(wait)
         except APIStatusError as e:
             # 5xx = transient -> retry; anything else (404 model gone, bad request, auth) -> fail fast
             if e.status_code >= 500 and attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                print(f"Groq server error {e.status_code} (attempt {attempt}/{MAX_RETRIES}) - waiting {wait}s before retry")
+                log.warning("Groq server error %s (attempt %s/%s) - waiting %ss before retry", e.status_code, attempt, MAX_RETRIES, wait)
                 time.sleep(wait)
             else:
                 raise
         except RuntimeError:
             if attempt == MAX_RETRIES:
                 raise
-            print(f"empty LLM answer (attempt {attempt}/{MAX_RETRIES}) - retrying")
+            log.warning("empty LLM answer (attempt %s/%s) - retrying", attempt, MAX_RETRIES)

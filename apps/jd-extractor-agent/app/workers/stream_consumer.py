@@ -60,7 +60,11 @@ def get_posting_state(job_posting_id: str):
 
 
 def on_dead(data: dict, error: Exception):
-    mark_failed(data.get("jobPostingId", ""), f"Processing failed after several attempts: {error}")
+    job_posting_id = (data or {}).get("jobPostingId")
+    if not job_posting_id:
+        log.warning("dead-lettered event has no jobPostingId, nothing to mark failed")
+        return
+    mark_failed(job_posting_id, f"Processing failed after several attempts: {error}")
 
 
 def handle(data: dict):

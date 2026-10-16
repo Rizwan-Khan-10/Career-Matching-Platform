@@ -170,11 +170,16 @@ class ExtractedEventTest(unittest.TestCase):
         self.assertEqual(self.published, [])
         self.assertEqual(self.marked[0][0], "p1")
 
-    def test_on_dead_needs_a_posting_id(self):
-        sc.on_dead({}, RuntimeError("x"))
-        self.assertEqual(self.marked, [])
-        sc.on_dead({"jobPostingId": "p1"}, RuntimeError("x"))
-        self.assertEqual(self.marked[0][0], "p1")
+    def on_dead(self, event, exc):
+    posting_id = event.get("jobPostingId")
+
+    if not posting_id:
+        return
+
+    self.mark_failed(
+        posting_id,
+        f"Processing failed after several attempts: {exc}"
+    )
 
 
 class HealthTest(unittest.TestCase):

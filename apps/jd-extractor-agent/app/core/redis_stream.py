@@ -1,7 +1,13 @@
 import json
+import logging
 import time
+
 import redis
+
 from app.core.config import REDIS_URL
+from app.core.logging_setup import bind_request_id, request_id_var
+
+log = logging.getLogger("redis.stream")
 
 r = redis.from_url(
     REDIS_URL,
@@ -14,6 +20,7 @@ r = redis.from_url(
 RECLAIM_IDLE_MS = 60_000
 RECLAIM_EVERY_SECONDS = 30
 MAX_DELIVERIES = 4
+STREAM_MAXLEN = 10_000   # contract §3.2: every XADD uses MAXLEN ~ 10000
 
 
 def ensure_group(stream: str, group: str):
@@ -24,19 +31,24 @@ def ensure_group(stream: str, group: str):
 
 
 def publish(stream: str, data: dict):
-    r.xadd(stream, {"data": json.dumps(data)})
+    """XADD with MAXLEN ~ 10000. requestId (contract §3.1): kept if given, else the id of the message being
+    handled right now, else a fresh uuid."""
+    payload = dict(data)
+    payload["requestId"] = payload.get("requestId") or bind_request_id(request_id_var.get())
+    r.xadd(stream, {"data": json.dumps(payload)}, maxlen=STREAM_MAXLEN, approximate=True)
 
 
 def _dead_letter(stream, group, msg_id, fields, error, on_dead, data=None):
     try:
-        r.xadd(f"{stream}.dead", {"origId": msg_id, "error": str(error)[:500], "data": fields.get("data", "")})
+        r.xadd(f"{stream}.dead", {"origId": msg_id, "error": str(error)[:500], "data": fields.get("data", "")},
+               maxlen=STREAM_MAXLEN, approximate=True)
     finally:
         r.xack(stream, group, msg_id)
     if on_dead and data is not None:
         try:
             on_dead(data, error)
         except Exception as exc:
-            print(f"on_dead callback failed for {msg_id}: {exc}")
+            log.error("on_dead callback failed for %s: %s", msg_id, exc)
 
 
 def _process(stream, group, msg_id, fields, handler, on_dead, deliveries):
@@ -45,11 +57,13 @@ def _process(stream, group, msg_id, fields, handler, on_dead, deliveries):
     except Exception as exc:
         _dead_letter(stream, group, msg_id, fields, f"undecodable message: {exc}", None)
         return
+    # bind (or clear) the requestId for THIS message so logs / events never carry the previous message's id
+    request_id_var.set(data.get("requestId") if isinstance(data, dict) else None)
     try:
         handler(data)
         r.xack(stream, group, msg_id)
     except Exception as exc:
-        print(f"Error handling {stream} {msg_id} (delivery {deliveries}/{MAX_DELIVERIES}): {exc}")
+        log.error("Error handling %s %s (delivery %s/%s): %s", stream, msg_id, deliveries, MAX_DELIVERIES, exc)
         if deliveries >= MAX_DELIVERIES:
             _dead_letter(stream, group, msg_id, fields, exc, on_dead, data)
         # else: stays pending -> reclaimed after RECLAIM_IDLE_MS
@@ -85,5 +99,5 @@ def consume_loop(stream: str, group: str, consumer_name: str, handler, on_dead=N
                     for msg_id, fields in messages:
                         _process(stream, group, msg_id, fields, handler, on_dead, 1)
         except Exception as exc:
-            print(f"Redis stream error ({stream}): {exc}")
+            log.error("Redis stream error (%s): %s", stream, exc)
             time.sleep(2)

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ResumeService } from './resume.service';
+import { ResumeRemovalService } from '../cleanup/resume-removal.service';
 
 const file = { originalname: 'cv.pdf', size: 100, buffer: Buffer.from('x') } as Express.Multer.File;
 const dto = { targetTrack: 'backend', targetStack: 'java' };
@@ -54,7 +55,8 @@ function setup() {
         uploadResume: jest.fn().mockResolvedValue({ publicId: 'resumes/a/new.pdf', fileUrl: 'http://signed' }),
         destroyResumeFiles: jest.fn().mockResolvedValue(true),
     };
-    const service = new ResumeService(prisma as any, redis as any, storage as any);
+    const removal = new ResumeRemovalService(prisma as any, redis as any, storage as any);
+    const service = new ResumeService(prisma as any, redis as any, storage as any, removal);
     return { prisma, tx, redis, storage, service };
 }
 
@@ -366,5 +368,73 @@ describe('ResumeService.updateOwn', () => {
         prisma.resume.findFirst.mockResolvedValue({ id: 'other-pending' });
         await expect(service.updateOwn('new-1', 'app-1', { targetStack: 'python' })).rejects.toBeInstanceOf(ConflictException);
         expect(prisma.resume.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('ResumeService.deleteOwn', () => {
+    const active = { ...parsedResume, confirmedAt: new Date('2026-01-01'), pdfPublicId: 'resumes/app-1/pdf/new-1.pdf' };
+
+    it('returns 404 for an unknown resume and 403 for someone else\'s', async () => {
+        const { service, prisma } = setup();
+        prisma.resume.findUnique.mockResolvedValueOnce(null);
+        await expect(service.deleteOwn('x', 'app-1')).rejects.toBeInstanceOf(NotFoundException);
+        prisma.resume.findUnique.mockResolvedValueOnce({ ...parsedResume, applicantId: 'other' });
+        await expect(service.deleteOwn('new-1', 'app-1')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('returns 409 and deletes nothing when an approved match uses the resume', async () => {
+        const { service, prisma, storage, redis } = setup();
+        prisma.resume.findUnique.mockResolvedValue(active);
+        prisma.$queryRaw.mockResolvedValue([{ ok: 1 }]);
+
+        await expect(service.deleteOwn('new-1', 'app-1')).rejects.toBeInstanceOf(ConflictException);
+        expect(storage.destroyResumeFiles).not.toHaveBeenCalled();
+        expect(prisma.resume.delete).not.toHaveBeenCalled();
+        expect(redis.client.xadd).not.toHaveBeenCalled();
+    });
+
+    it('removes an active resume completely (original, PDF, embedding, row) and publishes resume.deleted', async () => {
+        const { service, prisma, storage, redis } = setup();
+        prisma.resume.findUnique.mockResolvedValue(active);
+
+        await expect(service.deleteOwn('new-1', 'app-1')).resolves.toEqual({ deleted: true });
+        expect(storage.destroyResumeFiles).toHaveBeenCalledWith('resumes/app-1/new.pdf', 'resumes/app-1/pdf/new-1.pdf');
+        expect(prisma.$executeRaw).toHaveBeenCalled(); // resume_embeddings row
+        expect(prisma.resume.delete).toHaveBeenCalledWith({ where: { id: 'new-1' } });
+        expect(published(redis)).toEqual([['resume.deleted', expect.objectContaining({ resumeId: 'new-1', applicantId: 'app-1' })]]);
+    });
+
+    it('publishes no resume.deleted for an unconfirmed resume (it was never active)', async () => {
+        const { service, prisma, redis } = setup();
+        await service.deleteOwn('new-1', 'app-1'); // parsedResume is unconfirmed
+        expect(prisma.resume.delete).toHaveBeenCalled();
+        expect(redis.client.xadd).not.toHaveBeenCalled();
+    });
+
+    it('publishes no resume.deleted for a superseded resume (resume.superseded was already sent)', async () => {
+        const { service, prisma, redis } = setup();
+        prisma.resume.findUnique.mockResolvedValue({ ...active, supersededAt: new Date() });
+        await service.deleteOwn('new-1', 'app-1');
+        expect(prisma.resume.delete).toHaveBeenCalled();
+        expect(redis.client.xadd).not.toHaveBeenCalled();
+    });
+
+    it('returns 503, keeps the row and publishes nothing when Cloudinary fails', async () => {
+        const { service, prisma, storage, redis } = setup();
+        prisma.resume.findUnique.mockResolvedValue(active);
+        storage.destroyResumeFiles.mockResolvedValue(false);
+
+        await expect(service.deleteOwn('new-1', 'app-1')).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(prisma.resume.delete).not.toHaveBeenCalled();
+        expect(redis.client.xadd).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 (not a wrong 409) when the approved-match check cannot be made', async () => {
+        const { service, prisma, storage } = setup();
+        prisma.resume.findUnique.mockResolvedValue(active);
+        prisma.$queryRaw.mockRejectedValue(new Error('db down'));
+
+        await expect(service.deleteOwn('new-1', 'app-1')).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(storage.destroyResumeFiles).not.toHaveBeenCalled();
     });
 });

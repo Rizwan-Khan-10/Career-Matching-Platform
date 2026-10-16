@@ -27,4 +27,12 @@ describe('ResumeController roles', () => {
         expect(confirm).toHaveBeenCalledWith('r1', 'app-1');
         expect(rolesOf(ResumeController.prototype.confirm)).toBeUndefined(); // applicant-only via the class-level role
     });
+
+    it('delegates delete to the service with the JWT user and keeps it applicant-only', async () => {
+        const deleteOwn = jest.fn().mockResolvedValue({ deleted: true });
+        const controller = new ResumeController({ deleteOwn } as any);
+        await expect(controller.remove('r1', { user: { userId: 'app-1', role: 'APPLICANT' } } as any)).resolves.toEqual({ deleted: true });
+        expect(deleteOwn).toHaveBeenCalledWith('r1', 'app-1');
+        expect(rolesOf(ResumeController.prototype.remove)).toBeUndefined(); // class-level APPLICANT
+    });
 });

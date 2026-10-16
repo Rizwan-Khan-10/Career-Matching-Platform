@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
+import { ResumeRemovalService, RemoveOutcome } from '../cleanup/resume-removal.service';
 import { UpdateResumeDto } from './dto/update-resume.dto';
 import { Prisma } from '../generated/prisma';
 import type { Resume } from '../generated/prisma';
@@ -33,6 +34,7 @@ export class ResumeService {
         private prisma: PrismaService,
         private redis: RedisService,
         private storage: StorageService,
+        private removal: ResumeRemovalService,
     ) { }
 
     async upload(applicantId: string, file: Express.Multer.File, dto: UploadResumeDto) {
@@ -76,7 +78,8 @@ export class ResumeService {
             JSON.stringify({ resumeId: resume.id, applicantId, fileUrl }),
         );
 
-        for (const old of stale) await this.removeCompletely(old);
+        // an unconfirmed upload can never be in a match, so no approved-match check is needed
+        for (const old of stale) await this.removal.purge(old);
 
         return this.withLabel(resume);
     }
@@ -186,48 +189,41 @@ export class ResumeService {
         return resume;
     }
 
-    /** "Approved match uses it" = matches_service.Match with this resumeId and applicantStatus = 'approved' (read-only SQL). */
-    private async isUsedByApprovedMatch(resumeId: string): Promise<boolean> {
-        try {
-            const rows = await this.prisma.$queryRaw<{ ok: number }[]>`
-                SELECT 1 AS ok FROM "matches_service"."Match"
-                WHERE "resumeId" = ${resumeId} AND "applicantStatus" = 'approved' LIMIT 1`;
-            return rows.length > 0;
-        } catch (err) {
-            // cannot tell -> keep the files (deleting a resume a company may still need is worse than keeping it a day longer)
-            this.logger.warn(`Could not check approved matches for ${resumeId}: ${(err as Error).message}`);
-            return true;
-        }
-    }
-
     /** A replaced resume is deleted completely unless an approved match still uses it; then it only stays superseded. */
     private async removeReplaced(resume: Resume): Promise<void> {
         try {
-            if (await this.isUsedByApprovedMatch(resume.id)) return;
-            await this.removeCompletely(resume);
+            const outcome = await this.removal.removeIfUnused(resume);
+            if (outcome === 'in_use') this.logger.log(`Replaced resume ${resume.id} is used by an approved match; keeping its files`);
         } catch (err) {
-            // confirm already succeeded; the daily cleanup job (task 2.3) retries superseded resumes
+            // confirm already succeeded; the daily cleanup job retries superseded resumes
             this.logger.warn(`Could not remove replaced resume ${resume.id}: ${(err as Error).message}`);
         }
     }
 
     /**
-     * Removes a resume completely: Cloudinary original + PDF, embedding row, DB row.
-     * The DB row stays when Cloudinary fails, so the cleanup job (task 2.3) can retry.
+     * DELETE /resumes/:id (contract 5.4): 409 when an approved match uses the resume, otherwise it is removed completely
+     * (Cloudinary original + PDF, embedding, DB row). resume.deleted is published only if it was the active resume.
      */
-    private async removeCompletely(resume: Resume): Promise<boolean> {
-        const filesGone = await this.storage.destroyResumeFiles(resume.cloudinaryPublicId, resume.pdfPublicId);
-        if (!filesGone) {
-            this.logger.warn(`Could not delete files of resume ${resume.id}; leaving the row for the cleanup job`);
-            return false;
-        }
+    async deleteOwn(resumeId: string, applicantId: string) {
+        const resume = await this.findOwned(resumeId, applicantId);
+        const wasActive = resume.status === 'parsed' && !!resume.confirmedAt && !resume.supersededAt;
+
+        let outcome: RemoveOutcome;
         try {
-            await this.prisma.$executeRaw`DELETE FROM resume_embeddings WHERE resume_id = ${resume.id}::uuid`;
-        } catch {
-            // table is created by the parser/matching agents; it may not exist yet
+            outcome = await this.removal.removeIfUnused(resume);
+        } catch (err) {
+            this.logger.error(`Could not delete resume ${resume.id}: ${(err as Error).message}`);
+            throw new ServiceUnavailableException('Could not delete the resume right now. Please try again in a moment.');
         }
-        await this.prisma.resume.delete({ where: { id: resume.id } });
-        return true;
+
+        if (outcome === 'in_use') {
+            throw new ConflictException('A company you shared this resume with is using it, so it cannot be deleted right now.');
+        }
+        if (outcome === 'files_failed') {
+            throw new ServiceUnavailableException('Could not delete the resume file. Please try again in a moment.');
+        }
+        if (wasActive) await this.removal.publishDeleted(resume);
+        return { deleted: true };
     }
 
     async updateOwn(resumeId: string, applicantId: string, dto: UpdateResumeDto) {

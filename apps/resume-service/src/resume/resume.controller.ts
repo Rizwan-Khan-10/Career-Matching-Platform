@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -51,5 +51,11 @@ export class ResumeController {
     @Patch(':id')
     update(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateResumeDto) {
         return this.service.updateOwn(id, req.user.userId, dto);
+    }
+
+    // Applicant deletes a resume: 409 while an approved match uses it, otherwise Cloudinary + embedding + DB row are removed
+    @Delete(':id')
+    remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+        return this.service.deleteOwn(id, req.user.userId);
     }
 }

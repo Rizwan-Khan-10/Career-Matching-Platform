@@ -52,12 +52,14 @@ def _reason(eligible: bool, prob: float, thr: float, gates: list, matched: list,
     return f"Not eligible: {head}; match probability {prob:.0%} is below the {thr:.0%} bar." + tail + suffix
 
 
-def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None, academic: dict | None = None) -> MatchResult:
-    """`side` = build_resume_side(resume): pass it when scoring one resume against many roles (embeds the resume once).
+def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None, role_side=None,
+                   academic: dict | None = None) -> MatchResult:
+    """`side` = build_resume_side(resume), `role_side` = build_role_side(title, requirements): pass them (cached) when one
+    resume meets many roles or one role meets many resumes, so each half is prepared once.
     `academic` = the applicant's users_service.ApplicantProfile values {cgpa, branch, passingYear, backlogs, academicVerified}
     (None when unknown). Campus rules are hard gates: failed -> not eligible, unknown -> eligible + `unverifiedRules`."""
     requirements = requirements or {}
-    fr = compute_features(resume or {}, role_title or "", requirements, side=side)
+    fr = compute_features(resume or {}, role_title or "", requirements, side=side, role_side=role_side)
     rule_out = rules.evaluate_rules(requirements, resume, academic)
     score, eligible, prob, gates = scorer.decide(fr.features, fr.detail, extra_gates=rule_out.failed)
 

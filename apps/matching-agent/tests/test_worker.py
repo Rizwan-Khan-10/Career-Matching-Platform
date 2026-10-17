@@ -34,6 +34,9 @@ class Base(unittest.TestCase):
         sc.get_academic_profile = lambda aid: None
         sc.get_academic_profiles = lambda ids: {}
         sc.delete_resume_embedding = lambda *a: None
+        self.profiles, self.profile_reads = {}, []             # users_service.ApplicantProfile rows by applicantId
+        sc.get_academic_profile = lambda aid: (self.profile_reads.append([aid]) or self.profiles.get(aid))
+        sc.get_academic_profiles = lambda ids: (self.profile_reads.append(list(ids)) or {a: self.profiles[a] for a in ids if a in self.profiles})
         self.active = True
         sc.is_role_active = lambda rid: self.active
         self.resume_active = True
@@ -60,6 +63,81 @@ class Base(unittest.TestCase):
 
     def last_run(self):
         return run_stats.snapshot()["recent"][0]
+
+
+class CampusRulesWorkerTest(Base):
+    """Task 2.8: campus rules are read from ApplicantProfile, gate the pair, and take part in the inputHash."""
+    def setUp(self):
+        super().setUp()
+        self.ruled = {**GOOD, "jobRoleId": "ruled", "requirements": {**GOOD["requirements"], "minCgpa": 8.0}}
+        self.role_pool = [dict(self.ruled)]
+
+    def test_unknown_cgpa_is_published_eligible_with_unverified_flag(self):
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        evt = self.streams("match.computed")[0]
+        self.assertTrue(evt["eligible"])
+        self.assertEqual(evt["unverifiedRules"], ["cgpa"])
+
+    def test_profile_value_is_used_and_can_fail_the_pair(self):
+        self.profiles["a1"] = {"cgpa": 6.0, "academicVerified": True}
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertFalse(self.streams("match.scanned")[0]["scans"][0]["eligible"])
+        evt = self.streams("match.computed")[0]                     # near miss: published, not eligible
+        self.assertFalse(evt["eligible"])
+        self.assertEqual(evt["unverifiedRules"], [])
+        self.assertTrue(any("CGPA 6" in g for g in evt["breakdown"]["gatesFailed"]))
+
+    def test_roles_without_rules_never_touch_the_profile_table(self):
+        self.role_pool = [dict(GOOD), dict(BAD)]
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.profile_reads, [])
+        self.assertEqual(self.streams("match.computed")[0]["unverifiedRules"], [])
+
+    def test_profile_is_read_once_per_run(self):
+        self.role_pool = [dict(self.ruled), {**self.ruled, "jobRoleId": "ruled2"}]
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.profile_reads, [["a1"]])
+
+    def test_profile_change_rescans_the_pair_even_though_resume_and_role_are_unchanged(self):
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        first = self.streams("match.scanned")[0]["scans"][0]
+        self.stored_resume_hashes = {"ruled": (first["inputHash"], first["eligible"])}
+        self.out.clear()
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual((self.out, self.last_run()["skippedByHash"]), ([], 1))   # nothing changed -> skipped
+        self.profiles["a1"] = {"cgpa": 6.0, "academicVerified": True}             # admin verified a lower CGPA
+        sc.handle_profile_updated({"applicantId": "a1"})
+        scan = self.streams("match.scanned")[0]["scans"][0]
+        self.assertNotEqual(scan["inputHash"], first["inputHash"])
+        self.assertFalse(scan["eligible"])
+
+    def test_profile_change_does_not_invalidate_roles_without_rules(self):
+        self.role_pool = [dict(GOOD)]
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        first = self.streams("match.scanned")[0]["scans"][0]
+        self.stored_resume_hashes = {"good": (first["inputHash"], first["eligible"])}
+        self.out.clear()
+        self.profiles["a1"] = {"cgpa": 2.0, "academicVerified": True}
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual((self.out, self.last_run()["skippedByHash"]), ([], 1))
+
+    def test_role_direction_reads_all_profiles_of_a_batch_with_one_query(self):
+        cands = [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME},
+                 {"resumeId": "res2", "applicantId": "a2", "parsedData": RESUME}]
+        self.profiles["a2"] = {"cgpa": 9.0, "academicVerified": True}
+        sc.get_role = lambda rid: {**self.ruled, "stopped": False}
+        sc.find_compatible_resumes_for_role = lambda role, vec, limit, offset=0: cands[offset:offset + limit]
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["ruled"]})
+        self.assertEqual(self.profile_reads, [["a1", "a2"]])
+        by_app = {m["applicantId"]: m for m in self.streams("match.computed")}
+        self.assertEqual(by_app["a1"]["unverifiedRules"], ["cgpa"])   # no profile row -> unknown
+        self.assertEqual(by_app["a2"]["unverifiedRules"], [])         # verified 9.0 >= 8.0
+
+    def test_role_without_rules_reads_no_profiles(self):
+        sc.get_role = lambda rid: {"jobRoleId": "good", "title": GOOD["title"], "requirements": GOOD["requirements"], "stopped": False}
+        sc.find_compatible_resumes_for_role = lambda role, vec, limit, offset=0: [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME}][offset:offset + limit]
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["good"]})
+        self.assertEqual(self.profile_reads, [])
 
 
 class CampusRulesWorkerTest(Base):

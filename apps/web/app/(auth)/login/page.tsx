@@ -15,6 +15,7 @@ import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 import { decodeJwtPayload } from '@/lib/jwt';
+import { getErrorMessage } from '@/lib/errors';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,8 +38,8 @@ export default function LoginPage() {
       else if (role === 'COMPANY') router.push('/company/dashboard');
       else router.push('/admin/dashboard');
     },
-    onError: (err: any) => {
-      const msg = err.response?.data?.message || 'Something went wrong';
+    onError: (err: unknown) => {
+      const msg = getErrorMessage(err, 'Something went wrong');
       setServerError(msg);
       toast.error(msg);
     },
@@ -64,6 +65,11 @@ export default function LoginPage() {
         {serverError && (
           <StaggerItem>
             <p className="text-sm text-danger">{serverError}</p>
+            {serverError === 'Account disabled' && (
+              <p className="text-xs text-ink-grey mt-1">
+                Your account has been deactivated. Please contact your administrator.
+              </p>
+            )}
           </StaggerItem>
         )}
 

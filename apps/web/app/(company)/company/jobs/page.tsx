@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { toast } from '@/lib/toast';
+import { getErrorMessage, isForbidden } from '@/lib/errors';
+import { useCompanyStatus } from '@/lib/hooks/useCompanyProfile';
 import { useAuthStore } from '@/store/authStore';
 import { getSocket } from '@/lib/socket';
 import { FadeIn } from '@/components/motion/FadeIn';
@@ -16,6 +18,17 @@ import type { CompanyStats, RoleStats } from '@/types/stats';
 export default function CompanyJobsPage() {
   const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
+  const { status: companyStatus, canManage } = useCompanyStatus();
+  const lockedReason =
+    companyStatus === 'rejected'
+      ? 'Your company was not approved, so uploads and role changes are disabled.'
+      : 'Uploads and role changes unlock once an admin approves your company.';
+
+  // show the server's message; a 403 means the company status changed, so refresh the banner and buttons too
+  const handleError = (err: unknown, fallback: string) => {
+    toast.error(getErrorMessage(err, fallback));
+    if (isForbidden(err)) queryClient.invalidateQueries({ queryKey: ['companyProfile'] });
+  };
 
   const { data: postings, isLoading } = useQuery<JobPosting[]>({
     queryKey: ['jobPostings'],
@@ -57,7 +70,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       toast.success('Requirement doc uploaded — extracting roles');
     },
-    onError: () => toast.error('Upload failed, try again'),
+    onError: (err) => handleError(err, 'Upload failed, try again'),
   });
 
   const addRoleMutation = useMutation({
@@ -67,7 +80,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       toast.success('Role added');
     },
-    onError: () => toast.error('Could not add role, try again'),
+    onError: (err) => handleError(err, 'Could not add role, try again'),
   });
 
   const updateRoleMutation = useMutation({
@@ -77,7 +90,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       toast.success('Role updated');
     },
-    onError: () => toast.error('Could not save changes, try again'),
+    onError: (err) => handleError(err, 'Could not save changes, try again'),
   });
 
   const deleteRoleMutation = useMutation({
@@ -86,7 +99,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       toast.success('Role removed');
     },
-    onError: () => toast.error('Could not remove role, try again'),
+    onError: (err) => handleError(err, 'Could not remove role, try again'),
   });
 
   const stopMutation = useMutation({
@@ -96,7 +109,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['companyStats'] });
       toast.success('Job stopped — no more scanning or matching');
     },
-    onError: () => toast.error('Could not stop the job, try again'),
+    onError: (err) => handleError(err, 'Could not stop the job, try again'),
   });
 
   const reopenMutation = useMutation({
@@ -106,7 +119,7 @@ export default function CompanyJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['companyStats'] });
       toast.success('Job reopened — matching resumes again');
     },
-    onError: () => toast.error('Could not reopen the job, try again'),
+    onError: (err) => handleError(err, 'Could not reopen the job, try again'),
   });
 
   const isMutating =
@@ -127,6 +140,8 @@ export default function CompanyJobsPage() {
         <UploadJobDropzone
           onUpload={(file) => uploadMutation.mutate(file)}
           isUploading={uploadMutation.isPending}
+          disabled={!canManage}
+          disabledReason={lockedReason}
         />
       </FadeIn>
 
@@ -148,6 +163,7 @@ export default function CompanyJobsPage() {
             <JobPostingCard
               posting={posting}
               isMutating={isMutating}
+              canManage={canManage}
               onAddRole={(values) => addRoleMutation.mutate({ postingId: posting.id, values })}
               onUpdateRole={(roleId, values) => updateRoleMutation.mutate({ roleId, values })}
               onDeleteRole={(roleId) => deleteRoleMutation.mutate(roleId)}

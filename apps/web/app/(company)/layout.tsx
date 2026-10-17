@@ -1,10 +1,14 @@
 import { RequireRole } from '@/components/auth/RequireRole';
 import { DashboardShell } from '@/components/layout/DashboardShell';
+import { CompanyStatusBanner } from '@/components/company/CompanyStatusBanner';
 
-export default function ApplicantLayout({ children }: { children: React.ReactNode }) {
+export default function CompanyLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireRole role="COMPANY">
-      <DashboardShell role="COMPANY">{children}</DashboardShell>
+      <DashboardShell role="COMPANY">
+        <CompanyStatusBanner />
+        {children}
+      </DashboardShell>
     </RequireRole>
   );
 }

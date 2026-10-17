@@ -13,16 +13,20 @@ const ACCEPTED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-offic
 export function UploadJobDropzone({
     onUpload,
     isUploading,
+    disabled = false,
+    disabledReason,
 }: {
     onUpload: (file: File) => void;
     isUploading: boolean;
+    disabled?: boolean;
+    disabledReason?: string;
 }) {
     const [file, setFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const validateAndSet = (candidate: File | undefined | null) => {
-        if (!candidate) return;
+        if (disabled || !candidate) return;
         if (!ACCEPTED_TYPES.includes(candidate.type)) {
             toast.error('Only PDF or DOCX requirement docs are supported');
             return;
@@ -43,22 +47,28 @@ export function UploadJobDropzone({
     return (
         <div className="bg-paper-raised border border-hairline rounded-xl p-5">
             <div
+                aria-disabled={disabled}
                 onDragOver={(e) => {
                     e.preventDefault();
-                    setIsDragging(true);
+                    if (!disabled) setIsDragging(true);
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                onClick={() => inputRef.current?.click()}
+                onClick={() => {
+                    if (!disabled) inputRef.current?.click();
+                }}
                 className={cn(
-                    'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center cursor-pointer transition-colors',
-                    isDragging ? 'border-accent bg-accent-soft' : 'border-hairline hover:border-ink-grey',
+                    'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center transition-colors',
+                    disabled
+                        ? 'border-hairline opacity-50 cursor-not-allowed'
+                        : cn('cursor-pointer', isDragging ? 'border-accent bg-accent-soft' : 'border-hairline hover:border-ink-grey'),
                 )}
             >
                 <input
                     ref={inputRef}
                     type="file"
                     accept=".pdf,.docx"
+                    disabled={disabled}
                     onChange={(e) => validateAndSet(e.target.files?.[0])}
                     className="hidden"
                 />
@@ -89,12 +99,14 @@ export function UploadJobDropzone({
             )}
 
             <Button
-                disabled={!file || isUploading}
+                disabled={disabled || !file || isUploading}
                 onClick={() => file && onUpload(file)}
                 className="mt-4 w-full"
             >
                 {isUploading ? 'Uploading…' : 'Upload requirement doc'}
             </Button>
+
+            {disabled && disabledReason && <p className="text-xs text-ink-grey mt-2">{disabledReason}</p>}
         </div>
     );
 }

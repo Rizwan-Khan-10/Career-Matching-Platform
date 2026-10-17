@@ -1,9 +1,10 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/lib/toast';
+import { USE_MOCKS, mockAdapter } from '@/lib/mocks';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-export const apiClient = axios.create({ baseURL });
+export const apiClient = axios.create({ baseURL, ...(USE_MOCKS ? { adapter: mockAdapter } : {}) });
 
 // a wrong password is also a 401: those calls must show their own error, not trigger "session expired"
 const AUTH_PATHS = ['/auth/login', '/auth/signup', '/auth/refresh', '/auth/forgot-password', '/auth/reset-password'];

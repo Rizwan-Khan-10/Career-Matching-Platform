@@ -15,6 +15,7 @@ export function RoleCard({
     isSaving,
     isDeleting,
     stats,
+    readOnly = false,
 }: {
     role: JobRole;
     onSave: (values: JobRoleValues) => void;
@@ -22,6 +23,7 @@ export function RoleCard({
     isSaving: boolean;
     isDeleting: boolean;
     stats?: RoleStats;
+    readOnly?: boolean;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const skills = role.requirements?.requiredSkills ?? [];
@@ -63,7 +65,8 @@ export function RoleCard({
                     <button
                         type="button"
                         onClick={() => setIsEditing(true)}
-                        className="text-ink-grey hover:text-accent p-1 transition-colors"
+                        disabled={readOnly}
+                        className="text-ink-grey hover:text-accent p-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Edit role"
                     >
                         <Pencil className="size-3.5" />
@@ -71,7 +74,7 @@ export function RoleCard({
                     <button
                         type="button"
                         onClick={onDelete}
-                        disabled={isDeleting}
+                        disabled={isDeleting || readOnly}
                         className="text-ink-grey hover:text-danger p-1 transition-colors disabled:opacity-50"
                         aria-label="Delete role"
                     >

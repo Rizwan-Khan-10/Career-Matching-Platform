@@ -18,6 +18,7 @@ export function JobPostingCard({
     onReopen,
     statsByRole,
     isMutating,
+    canManage = true,
 }: {
     posting: JobPosting;
     onAddRole: (values: JobRoleValues) => void;
@@ -27,6 +28,7 @@ export function JobPostingCard({
     onReopen: () => void;
     statsByRole?: Record<string, RoleStats>;
     isMutating: boolean;
+    canManage?: boolean;
 }) {
     const [isAdding, setIsAdding] = useState(false);
     const [confirmingStop, setConfirmingStop] = useState(false);
@@ -83,6 +85,7 @@ export function JobPostingCard({
                             isSaving={isMutating}
                             isDeleting={isMutating}
                             stats={statsByRole?.[role.id]}
+                            readOnly={!canManage}
                             onSave={(values) => onUpdateRole(role.id, values)}
                             onDelete={() => onDeleteRole(role.id)}
                         />
@@ -107,7 +110,9 @@ export function JobPostingCard({
                     <button
                         type="button"
                         onClick={() => setIsAdding(true)}
-                        className="flex items-center gap-1.5 text-xs font-medium text-accent hover:text-ink transition-colors mt-3"
+                        disabled={!canManage}
+                        title={canManage ? undefined : 'Available after admin approval'}
+                        className="flex items-center gap-1.5 text-xs font-medium text-accent hover:text-ink transition-colors mt-3 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Plus className="size-3.5" />
                         Add role

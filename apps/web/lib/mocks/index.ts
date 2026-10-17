@@ -7,11 +7,13 @@
 //   localStorage.removeItem('mock-resumes')   // reset the fake resume list
 // localStorage.removeItem('mock-matches') // reset the fake matches
 //   localStorage.setItem('mock-job-approval', 'pending' | 'rejected' | 'approved') // newest job posting
+// localStorage.removeItem('mock-candidates') // reset the fake company candidates (/company/roles/mock-role/applicants)
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
 import { handleAcademicMock } from './academic';
 import { handleMatchMock } from './matches';
+import { handleCandidateMock } from './candidates';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -64,7 +66,7 @@ export const mockAdapter: AxiosAdapter = async (config) => {
     return { ...real, data: { ...real.data, status: companyStatus } };
   }
 
-    // contract 4.6: job postings get approvalStatus (real call, field added on top; only the newest posting is switched)
+  // contract 4.6: job postings get approvalStatus (real call, field added on top; only the newest posting is switched)
   if (method === 'get' && url === '/jobs/mine') {
     const approval = readFlag('mock-job-approval', JOB_APPROVALS, 'approved');
     const real = await axios.getAdapter(axios.defaults.adapter)(config);
@@ -85,6 +87,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if ((isRoleCreate || isUpload) && companyStatus !== 'approved') {
     return respond(config, 403, errorBody(403, 'Company is not approved yet', 'Forbidden'));
   }
+  
+  // contract 5.6: company candidates + decision (use /company/roles/mock-role/applicants)
+  const candidateResponse = handleCandidateMock(method, url, config);
+  if (candidateResponse) return candidateResponse;
 
   // contract 5.6: applicant matches (outcome, shortlist details, AI tips, unverified rules)
   const matchResponse = handleMatchMock(method, url, config);

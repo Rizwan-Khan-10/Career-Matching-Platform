@@ -3,6 +3,7 @@ export interface Totals {
     matched: number;     // ... of which were eligible
     applied: number;     // ... of which approved sharing their resume with the company
     shortlisted: number; // recruiter shortlisted
+    rejected: number;    // recruiter rejected
 }
 
 export interface RoleStats extends Omit<Totals, never> {

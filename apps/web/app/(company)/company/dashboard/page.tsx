@@ -58,14 +58,15 @@ export default function CompanyDashboard() {
         <StatCard value={t?.shortlisted ?? '—'} label="Shortlisted" delay={0.15} />
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mt-4">
-        <StatCard value={postings?.length ?? 0} label="Job postings" hint={stoppedJobs ? `${stoppedJobs} stopped` : undefined} delay={0.2} />
-        <StatCard value={totalRoles} label="Roles posted" delay={0.25} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <StatCard value={t?.rejected ?? '—'} label="Rejected" delay={0.2} />
+        <StatCard value={postings?.length ?? 0} label="Job postings" hint={stoppedJobs ? `${stoppedJobs} stopped` : undefined} delay={0.25} />
+        <StatCard value={totalRoles} label="Roles posted" delay={0.3} />
         <StatCard
           value={t ? Math.max(t.matched - t.applied, 0) : '—'}
           label="Matched, not applied yet"
           hint="waiting for the applicant's approval"
-          delay={0.3}
+          delay={0.35}
         />
       </div>
 
@@ -80,6 +81,8 @@ export default function CompanyDashboard() {
                 <th className="px-3 py-2.5 font-medium text-right">Scanned</th>
                 <th className="px-3 py-2.5 font-medium text-right">Matched</th>
                 <th className="px-3 py-2.5 font-medium text-right">Applied</th>
+                <th className="px-3 py-2.5 font-medium text-right">Shortlisted</th>
+                <th className="px-3 py-2.5 font-medium text-right">Rejected</th>
                 <th className="px-4 py-2.5 font-medium text-right">Status</th>
               </tr>
             </thead>
@@ -94,6 +97,8 @@ export default function CompanyDashboard() {
                   <td className="px-3 py-2.5 text-right font-mono">{r.scanned}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{r.matched}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{r.applied}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{r.shortlisted ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{r.rejected ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${r.stopped ? 'bg-paper text-ink-grey border border-hairline' : 'bg-success-soft text-success'}`}>
                       {r.stopped ? 'Stopped' : 'Active'}

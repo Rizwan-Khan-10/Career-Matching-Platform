@@ -6,12 +6,19 @@ import unittest
 os.environ.setdefault("EMBEDDING_BACKEND", "hash")
 import numpy as np
 
+import json
+
+from app.services.features import FEATURE_NAMES
 from training import bounded_logreg
 from training.build_real_dataset import convert, llm_parse_jd, llm_parse_resume
 from training.build_aliases import build as build_aliases
 from training.tech_filter import is_tech, resume_is_tech, role_is_tech, tech_skill_count
 from app.services.skills import HAND_ALIASES, normalize_skill, dedupe_skills
-from training.common import ranking_metrics, calibration_error
+from training.common import ranking_metrics, calibration_error, split_disjoint, drop_gold_overlap, load_rows, build_matrix
+from training.fairness import assert_fair_features, sanitise_resume, strip_institution
+from training.train import refuse_gold
+
+GOLD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gold", "gold_pairs.jsonl")
 
 
 class BoundedLogregTest(unittest.TestCase):
@@ -99,14 +106,14 @@ class ParseFieldsTest(unittest.TestCase):
     """The LLM call is faked: we only test how its JSON becomes a training row."""
 
     def _fake(self, payload):
-        """Stand-in for app.core.llm_client (no groq package / network needed): ask_llm returns `payload`."""
+        """Stand-in for training.llm_client (no groq package / network needed): ask_llm returns `payload`."""
         import sys
         import types
-        stub = types.ModuleType("app.core.llm_client")
+        stub = types.ModuleType("training.llm_client")
         stub.ask_llm = lambda *a, **k: payload
-        old = sys.modules.get("app.core.llm_client")
-        sys.modules["app.core.llm_client"] = stub
-        self.addCleanup(lambda: sys.modules.__setitem__("app.core.llm_client", old) if old else sys.modules.pop("app.core.llm_client", None))
+        old = sys.modules.get("training.llm_client")
+        sys.modules["training.llm_client"] = stub
+        self.addCleanup(lambda: sys.modules.__setitem__("training.llm_client", old) if old else sys.modules.pop("training.llm_client", None))
 
     def test_resume_keeps_academic_fields(self):
         import json
@@ -165,6 +172,133 @@ class AliasTest(unittest.TestCase):
         self.assertNotIn("k8s", full)                                    # hand-written alias wins, not rewritten
         tech = build_aliases(rows, header, HAND_ALIASES, keep={"python", "kubernetes"})
         self.assertEqual(tech, {"kube": "kubernetes", "python lang": "python", "python scripting": "python"})
+
+
+class SplitTest(unittest.TestCase):
+    def test_no_role_or_resume_on_both_sides(self):
+        roles = np.array([f"jd-{i % 40}" for i in range(2000)])
+        resumes = np.array([f"cv-{(i * 7) % 90}" for i in range(2000)])
+        tr, te = split_disjoint(roles, resumes, 0.25, seed=3)
+        self.assertGreater(te.sum(), 0)
+        self.assertGreater(tr.sum(), 0)
+        self.assertFalse((tr & te).any())
+        self.assertFalse(set(roles[tr]) & set(roles[te]))
+        self.assertFalse(set(resumes[tr]) & set(resumes[te]))
+        tr2, te2 = split_disjoint(roles, resumes, 0.25, seed=3)
+        self.assertTrue((tr == tr2).all() and (te == te2).all())          # deterministic
+
+    def test_same_key_for_role_and_resume_loses_nothing(self):
+        g = np.array([f"row-{i}" for i in range(500)])
+        tr, te = split_disjoint(g, g, 0.2)
+        self.assertEqual(tr.sum() + te.sum(), 500)
+
+
+class FairnessTest(unittest.TestCase):
+    def test_feature_names_are_clean(self):
+        assert_fair_features(FEATURE_NAMES)
+        with self.assertRaises(ValueError):
+            assert_fair_features(["req_cov", "college_rank"])
+
+    def test_sanitise_removes_institution_and_protected_keys(self):
+        self.assertEqual(strip_institution("B.Tech Computer Science, Indian Institute of Technology Bombay"), "B.Tech Computer Science")
+        self.assertEqual(strip_institution("Bachelor of Technology in IT from Some University"), "Bachelor of Technology in IT")
+        r = sanitise_resume({"name": "A B", "gender": "f", "avatarUrl": "x", "skills": ["Java"], "education": "B.E, XYZ College of Engineering"})
+        self.assertEqual(r, {"skills": ["Java"], "education": "B.E"})
+
+    def test_institution_does_not_change_features(self):
+        from app.services.features import build_resume_side, compute_features
+        role = {"requiredSkills": ["Java"], "qualifications": "B.Tech"}
+        a = {"skills": ["Java"], "education": "B.Tech CS, Famous University", "name": "X"}
+        b = {"skills": ["Java"], "education": "B.Tech CS, Small College", "name": "Y"}
+        fa = compute_features(sanitise_resume(a), "Dev", role, side=build_resume_side(sanitise_resume(a))).features
+        fb = compute_features(sanitise_resume(b), "Dev", role, side=build_resume_side(sanitise_resume(b))).features
+        self.assertEqual(fa, fb)
+
+
+class GoldSetTest(unittest.TestCase):
+    def setUp(self):
+        self.rows = load_rows(GOLD)
+
+    def test_shape(self):
+        self.assertEqual(len(self.rows), 200)
+        self.assertEqual({r["kind"] for r in self.rows}, {"gold-fresher", "gold-experienced"})
+        self.assertEqual(len({(r["group"], r["split_group"]) for r in self.rows}), 200)
+        self.assertTrue(all(r["label"] in (0, 1) for r in self.rows))
+        for role in {r["group"] for r in self.rows}:
+            labels = [r["label"] for r in self.rows if r["group"] == role]
+            self.assertTrue(0 < sum(labels) < len(labels), role)           # every role has both classes
+
+    def test_no_protected_data(self):
+        from training.fairness import PROTECTED_KEYS
+        for r in self.rows:
+            self.assertFalse({k.lower() for k in r["resume"]} & PROTECTED_KEYS)
+            self.assertEqual(r["resume"]["education"], strip_institution(r["resume"]["education"]))   # no institution names
+
+    def test_training_never_sees_gold(self):
+        with self.assertRaises(SystemExit):
+            refuse_gold([GOLD], [])
+        with self.assertRaises(SystemExit):
+            refuse_gold(["x.jsonl"], self.rows[:1])
+        clean, dropped = drop_gold_overlap(self.rows[:5], GOLD)
+        self.assertEqual((len(clean), dropped), (0, 5))
+        other = dict(self.rows[0], role=dict(self.rows[0]["role"], title="Totally different"), resume={"skills": ["Cobol"]})
+        clean, dropped = drop_gold_overlap([other], GOLD)
+        self.assertEqual((len(clean), dropped), (1, 0))
+
+    def test_evaluate_runs_on_gold(self):
+        import tempfile
+        from training.evaluate import evaluate_set
+        M = build_matrix(self.rows, cache_dir=tempfile.mkdtemp(), verbose=False)
+        res = evaluate_set(M, 0.5, 0.5)
+        self.assertEqual(res["n"], 200)
+        self.assertEqual(set(res["methods"]), {"A cosine-only", "B keyword overlap", "ours: model", "ours: full pipeline"})
+        self.assertIn("ndcg@3", res["methods"]["ours: model"]["ranking"]["k=3"])
+
+
+class GroqModelTest(unittest.TestCase):
+    def test_parsing_model_is_pinned(self):
+        from training.groq_model import DEFAULT_MODEL
+        self.assertEqual(DEFAULT_MODEL, "openai/gpt-oss-120b")
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_client.py"), encoding="utf-8").read()
+        self.assertNotIn("GROQ_MODEL\"", src.split("DEFAULT_MODEL", 1)[1])        # the env var is not read
+
+
+class ModelCardTest(unittest.TestCase):
+    CARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MODEL_CARD.md")
+
+    def test_update_is_idempotent_and_replaces_same_version(self):
+        from training.update_model_card import build_row, update
+        text = open(self.CARD, encoding="utf-8").read()
+        sc = {"version": "blr-test-1", "embedding_model": "m", "threshold": 0.4, "metrics": {"n_real_pairs": 10}}
+        rep = {"date": "2026-10-17", "gold": {"methods": {"ours: full pipeline": {"precision": 0.9, "recall": 0.8, "roc_auc": 0.95,
+               "ranking": {"k=3": {"ndcg@3": 0.9, "mrr": 1.0}}}}}}
+        once = update(text, build_row(sc, rep, "a | b"), "blr-test-1")
+        twice = update(once, build_row(sc, rep, "again"), "blr-test-1")
+        self.assertEqual(twice.count("| blr-test-1 |"), 1)
+        self.assertIn("again", twice)
+        self.assertIn("lr-2026-10-07-n6000", twice)             # older versions are kept
+
+    def test_card_has_required_sections(self):
+        text = open(self.CARD, encoding="utf-8").read()
+        for h in ("## Data", "## Metrics", "## Known weaknesses", "## Retrain", "versions:start", "versions:end"):
+            self.assertIn(h, text)
+
+
+class ErrorAnalysisTest(unittest.TestCase):
+    def test_every_error_has_a_hint(self):
+        from training.error_analysis import analyse
+        errors = analyse(load_rows(GOLD)[:40])
+        for e in errors:
+            self.assertIn(e["kind"], ("false positive", "false negative"))
+            self.assertTrue(e["hint"])
+
+
+class BackfillQueryTest(unittest.TestCase):
+    def test_only_active_resumes(self):
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "backfill_embeddings.py"), encoding="utf-8").read()
+        self.assertIn('"confirmedAt" IS NOT NULL', src)
+        self.assertIn('"supersededAt" IS NULL', src)
+        self.assertNotIn("DISTINCT ON", src)
 
 
 if __name__ == "__main__":

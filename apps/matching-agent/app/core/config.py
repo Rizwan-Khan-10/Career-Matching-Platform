@@ -5,7 +5,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")   # training only (training/llm_client.py); the agent itself never calls an LLM
 PORT = int(os.getenv("PORT", 8000))
 
 # --- embeddings -------------------------------------------------------------

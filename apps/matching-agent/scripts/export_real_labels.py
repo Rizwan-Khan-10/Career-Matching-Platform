@@ -1,8 +1,9 @@
 """Turns recruiter decisions (Shortlist / Reject buttons) into REAL training labels.
 
     python -m scripts.export_real_labels --out training/data/real_labels.jsonl
-    python -m training.train --extra training/data/real_labels.jsonl
-    python -m training.evaluate --data training/data/dataset.jsonl training/data/real_labels.jsonl
+    python -m training.train --real training/data/real_pairs.jsonl training/data/real_labels.jsonl \\
+                             --recruiter training/data/real_labels.jsonl --recruiter-weight 5
+    python -m training.evaluate --data training/data/real_pairs.jsonl training/data/real_labels.jsonl
 
 shortlisted -> label 1, rejected -> label 0. The resume used is the one the match was computed on
 (Match.resumeId), the role is read as it is now. Only candidates who APPROVED sharing can be judged by a
@@ -47,7 +48,7 @@ def main():
     for (who, decision), n in sorted(stats.items()):
         print(f"  {who:15s} -> {decision:11s}: {n}")
     if len(rows) < 100:
-        print("note: <100 real labels is too few to retrain on their own; they are mixed into the synthetic set with 3x weight.")
+        print("note: <100 real labels is too few to retrain on their own; they are mixed into the public dataset (training/build_real_dataset.py) with a higher weight.")
 
 
 if __name__ == "__main__":

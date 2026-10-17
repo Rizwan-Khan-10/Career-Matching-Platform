@@ -1,4 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, UseGuards, Req } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MatchesService } from './matches.service';
 import { SetDecisionDto } from './dto/set-decision.dto';
@@ -12,6 +13,8 @@ function assertCompanySide(req: AuthenticatedRequest) {
   }
 }
 
+@ApiTags('matches')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('matches')
 export class MatchesController {

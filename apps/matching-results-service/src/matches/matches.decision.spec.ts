@@ -86,7 +86,7 @@ describe('MatchesService.setDecision', () => {
     const dto = (body: unknown) => plainToInstance(SetDecisionDto, body);
     const shortlistDto = () => dto({ decision: 'shortlisted', shortlist: { roundName: ' Technical round 1 ', mode: 'online', note: '', link: 'https://meet.example/x' } });
     const rejectDto = () => dto({ decision: 'rejected', rejection: { reasonCategory: 'skills_gap', message: 'Needs more Java' } });
-    const events = () => redis.client.xadd.mock.calls.map((c: any[]) => ({ stream: c[0], data: JSON.parse(c[3]) }));
+    const events = () => redis.client.xadd.mock.calls.map((c: any[]) => ({ stream: c[0], data: JSON.parse(c[6]) }));
 
     beforeEach(() => {
         prisma = {
@@ -144,6 +144,7 @@ describe('MatchesService.setDecision', () => {
                 data: {
                     matchId: 'm1', applicantId: 'a1', jobRoleId: 'r1', companyId: 'c1', roleTitle: 'Backend Developer', companyName: 'Acme Corp',
                     shortlist: { roundName: 'Technical round 1', mode: 'online', link: 'https://meet.example/x' },
+                    requestId: expect.any(String),
                 },
             }]);
         });
@@ -175,7 +176,7 @@ describe('MatchesService.setDecision', () => {
             expect(data.shortlistInfo).toBe('DbNull');
             expect(events()).toEqual([{
                 stream: 'candidate.rejected',
-                data: { matchId: 'm1', applicantId: 'a1', jobRoleId: 'r1', companyId: 'c1', roleTitle: 'Backend Developer', reasonCategory: 'skills_gap', message: 'Needs more Java' },
+                data: { matchId: 'm1', applicantId: 'a1', jobRoleId: 'r1', companyId: 'c1', roleTitle: 'Backend Developer', reasonCategory: 'skills_gap', message: 'Needs more Java', requestId: expect.any(String) },
             }]);
         });
 

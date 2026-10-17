@@ -8,5 +8,6 @@ import { StreamConsumerService } from '../queue/stream-consumer.service';
 @Module({
     controllers: [MatchesController, StatsController],
     providers: [MatchesService, StatsService, StreamConsumerService],
+    exports: [StreamConsumerService], // GET /health reads the consumer status
 })
 export class MatchesModule { }

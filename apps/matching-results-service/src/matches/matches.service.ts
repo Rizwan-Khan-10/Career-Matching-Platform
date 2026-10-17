@@ -4,6 +4,7 @@ import { RedisService } from '../redis/redis.service';
 import { Prisma } from '../generated/prisma';
 import { SetDecisionDto, ShortlistDto } from './dto/set-decision.dto';
 import { targetLabel } from './target-label';
+import { publishEvent } from '../common/events';
 
 /** Key-order independent compare of a flat JSON object (Postgres jsonb does not keep key order). */
 const canonical = (o: unknown): string => (o && typeof o === 'object' ? JSON.stringify(o, Object.keys(o).sort()) : 'null');
@@ -256,16 +257,13 @@ export class MatchesService {
 
     private async publishApproved(match: { id: string; applicantId: string; jobRoleId: string; resumeId: string | null }) {
         const info = await this.roleInfo([match.jobRoleId]);
-        await this.redis.client.xadd(
-            'match.approved', '*', 'data',
-            JSON.stringify({
-                matchId: match.id,
-                applicantId: match.applicantId,
-                jobRoleId: match.jobRoleId,
-                resumeId: match.resumeId,
-                companyId: info.get(match.jobRoleId)?.companyId ?? null,
-            }),
-        );
+        await publishEvent(this.redis, 'match.approved', {
+            matchId: match.id,
+            applicantId: match.applicantId,
+            jobRoleId: match.jobRoleId,
+            resumeId: match.resumeId,
+            companyId: info.get(match.jobRoleId)?.companyId ?? null,
+        });
     }
 
     // ------------------------------------------------------------------ PDF pipeline results
@@ -285,14 +283,14 @@ export class MatchesService {
             if (!info?.companyId) throw new Error(`company of role ${match.jobRoleId} not found`);
             // no applicantId in this payload on purpose: websocket-gateway then routes it to the COMPANY.
             // notification-service turns this event into the in-app notification AND the e-mail (contract §7).
-            await this.redis.client.xadd('candidate.ready', '*', 'data', JSON.stringify({
+            await publishEvent(this.redis, 'candidate.ready', {
                 companyId: info.companyId,
                 matchId: match.id,
                 jobRoleId: match.jobRoleId,
                 roleTitle: info.title ?? match.roleTitle,
                 applicantName: await this.applicantName(match.applicantId),
                 score: match.score,
-            }));
+            });
         } catch (err) {
             await this.prisma.match.update({ where: { id: match.id }, data: { resumeStatus: 'none', resumeSharedAt: null } });
             throw err; // consumer retries
@@ -411,11 +409,11 @@ export class MatchesService {
             roleTitle: info.title ?? match.roleTitle,
         };
         if (shortlist) {
-            await this.redis.client.xadd('candidate.shortlisted', '*', 'data', JSON.stringify({ ...base, companyName: info.companyName ?? null, shortlist }));
+            await publishEvent(this.redis, 'candidate.shortlisted', { ...base, companyName: info.companyName ?? null, shortlist });
         } else if (rejection) {
-            await this.redis.client.xadd('candidate.rejected', '*', 'data', JSON.stringify({
+            await publishEvent(this.redis, 'candidate.rejected', {
                 ...base, reasonCategory: rejection.reasonCategory, ...(rejection.message ? { message: rejection.message } : {}),
-            }));
+            });
         }
     }
 

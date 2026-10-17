@@ -1,3 +1,7 @@
+"""Groq client used ONLY by training/build_real_dataset.py (it parses raw resumes / JDs with the same prompts the
+parser agents use). The matching agent never calls an LLM at run time (Spec 6.3), so this file lives in training/,
+and `groq` is in requirements-train.txt, not in the runtime requirements.txt.
+"""
 import os
 import threading
 import time

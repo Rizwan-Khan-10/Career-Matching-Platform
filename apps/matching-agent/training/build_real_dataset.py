@@ -35,6 +35,7 @@ import re
 from collections import Counter
 from datetime import date
 from training.tech_filter import resume_is_tech, role_is_tech
+from training.groq_model import DEFAULT_MODEL
 
 RESUME_PROMPT = """You extract structured data from a resume. Today's date is {today}.
 Respond with valid JSON only, exactly this shape (never omit a key; use null / [] when unknown):
@@ -194,6 +195,10 @@ def _cgpa(v):
     return round(n, 2) if n is not None and 0 < n <= 10 else None
 
 
+def _strs(v):
+    return [str(x).strip() for x in (v if isinstance(v, list) else []) if str(x).strip()]
+
+
 TRACK_STACKS = {   # mirrors the taxonomy in the contracts (4.10) / JD_PROMPT; replace by tech_roles.json once 2.1 is merged here
     "frontend": {"javascript", "other"},
     "backend": {"java", "python", "javascript", "dotnet", "go", "php", "ruby", "other"},
@@ -225,7 +230,7 @@ def _track_and_stacks(track, stacks):
 
 
 def llm_parse_resume(text, today=None):
-    from app.core.llm_client import ask_llm
+    from training.llm_client import ask_llm
     today = today or date.today()
     d = json.loads(ask_llm(RESUME_PROMPT.format(today=today.isoformat()), _clean(text)))
     exp = [e for e in (d.get("experience") or []) if isinstance(e, dict)]
@@ -241,7 +246,7 @@ def llm_parse_resume(text, today=None):
 
 
 def llm_parse_jd(text):
-    from app.core.llm_client import ask_llm
+    from training.llm_client import ask_llm
     d = json.loads(ask_llm(JD_PROMPT, _clean(text)))
     for r in d.get("roles") or []:
         if isinstance(r, dict) and (r.get("title") or r.get("requiredSkills")):
@@ -298,7 +303,7 @@ class DiskCache:
             print(f"  parse failed ({key}): {str(exc)[:200]}")
             if DiskCache._in_a_row >= self.FAIL_LIMIT:
                 raise SystemExit(f"\n{self.FAIL_LIMIT} parses failed in a row - stopping. Last error: {str(exc)[:300]}\n"
-                                 "Fix the cause (GROQ_MODEL / GROQ_API_KEY / network) and run the same command again: "
+                                 "Fix the cause (--model / GROQ_API_KEY / network) and run the same command again: "
                                  "everything parsed so far is cached.")
             return None
         DiskCache._in_a_row = 0
@@ -383,12 +388,17 @@ def _load_hf():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="training/data/real_pairs.jsonl")
-    ap.add_argument("--cache-dir", default="training/data/.parse_cache")
+    ap.add_argument("--model", default=DEFAULT_MODEL, help="Groq model used to parse the raw texts (default openai/gpt-oss-120b)")
+    ap.add_argument("--cache-dir", default=None, help="default: training/data/.parse_cache/<model>, so parses of another model are never reused")
     ap.add_argument("--potential", choices=["drop", "neg", "pos"], default="drop")
     ap.add_argument("--max-resumes", type=int)
     ap.add_argument("--max-jds", type=int)
     ap.add_argument("--keep-non-tech", action="store_true", help="do not drop non-technical resumes / jobs")
     a = ap.parse_args()
+    from training import llm_client     # imported here: needs the groq package, the rest of this module does not
+    llm_client.set_model(a.model)
+    a.cache_dir = a.cache_dir or os.path.join("training", "data", ".parse_cache", re.sub(r"[^A-Za-z0-9._-]+", "_", a.model))
+    print(f"parsing model: {a.model}  cache: {a.cache_dir}")
     rows = convert(_load_hf(), llm_parse_resume, llm_parse_jd, a.cache_dir, a.potential, a.max_resumes, a.max_jds, tech_only=not a.keep_non_tech)
     with open(a.out, "w", encoding="utf-8") as f:
         for r in rows:

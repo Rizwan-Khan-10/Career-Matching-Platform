@@ -7,9 +7,16 @@
 
 Output: app/artifacts/scorer.json (picked up by the agent; restart it and open GET /model).
 Run with the SAME embedder you deploy with (EMBEDDING_BACKEND=minilm / bge).
+
+Rules enforced here:
+  * the hand-labelled GOLD set (training/gold) is never trained on: gold files/rows are refused and any training row that
+    shares a role or a resume with the gold set is dropped. Only training/evaluate.py reads the gold set.
+  * the held-out split is role-wise AND resume-wise (training.common.split_disjoint): no role and no resume is on both sides.
+  * protected attributes (name, gender, photo, institution) are never features (training/fairness.py).
 """
 import argparse
 import datetime as dt
+import hashlib
 import json
 import numpy as np
 from sklearn.model_selection import GroupKFold
@@ -17,10 +24,23 @@ from sklearn.model_selection import GroupKFold
 from app.core.embeddings import model_name
 from app.services.features import FEATURE_NAMES
 from training import bounded_logreg
-from training.common import (load_rows, build_matrix, split_by_group, metrics, best_threshold,
-                             ranking_metrics, calibration_error)
+from training.common import (load_rows, build_matrix, holdout_split, metrics, best_threshold,
+                             ranking_metrics, calibration_error, drop_gold_overlap, row_keys)
+from training.fairness import assert_fair_features
 
-NONNEG = np.array([n != "has_req_skills" for n in FEATURE_NAMES])   # every quality feature must help, never hurt
+FREE_SIGN = {"has_req_skills", "is_fresher_role"}   # constant-ish flags: has_req_skills is a bias shift, is_fresher_role marks the role type
+NONNEG = np.array([n not in FREE_SIGN for n in FEATURE_NAMES])   # every quality feature (incl. project_evidence, has_internship) must help, never hurt
+GOLD_DEFAULT = "training/gold/gold_pairs.jsonl"
+
+
+def refuse_gold(paths, rows):
+    """The gold set is for evaluate.py only."""
+    for p in paths:
+        if "gold" in p.replace("\\", "/").lower().split("/"):
+            raise SystemExit(f"refusing to train on {p}: the gold set is only for training/evaluate.py")
+    bad = [r for r in rows if str(r.get("kind", "")).startswith("gold")]
+    if bad:
+        raise SystemExit(f"refusing to train: {len(bad)} rows are marked kind=gold-* (gold set is only for evaluate.py)")
 
 
 def main():
@@ -31,11 +51,21 @@ def main():
     ap.add_argument("--synthetic", nargs="*", default=[])
     ap.add_argument("--synthetic-weight", type=float, default=0.2)
     ap.add_argument("--beta", type=float, default=0.5, help="F-beta for the threshold; <1 favours precision (default 0.5)")
+    ap.add_argument("--test-frac", type=float, default=0.2, help="share of roles AND of resumes held out (pairs mixing both sides are unused)")
+    ap.add_argument("--seed", type=int, default=7, help="split seed (evaluate.py must use the same value)")
+    ap.add_argument("--gold", default=GOLD_DEFAULT, help="gold set: only used to drop overlapping training rows")
+    ap.add_argument("--version", default=None, help="override the scorer version label")
     ap.add_argument("--out", default="app/artifacts/scorer.json")
     a = ap.parse_args()
 
+    assert_fair_features(FEATURE_NAMES)
     real = load_rows(*a.real)
     syn = load_rows(*a.synthetic) if a.synthetic else []
+    refuse_gold(list(a.real) + list(a.synthetic), real + syn)
+    real, drop_r = drop_gold_overlap(real, a.gold)
+    syn, drop_s = drop_gold_overlap(syn, a.gold)
+    if drop_r + drop_s:
+        print(f"dropped {drop_r + drop_s} training rows that share a role or resume with the gold set")
     gold = {r["_src"] for r in load_rows(*a.recruiter)} if a.recruiter else set()
     rows = real + syn
     print(f"{len(real)} real pairs | {len(syn)} synthetic | embedder = {model_name()}")
@@ -49,9 +79,12 @@ def main():
     w = src_w * gold_w * np.array([float(r.get("weight", 1.0)) for r in rows])
     is_real = np.arange(len(rows)) < len(real)
 
-    tr, te = split_by_group(splits)                  # keeps ALL pairs of one resume (real data) / role (synthetic) on one side
+    tr, te = holdout_split(M, a.test_frac, a.seed)   # role-wise AND resume-wise: nothing is shared between train and held-out
     te_real = te & is_real
-    print(f"train={tr.sum()}  held-out={te.sum()} (real held-out={te_real.sum()})")
+    unused = len(rows) - tr.sum() - te.sum()
+    print(f"train={tr.sum()}  held-out={te.sum()} (real held-out={te_real.sum()})  unused (mixed roles/resumes)={unused}")
+    if te_real.sum() < 30 or len(set(y[te_real].tolist())) < 2:
+        raise SystemExit("held-out set is too small or has one class only - add data or raise --test-frac")
 
     # 1) C + threshold from out-of-fold predictions on TRAIN (real rows only decide the threshold)
     best = None
@@ -76,25 +109,31 @@ def main():
     test_metrics["ranking"] = ranking_metrics(y[te_real], p, groups[te_real], k=5)
     print("held-out (real):", json.dumps(test_metrics))
 
-    # 3) final model on everything
+    # 3) final model on everything (gold rows were already excluded above)
     coef, b = bounded_logreg.fit(X, y, w, C=C, nonneg=NONNEG)
+    fingerprint = hashlib.md5("".join(sorted(f"{rk}{sk}" for rk, sk in (row_keys(r) for r in rows))).encode()).hexdigest()[:12]
     artifact = {
-        "version": f"blr-{dt.date.today().isoformat()}-real{len(real)}",
+        "version": a.version or f"blr-{dt.date.today().isoformat()}-real{len(real)}",
         "embedding_model": model_name(),
         "features": FEATURE_NAMES,
         "weights": {n: round(float(c), 5) for n, c in zip(FEATURE_NAMES, coef)},
         "bias": round(float(b), 5),
         "threshold": thr,
         "metrics": {"held_out_real": test_metrics, "cv_f_beta": f_cv, "beta": a.beta, "C": C,
-                    "n_real_pairs": len(real), "n_synthetic_pairs": len(syn), "n_recruiter_pairs": int(sum(r["_src"] in gold for r in rows))},
+                    "n_real_pairs": len(real), "n_synthetic_pairs": len(syn), "n_recruiter_pairs": int(sum(r["_src"] in gold for r in rows)),
+                    "split": {"mode": "role+resume disjoint", "test_frac": a.test_frac, "seed": a.seed,
+                              "train": int(tr.sum()), "held_out": int(te.sum()), "unused": int(unused)},
+                    "gold_rows_dropped_from_training": drop_r + drop_s, "data_fingerprint": fingerprint,
+                    "fairness": "no name/gender/photo/institution features; institution stripped from education"},
     }
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(artifact, f, indent=2)
-    print(f"saved -> {a.out}\nfeature weights:")
+    print(f"saved -> {a.out}  (version {artifact['version']})\nfeature weights:")
     for n, c in sorted(artifact["weights"].items(), key=lambda kv: -abs(kv[1])):
         print(f"  {n:16s} {c:+.3f}")
-    bad = [n for n, c in artifact["weights"].items() if n != "has_req_skills" and c < 0]
+    bad = [n for n, c in artifact["weights"].items() if n not in FREE_SIGN and c < 0]
     assert not bad, f"negative weights slipped through: {bad}"
+    print("\nNext: python -m training.evaluate   (uses the gold set), restart the agent and open GET /model")
 
 
 if __name__ == "__main__":

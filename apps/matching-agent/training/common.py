@@ -5,6 +5,8 @@ import numpy as np
 
 from app.core.embeddings import model_name
 from app.services.features import FEATURE_NAMES, build_resume_side, compute_features
+from app.services.rules import normalize_level
+from training.fairness import assert_fair_features, sanitise_resume
 
 
 def load_rows(*paths):
@@ -28,10 +30,38 @@ def _fingerprint(rows) -> str:
     return h.hexdigest()
 
 
+def _digest(obj) -> str:
+    return hashlib.md5(json.dumps(obj, sort_keys=True).encode()).hexdigest()
+
+
+def row_keys(r):
+    """(role key, resume key) - identical content gives identical keys, whatever the ids say."""
+    return _digest(r["role"]), _digest(r["resume"])
+
+
+def gold_keys(gold_path):
+    """Role and resume fingerprints of the gold set (empty sets when the file does not exist)."""
+    roles, resumes = set(), set()
+    if gold_path and os.path.exists(gold_path):
+        for r in load_rows(gold_path):
+            rk, sk = row_keys(r)
+            roles.add(rk)
+            resumes.add(sk)
+    return roles, resumes
+
+
+def drop_gold_overlap(rows, gold_path):
+    """Training/eval-split data must never share a role or a resume with the gold set. -> (clean rows, dropped count)."""
+    roles, resumes = gold_keys(gold_path)
+    clean = [r for r in rows if row_keys(r)[0] not in roles and row_keys(r)[1] not in resumes]
+    return clean, len(rows) - len(clean)
+
+
 def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
-    """-> dict(X, y, groups, kinds, exp, min_exp). Cached per (embedder, feature list, data)."""
+    """-> dict(X, y, groups, splits, weights, kinds, exp, min_exp, level). Cached per (embedder, feature list, data). + naya line Resumes are sanitised first (no protected keys, no institution), see training/fairness.py."""
+    assert_fair_features(FEATURE_NAMES)
     os.makedirs(cache_dir, exist_ok=True)
-    key = hashlib.md5(("v2|" + model_name() + "|" + ",".join(FEATURE_NAMES) + "|" + _fingerprint(rows)).encode()).hexdigest()[:16]
+    key = hashlib.md5(("v4-fair-level|" + model_name() + "|" + ",".join(FEATURE_NAMES) + "|" + _fingerprint(rows)).encode()).hexdigest()[:16]
     path = os.path.join(cache_dir, f"features-{key}.npz")
     if os.path.exists(path):
         z = np.load(path, allow_pickle=True)
@@ -39,27 +69,29 @@ def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
             print(f"[features] loaded cache {path}")
         return {k: z[k] for k in z.files}
 
-    X, y, groups, splits, kinds, exp, min_exp, weights = [], [], [], [], [], [], [], []
+    X, y, groups, splits, kinds, exp, min_exp, weights, level = [], [], [], [], [], [], [], [], []
     side_cache = {}
     for i, r in enumerate(rows):
-        rk = json.dumps(r["resume"], sort_keys=True)
+        resume = sanitise_resume(r["resume"])
+        rk = json.dumps(resume, sort_keys=True)
         if rk not in side_cache:
             if len(side_cache) > 500:
                 side_cache.clear()
-            side_cache[rk] = build_resume_side(r["resume"])
-        res = compute_features(r["resume"], r["role"]["title"], r["role"]["requirements"], side=side_cache[rk])
+            side_cache[rk] = build_resume_side(resume)
+        res = compute_features(resume, r["role"]["title"], r["role"]["requirements"], side=side_cache[rk])
         X.append(res.vector())
         y.append(int(r["label"]))
         groups.append(r["group"])
         splits.append(r.get("split_group", r["group"]))   # what the train/test split keeps together (real data: the RESUME)
         weights.append(float(r.get("weight", 1.0)))
+        level.append(normalize_level(r["role"]["requirements"]))     # the experience gate is off for fresher / any roles
         kinds.append(r.get("kind", r.get("_src", "?")))
         exp.append(res.detail["experienceYears"] or 0.0)
         min_exp.append(res.detail["minExperienceYears"] or 0.0)
         if verbose and (i + 1) % 500 == 0:
             print(f"[features] {i + 1}/{len(rows)}")
     out = dict(X=np.array(X, dtype=np.float64), y=np.array(y), groups=np.array(groups), splits=np.array(splits), weights=np.array(weights), kinds=np.array(kinds),
-           exp=np.array(exp), min_exp=np.array(min_exp))
+           exp=np.array(exp), min_exp=np.array(min_exp), level=np.array(level)))
     np.savez(path, **out)
     return out
 
@@ -72,6 +104,25 @@ def split_by_group(groups, test_frac=0.2, seed=7):
     test_groups = set(uniq[: max(1, int(len(uniq) * test_frac))])
     is_test = np.array([g in test_groups for g in groups.tolist()])
     return ~is_test, is_test
+
+
+def _in_test(key: str, frac: float, seed: int) -> bool:
+    return int(hashlib.md5(f"{seed}|{key}".encode()).hexdigest(), 16) % 10000 < frac * 10000
+
+
+def split_disjoint(role_groups, resume_groups, test_frac=0.2, seed=7):
+    """Role-wise AND resume-wise split. A pair is TEST only if its role and its resume are both test; TRAIN only if both
+    are train; pairs that mix the two sides are left out of both, so no role and no resume is ever seen on both sides.
+    The side of a key depends only on (seed, key): stable when data is added, independent of row order.
+    -> (train_mask, test_mask)"""
+    role_test = np.array([_in_test(g, test_frac, seed) for g in np.asarray(role_groups).tolist()])
+    res_test = np.array([_in_test(g, test_frac, seed) for g in np.asarray(resume_groups).tolist()])
+    return ~role_test & ~res_test, role_test & res_test
+
+
+def holdout_split(M, test_frac=0.2, seed=7):
+    """The ONE split used by train.py and evaluate.py (M from build_matrix: groups = role, splits = resume)."""
+    return split_disjoint(M["groups"], M["splits"], test_frac, seed)
 
 
 def metrics(y_true, y_pred, y_prob=None) -> dict:

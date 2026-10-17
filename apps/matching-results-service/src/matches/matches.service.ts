@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { Prisma } from '../generated/prisma';
 import { SetDecisionDto, ShortlistDto } from './dto/set-decision.dto';
+import { targetLabel } from './target-label';
 
 /** Key-order independent compare of a flat JSON object (Postgres jsonb does not keep key order). */
 const canonical = (o: unknown): string => (o && typeof o === 'object' ? JSON.stringify(o, Object.keys(o).sort()) : 'null');
@@ -123,28 +124,90 @@ export class MatchesService {
         await this.prisma.match.update({ where: { id: match.id }, data: { feedback: data.feedback } });
     }
 
+    /**
+     * feedback-agent finished the interview prep guide (prep.ready). The match row is looked up by matchId; when it is
+     * not there (yet, or the role was deleted) we throw so handleWithRetry retries with back-off, then dead-letters.
+     * A guide for a candidate who is no longer shortlisted (decision changed or cleared meanwhile) is stale: dropped.
+     */
+    async savePrepGuide(data: { matchId?: string; applicantId?: string; jobRoleId?: string; guide?: string | null }) {
+        const match = await this.findMatchForEvent(data, 'prep guide');
+        if (match.decision !== 'shortlisted') return;
+        const guide = typeof data.guide === 'string' && data.guide.trim() !== '' ? data.guide : null;
+        if (guide === null || guide === match.prepGuide) return;
+        await this.prisma.match.update({ where: { id: match.id }, data: { prepGuide: guide } });
+    }
+
+    /**
+     * feedback-agent finished the rejection feedback (rejection-feedback.ready). `feedback: null` (position_filled /
+     * other) stores nothing. Stale when the candidate is no longer rejected.
+     */
+    async saveRejectionFeedback(data: { matchId?: string; applicantId?: string; jobRoleId?: string; feedback?: string | null }) {
+        const match = await this.findMatchForEvent(data, 'rejection feedback');
+        if (match.decision !== 'rejected') return;
+        const feedback = typeof data.feedback === 'string' && data.feedback.trim() !== '' ? data.feedback : null;
+        if (feedback === null || feedback === match.rejectionFeedback) return;
+        await this.prisma.match.update({ where: { id: match.id }, data: { rejectionFeedback: feedback } });
+    }
+
+    private async findMatchForEvent(data: { matchId?: string; applicantId?: string; jobRoleId?: string }, what: string) {
+        const match = data?.matchId
+            ? await this.prisma.match.findUnique({ where: { id: data.matchId } })
+            : data?.applicantId && data?.jobRoleId
+                ? await this.prisma.match.findUnique({ where: { applicantId_jobRoleId: { applicantId: data.applicantId, jobRoleId: data.jobRoleId } } })
+                : null;
+        if (!match) throw new Error(`match ${data?.matchId ?? `${data?.applicantId}/${data?.jobRoleId}`} not found for ${what}`);
+        return match;
+    }
+
     // ------------------------------------------------------------------ reads
-    /** Applicant's own matches + WHICH COMPANY each one is for (that's what they approve). */
+    /**
+     * Applicant's own matches + WHICH COMPANY each one is for (that's what they approve) + the outcome of the
+     * company's decision (contract §5.6). Never exposed: rejectReason (recruiter's internal category), rejectMessage
+     * under its raw name, decision / decidedAt / decidedBy and the scoring breakdown.
+     */
     async getForApplicant(applicantId: string) {
         const matches = await this.prisma.match.findMany({
             where: { applicantId },
             orderBy: [{ eligible: 'desc' }, { score: 'desc' }],
         });
-        const info = await this.roleInfo(matches.map((m) => m.jobRoleId));
+        const [info, labels] = await Promise.all([
+            this.roleInfo(matches.map((m) => m.jobRoleId)),
+            this.resumeLabels(matches.map((m) => m.resumeId)),
+        ]);
         return matches.map((full) => {
-            // what a recruiter decided (incl. the reject reason / note) and the raw scoring internals are not the applicant's business
             const { decision, decidedAt, decidedBy, breakdown, rejectReason, rejectMessage, ...m } = full;
+            const outcome = decision === 'shortlisted' || decision === 'rejected' ? decision : null;
             const r = info.get(m.jobRoleId);
-            return { ...m, roleTitle: r?.title ?? m.roleTitle, companyName: r?.companyName || 'A hiring company', companyIndustry: r?.industry ?? null, jobStopped: r?.stopped ?? false };
+            return {
+                ...m,
+                roleTitle: r?.title ?? m.roleTitle,
+                companyName: r?.companyName || 'A hiring company',
+                companyIndustry: r?.industry ?? null,
+                jobStopped: r?.stopped ?? false,
+                outcome,
+                // each AI text / form is only meaningful for its own outcome
+                shortlistInfo: outcome === 'shortlisted' ? m.shortlistInfo : null,
+                prepGuide: outcome === 'shortlisted' ? m.prepGuide : null,
+                rejectionMessage: outcome === 'rejected' ? rejectMessage ?? null : null,
+                rejectionFeedback: outcome === 'rejected' ? m.rejectionFeedback : null,
+                unverifiedRules: m.unverifiedRules ?? [],
+                resumeTargetLabel: (m.resumeId && labels.get(m.resumeId)) || null,
+            };
         });
     }
 
     /** Company side: ONLY candidates who approved sharing, best first. Nothing else about an applicant is visible. */
-    getForJobRole(jobRoleId: string) {
-        return this.prisma.match.findMany({
+    async getForJobRole(jobRoleId: string) {
+        const matches = await this.prisma.match.findMany({
             where: { jobRoleId, eligible: true, applicantStatus: 'approved' },
             orderBy: [{ score: 'desc' }],
         });
+        const labels = await this.resumeLabels(matches.map((m) => m.resumeId));
+        return matches.map((m) => ({
+            ...m,
+            unverifiedRules: m.unverifiedRules ?? [],
+            resumeTargetLabel: (m.resumeId && labels.get(m.resumeId)) || null,
+        }));
     }
 
     // ------------------------------------------------------------------ consent
@@ -416,6 +479,15 @@ export class MatchesService {
             LEFT JOIN "users_service"."CompanyProfile" cp ON cp."userId" = jp."companyId"
             WHERE jr.id IN (${Prisma.join(ids)})`);
         return new Map(rows.map((r) => [r.jobRoleId, r]));
+    }
+
+    /** resumeId -> "Backend · Java" (read-only join on resumes_service.Resume). Missing / deleted resume = no entry. */
+    private async resumeLabels(resumeIds: (string | null)[]): Promise<Map<string, string>> {
+        const ids = [...new Set(resumeIds.filter((x): x is string => !!x))];
+        if (ids.length === 0) return new Map();
+        const rows = await this.prisma.$queryRaw<{ id: string; targetTrack: string; targetStack: string }[]>(Prisma.sql`
+            SELECT id, "targetTrack", "targetStack" FROM "resumes_service"."Resume" WHERE id IN (${Prisma.join(ids)})`);
+        return new Map(rows.map((r) => [r.id, targetLabel(r.targetTrack, r.targetStack)]));
     }
 
     private async applicantName(applicantId: string): Promise<string | null> {

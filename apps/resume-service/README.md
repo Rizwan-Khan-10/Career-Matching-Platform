@@ -13,6 +13,7 @@ Resume upload (Cloudinary) per target role, review/confirm, replace, delete with
 | `POST /resumes/:id/confirm` | APPLICANT | needs a parsed resume with ≥ 1 skill; replaces the active resume of the same target |
 | `DELETE /resumes/:id` | APPLICANT | 409 while an approved match uses it; otherwise removed completely |
 | `GET /resumes/:id/pdf` | COMPANY/ADMIN | signed 15-minute link, approved matches only |
+| `GET /health` | public | `200 {status:"ok"}`; `503 {status:"degraded"}` when Postgres or Redis is unreachable (Docker HEALTHCHECK) |
 
 ## Events
 Publishes `resume.uploaded`, `resume.confirmed`, `resume.updated` (confirmed resumes only), `resume.superseded`, `resume.deleted`. Consumes none.
@@ -39,6 +40,8 @@ Schema `resumes_service`, table `Resume`. Reads (never writes) `matches_service.
 | `CLEANUP_ENABLED` | no | `true` | `false` turns the daily job off |
 | `CLEANUP_INTERVAL_HOURS` | no | `24` | time between cleanup runs |
 | `CLEANUP_BATCH_SIZE` | no | `100` | max resumes handled per category per run |
+| `LOG_LEVEL` | no | `info` | JSON logs: `ts, level, service, requestId, msg` (`debug` / `info` / `warn` / `error`) |
+| `ENABLE_DOCS` | no | `false` | Swagger UI at `/docs` only when `true` |
 
 ## Run locally
 ```bash

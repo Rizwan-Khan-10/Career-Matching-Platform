@@ -52,7 +52,7 @@ export class UpdateResumeDto {
 
     @IsOptional()
     @IsInt()
-    @Min(2000)
+    @Min(1990)
     @Max(2100)
     passingYear?: number | null;
 

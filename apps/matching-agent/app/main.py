@@ -31,6 +31,10 @@ def start_consumer():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.core.embeddings import check_backend_allowed
+    from app.services import scorer
+    check_backend_allowed()   # production + hash embedder -> refuse to start
+    scorer.ensure_loaded()    # production + missing / invalid scorer.json -> refuse to start (ScorerError)
     threading.Thread(target=start_consumer, daemon=True, name="matching-consumer").start()
     yield
 

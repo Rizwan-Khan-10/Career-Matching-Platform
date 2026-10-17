@@ -4,17 +4,16 @@ The agent decides eligibility with a small logistic model on **semantic features
 required skill to the candidate's skills/projects/experience, global resume<->JD similarity, title similarity,
 experience, education). Nothing is keyword matching; nothing is decided by an LLM.
 
-python -m training.build_real_dataset --out training/data/real_pairs.jsonl     # needs GROQ_API_KEY; parses with openai/gpt-oss-120b (--model to change)
-python -m training.train --real training/data/real_pairs.jsonl                  # -> app/artifacts/scorer.json
-python -m training.evaluate --data training/data/real_pairs.jsonl --beta 0.5    # held-out + gold set -> training/reports/
-
 ```bash
 cd apps/matching-agent
 pip install -r requirements-train.txt
-python -m training.generate_dataset --roles 500          # 6000 labelled pairs (synthetic bootstrap)
-python -m training.train                                  # -> app/artifacts/scorer.json
-python -m training.evaluate                               # vs cosine-only and keyword baselines (held-out roles)
+export GROQ_API_KEY=...                                                           # training only, read by training/llm_client.py
+python -m training.build_real_dataset --out training/data/real_pairs.jsonl        # parses with openai/gpt-oss-120b (--model to change)
+python -m training.train --real training/data/real_pairs.jsonl                    # -> app/artifacts/scorer.json
+python -m training.evaluate --data training/data/real_pairs.jsonl --beta 0.5      # held-out + gold set -> training/reports/
 ```
+`evaluate` stops with an error when the data file or the gold file (`training/gold/gold_pairs.jsonl`, build it with
+`python -m training.gold.build_gold`) is missing; `--no-gold` skips the gold set on purpose.
 Use the real embedder (default `EMBEDDING_BACKEND=minilm`). Restart the agent, open `GET /model` to confirm.
 
 ## Real dataset (Hugging Face, tech only)  — task 2.9

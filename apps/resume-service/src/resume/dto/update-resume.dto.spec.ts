@@ -10,6 +10,12 @@ describe('UpdateResumeDto', () => {
         expect(await errorsFor({ branch: 'Computer Science', passingYear: 2026, backlogs: 0 })).toHaveLength(0);
     });
 
+    it('accepts passingYear 1990..2100 like user-service and the contract', async () => {
+        expect(await errorsFor({ passingYear: 1990 })).toHaveLength(0);
+        expect(await errorsFor({ passingYear: 2100 })).toHaveLength(0);
+        expect(await errorsFor({ passingYear: 1989 })).toHaveLength(1);
+    });
+
     it('accepts null to clear an academic key', async () => {
         expect(await errorsFor({ branch: null, passingYear: null, backlogs: null })).toHaveLength(0);
     });

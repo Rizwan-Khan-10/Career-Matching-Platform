@@ -85,7 +85,7 @@ class MatchTest(unittest.TestCase):
     def test_jd_without_skills_does_not_get_a_free_pass(self):
         # trained scorers carry a big negative has_req_skills weight (a constant-1 column in the training data)
         import json
-        m = json.loads(json.dumps(scorer.DEFAULT_MODEL))
+        m = json.loads(json.dumps(scorer.TEST_MODEL))
         m["weights"]["has_req_skills"] = -10.2
         m["bias"] += 10.2
         old, scorer._model = scorer._model, m
@@ -100,6 +100,17 @@ class MatchTest(unittest.TestCase):
         req = {"requiredSkills": ["React", "GraphQL"], "preferredSkills": ["TypeScript"]}
         a, b = evaluate_match(RESUME, "Dev", req), evaluate_match(RESUME, "Dev", req)
         self.assertEqual((a.score, a.eligible, a.reason), (b.score, b.eligible, b.reason))
+
+
+class GatesTest(unittest.TestCase):
+    def test_experience_gate_reports_one_entry(self):
+        gates = scorer.apply_gates({"has_req_skills": 0, "req_cov": 1.0},
+                                   {"experienceYears": 0, "minExperienceYears": 5, "level": "experienced"})
+        self.assertEqual(len(gates), 1)
+
+    def test_experience_gate_is_off_for_fresher_roles(self):
+        self.assertEqual(scorer.apply_gates({"has_req_skills": 0, "req_cov": 1.0},
+                                            {"experienceYears": 0, "minExperienceYears": 5, "level": "fresher"}), [])
 
 
 class PublishSelectionTest(unittest.TestCase):

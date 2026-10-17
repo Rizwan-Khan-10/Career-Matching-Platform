@@ -5,15 +5,22 @@ All vectors are L2-normalised, so cosine similarity == dot product.
 import hashlib
 import threading
 import numpy as np
-from app.core.config import EMBEDDING_BACKEND, EMBEDDING_MODEL_NAME
+from app.core.config import EMBEDDING_BACKEND, EMBEDDING_MODEL_NAME, IS_PRODUCTION
 
 DIM = 384
 _lock = threading.RLock()  # re-entrant: embed_many() holds it while _backend() takes it
 _model = None
 
 
+def check_backend_allowed() -> None:
+    """The hash embedder captures spelling, not meaning: it must never serve real users."""
+    if EMBEDDING_BACKEND == "hash" and IS_PRODUCTION:
+        raise RuntimeError("EMBEDDING_BACKEND=hash is for tests / CI only and is refused when APP_ENV=production. "
+                           "Use EMBEDDING_BACKEND=minilm.")
+
+
 class _HashBackend:
-    """Offline fallback for tests ONLY: hashed word + char-trigram bag. Captures spelling overlap,
+    """Offline fallback for tests / CI ONLY (refused in production, see check_backend_allowed): hashed word + char-trigram bag. Captures spelling overlap,
     NOT semantics. name is different from the real model so a scorer trained on one is never
     silently used with the other."""
     name = "hash-384"
@@ -49,6 +56,7 @@ def _backend():
     if _model is None:
         with _lock:
             if _model is None:
+                check_backend_allowed()
                 _model = _HashBackend() if EMBEDDING_BACKEND == "hash" else _MiniLMBackend()
     return _model
 

@@ -2,13 +2,20 @@ name: CI - Web
 
 on:
   push:
-    paths: ['apps/web/**']
+    paths: ['apps/web/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.github/workflows/ci-web.yml']
   pull_request:
-    paths: ['apps/web/**']
+    paths: ['apps/web/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.github/workflows/ci-web.yml']
+
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost
+      NEXT_PUBLIC_WS_URL: http://localhost
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -20,4 +27,5 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web run lint
       - run: pnpm --filter web run build

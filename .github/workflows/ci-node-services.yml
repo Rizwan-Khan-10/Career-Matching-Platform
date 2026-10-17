@@ -2,9 +2,9 @@ name: CI - Node Services
 
 on:
   push:
-    paths: ['apps/*-service/**', 'apps/websocket-gateway/**']
+    paths: ['apps/*-service/**', 'apps/websocket-gateway/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.github/workflows/ci-node-services.yml']
   pull_request:
-    paths: ['apps/*-service/**', 'apps/websocket-gateway/**']
+    paths: ['apps/*-service/**', 'apps/websocket-gateway/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.github/workflows/ci-node-services.yml']
 
 jobs:
   build:

@@ -31,8 +31,6 @@ class Base(unittest.TestCase):
         sc.publish = lambda stream, data: self.out.append((stream, data))
         sc.upsert_resume_embedding = lambda *a: None
         sc.upsert_role_embedding = lambda *a: None
-        sc.get_academic_profile = lambda aid: None
-        sc.get_academic_profiles = lambda ids: {}
         sc.delete_resume_embedding = lambda *a: None
         self.profiles, self.profile_reads = {}, []             # users_service.ApplicantProfile rows by applicantId
         sc.get_academic_profile = lambda aid: (self.profile_reads.append([aid]) or self.profiles.get(aid))
@@ -63,6 +61,65 @@ class Base(unittest.TestCase):
 
     def last_run(self):
         return run_stats.snapshot()["recent"][0]
+
+
+class ResumeDirectionTest(Base):
+    def test_every_evaluated_role_is_reported_and_only_relevant_ones_published(self):
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1", "targetTrack": "frontend", "targetStack": "javascript"})
+        scans = self.streams("match.scanned")
+        self.assertEqual(len(scans), 1)
+        by_role = {s["jobRoleId"]: s for s in scans[0]["scans"]}
+        self.assertEqual(set(by_role), {"good", "bad"})            # full funnel, even the irrelevant role
+        self.assertTrue(by_role["good"]["eligible"])
+        self.assertFalse(by_role["bad"]["eligible"])
+        self.assertEqual(by_role["good"]["applicantId"], "a1")
+        computed = {m["jobRoleId"] for m in self.streams("match.computed")}
+        self.assertIn("good", computed)
+        self.assertNotIn("bad", computed)                          # hopeless pair: scanned but not published
+
+    def test_inactive_resume_is_ignored(self):
+        self.resumes.clear()                                       # unconfirmed / superseded / deleted
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.out, [])
+        self.assertEqual(self.calls, [])
+
+    def test_resume_replaced_while_scoring_publishes_nothing(self):
+        self.resume_active = False
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.out, [])
+
+    def test_parsed_data_comes_from_db_not_from_event(self):
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1", "skills": ["Excel"], "experienceYears": 0})
+        self.assertIn("good", {m["jobRoleId"] for m in self.streams("match.computed")})  # scored with the DB profile
+
+
+class ProfileAndDeleteTest(Base):
+    def test_profile_updated_rescans_active_resumes_against_academic_roles_only(self):
+        self.resumes["res2"] = {**ACTIVE, "resumeId": "res2", "targetStack": "other"}
+        self.resumes["other"] = {**ACTIVE, "resumeId": "x", "applicantId": "a2"}
+        sc.handle_profile_updated({"applicantId": "a1"})
+        self.assertEqual(self.calls, [("res1", {"academic_only": True}), ("res2", {"academic_only": True})])
+
+    def test_profile_updated_without_active_resume_does_nothing(self):
+        self.resumes.clear()
+        sc.handle_profile_updated({"applicantId": "a1"})
+        self.assertEqual(self.out, [])
+
+    def test_resume_deleted_rechecks_roles_the_deleted_resume_was_scanned_for(self):
+        sc.scanned_role_ids = lambda rid: ["good"] if rid == "gone" else []
+        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
+        self.assertEqual(self.calls, [("res1", {"role_ids": ["good"]})])
+
+    def test_resume_deleted_falls_back_when_scan_rows_are_already_gone(self):
+        sc.scanned_role_ids = lambda rid: []
+        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
+        self.assertEqual(self.calls, [("res1", {})])
+
+    def test_resume_deleted_with_no_remaining_resume_publishes_nothing(self):
+        self.resumes.clear()
+        sc.scanned_role_ids = lambda rid: ["good"]
+        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
+        self.assertEqual(self.out, [])
 
 
 class CampusRulesWorkerTest(Base):
@@ -138,100 +195,6 @@ class CampusRulesWorkerTest(Base):
         sc.find_compatible_resumes_for_role = lambda role, vec, limit, offset=0: [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME}][offset:offset + limit]
         sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["good"]})
         self.assertEqual(self.profile_reads, [])
-
-
-class CampusRulesWorkerTest(Base):
-    def setUp(self):
-        super().setUp()
-        self.ruled = {"jobRoleId": "ruled", "title": GOOD["title"],
-                      "requirements": {**GOOD["requirements"], "minCgpa": 8.0}}
-        sc.find_matching_roles_for_resume = lambda rid, k: [dict(self.ruled)]
-
-    def test_unknown_cgpa_is_published_eligible_with_unverified_flag(self):
-        sc.handle_resume_event(dict(RESUME))
-        evt = self.streams("match.computed")[0]
-        self.assertTrue(evt["eligible"])
-        self.assertEqual(evt["unverifiedRules"], ["cgpa"])
-
-    def test_profile_value_from_users_service_is_used_and_can_fail_the_pair(self):
-        sc.get_academic_profile = lambda aid: {"cgpa": 6.0, "academicVerified": True}
-        sc.handle_resume_event(dict(RESUME))
-        scan = self.streams("match.scanned")[0]["scans"][0]
-        self.assertFalse(scan["eligible"])
-        evt = self.streams("match.computed")[0]                      # near miss: published, but not eligible
-        self.assertFalse(evt["eligible"])
-        self.assertEqual(evt["unverifiedRules"], [])
-        self.assertTrue(any("CGPA 6" in g for g in evt["breakdown"]["gatesFailed"]))
-
-    def test_role_direction_reads_all_profiles_with_one_query(self):
-        calls = []
-        sc.get_academic_profiles = lambda ids: (calls.append(list(ids)) or {"a2": {"cgpa": 9.0, "academicVerified": True}})
-        sc.find_matching_resumes_for_role = lambda rid, k: [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME},
-                                                            {"resumeId": "res2", "applicantId": "a2", "parsedData": RESUME}]
-        sc.get_role = lambda rid: {**self.ruled, "stopped": False}
-        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["ruled"]})
-        self.assertEqual(calls, [["a1", "a2"]])
-        by_app = {m["applicantId"]: m for m in self.streams("match.computed")}
-        self.assertEqual(by_app["a1"]["unverifiedRules"], ["cgpa"])   # no profile row -> unknown
-        self.assertEqual(by_app["a2"]["unverifiedRules"], [])         # verified 9.0 >= 8.0
-
-class ResumeDirectionTest(Base):
-    def test_every_evaluated_role_is_reported_and_only_relevant_ones_published(self):
-        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1", "targetTrack": "frontend", "targetStack": "javascript"})
-        scans = self.streams("match.scanned")
-        self.assertEqual(len(scans), 1)
-        by_role = {s["jobRoleId"]: s for s in scans[0]["scans"]}
-        self.assertEqual(set(by_role), {"good", "bad"})            # full funnel, even the irrelevant role
-        self.assertTrue(by_role["good"]["eligible"])
-        self.assertFalse(by_role["bad"]["eligible"])
-        self.assertEqual(by_role["good"]["applicantId"], "a1")
-        computed = {m["jobRoleId"] for m in self.streams("match.computed")}
-        self.assertIn("good", computed)
-        self.assertNotIn("bad", computed)                          # hopeless pair: scanned but not published
-
-    def test_inactive_resume_is_ignored(self):
-        self.resumes.clear()                                       # unconfirmed / superseded / deleted
-        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
-        self.assertEqual(self.out, [])
-        self.assertEqual(self.calls, [])
-
-    def test_resume_replaced_while_scoring_publishes_nothing(self):
-        self.resume_active = False
-        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
-        self.assertEqual(self.out, [])
-
-    def test_parsed_data_comes_from_db_not_from_event(self):
-        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1", "skills": ["Excel"], "experienceYears": 0})
-        self.assertIn("good", {m["jobRoleId"] for m in self.streams("match.computed")})  # scored with the DB profile
-
-
-class ProfileAndDeleteTest(Base):
-    def test_profile_updated_rescans_active_resumes_against_academic_roles_only(self):
-        self.resumes["res2"] = {**ACTIVE, "resumeId": "res2", "targetStack": "other"}
-        self.resumes["other"] = {**ACTIVE, "resumeId": "x", "applicantId": "a2"}
-        sc.handle_profile_updated({"applicantId": "a1"})
-        self.assertEqual(self.calls, [("res1", {"academic_only": True}), ("res2", {"academic_only": True})])
-
-    def test_profile_updated_without_active_resume_does_nothing(self):
-        self.resumes.clear()
-        sc.handle_profile_updated({"applicantId": "a1"})
-        self.assertEqual(self.out, [])
-
-    def test_resume_deleted_rechecks_roles_the_deleted_resume_was_scanned_for(self):
-        sc.scanned_role_ids = lambda rid: ["good"] if rid == "gone" else []
-        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
-        self.assertEqual(self.calls, [("res1", {"role_ids": ["good"]})])
-
-    def test_resume_deleted_falls_back_when_scan_rows_are_already_gone(self):
-        sc.scanned_role_ids = lambda rid: []
-        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
-        self.assertEqual(self.calls, [("res1", {})])
-
-    def test_resume_deleted_with_no_remaining_resume_publishes_nothing(self):
-        self.resumes.clear()
-        sc.scanned_role_ids = lambda rid: ["good"]
-        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
-        self.assertEqual(self.out, [])
 
 
 class ConsumerRegistrationTest(unittest.TestCase):

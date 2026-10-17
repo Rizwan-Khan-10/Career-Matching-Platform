@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
+import { getErrorMessage } from '@/lib/errors';
 
 export default function CompanyAskPage() {
     const [input, setInput] = useState('');
@@ -13,9 +14,8 @@ export default function CompanyAskPage() {
     const mutation = useMutation({
         mutationFn: (message: string) => apiClient.post('/chat/quick', { message }),
         onSuccess: (res) => setReply(res.data.reply),
-        onError: (err: any) => {
-            const m = err?.response?.data?.message;
-            toast.error((Array.isArray(m) ? m[0] : m) || 'Could not get a response, try again');
+        onError: (err) => {
+            toast.error(getErrorMessage(err, 'Could not get a response, try again'));
         },
     });
 

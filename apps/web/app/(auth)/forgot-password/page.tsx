@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
+import { getErrorMessage } from '@/lib/errors';
 
 const schema = z.object({ email: z.string().email('Enter a valid email') });
 type FormValues = z.infer<typeof schema>;
@@ -26,9 +27,8 @@ export default function ForgotPasswordPage() {
             setSent(true);
             toast.success('If that email exists, a reset link is on its way');
         },
-        onError: (err: any) => {
-            const msg = err.response?.data?.message || 'Something went wrong';
-            toast.error(msg);
+        onError: (err) => {
+            toast.error(getErrorMessage(err, 'Something went wrong'));
         },
     });
 

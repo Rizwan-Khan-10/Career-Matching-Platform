@@ -51,6 +51,8 @@ apiClient.interceptors.response.use(
 
     toast.error('Session expired, please log in again');
     useAuthStore.getState().logout();
+    // full reload on purpose: clears all client state once the session is lost
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     if (typeof window !== 'undefined') window.location.href = '/login';
     return Promise.reject(error);
   },

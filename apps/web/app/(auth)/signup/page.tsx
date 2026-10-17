@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -32,12 +32,12 @@ export default function SignupPage() {
     const isClosed = modeInfo?.mode === 'invite_only';
     const allowedDomains = modeInfo?.mode === 'domain' ? modeInfo.allowedDomains : [];
 
-    const { register, handleSubmit, watch, formState: { errors } } = useForm<SignupFormValues>({
+    const { register, handleSubmit, control, formState: { errors } } = useForm<SignupFormValues>({
         resolver: zodResolver(signupSchema),
         defaultValues: { role: 'APPLICANT' },
     });
 
-    const role = watch('role');
+    const role = useWatch({ control, name: 'role' });
 
     const mutation = useMutation({
         mutationFn: (values: SignupFormValues) => apiClient.post('/auth/signup', values),

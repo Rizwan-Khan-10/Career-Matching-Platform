@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { toast } from '@/lib/toast';
+import { getErrorMessage } from '@/lib/errors';
 
 function ResetForm() {
     const router = useRouter();
@@ -21,9 +22,8 @@ function ResetForm() {
             toast.success('Password updated, please log in');
             router.push('/login');
         },
-        onError: (err: any) => {
-            const m = err?.response?.data?.message;
-            setError((Array.isArray(m) ? m[0] : m) || 'Could not reset the password');
+        onError: (err) => {
+            setError(getErrorMessage(err, 'Could not reset the password'));
         },
     });
 

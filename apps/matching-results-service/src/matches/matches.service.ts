@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { EmailQueueService } from '../queue/email-queue.service';
 import { Prisma } from '../generated/prisma';
 
 export interface MatchComputed {
@@ -17,6 +16,17 @@ export interface MatchComputed {
     missingSkills?: string[];
     breakdown?: any;
     modelVersion?: string | null;
+    /** academic rules that could not be checked (missing data): names among cgpa, branch, passingYear, backlogs */
+    unverifiedRules?: string[];
+}
+
+interface ScanInput {
+    jobRoleId: string;
+    applicantId: string;
+    resumeId: string;
+    eligible: boolean;
+    score: number;
+    inputHash?: string | null;
 }
 
 interface RoleInfoRow {
@@ -33,20 +43,19 @@ interface RoleInfoRow {
  *   match.computed  -> Match row (applicantStatus = 'pending')            [saveMatchResult]
  *   applicant sees it, approves  -> 'match.approved' event               [setApproval]
  *   resume-parser-agent makes a PDF of the uploaded resume
- *   resume.pdf.ready -> company is informed by e-mail; they log in to view/download [onResumePdfReady]
+ *   resume.pdf.ready -> candidate.ready event; notification-service informs the company; they log in to view/download [onResumePdfReady]
  */
 @Injectable()
 export class MatchesService {
-    constructor(private prisma: PrismaService, private emailQueue: EmailQueueService, private redis: RedisService) { }
+    constructor(private prisma: PrismaService, private redis: RedisService) { }
 
     /**
      * Idempotent: the same (applicant, role) pair is UPDATED, never duplicated, so Redis redelivery or a
-     * re-upload of the resume can't create duplicate rows. The email only goes out when the pair is new or
-     * its eligibility actually changed. applicantStatus is never touched here: a re-score must not undo consent.
+     * re-upload of the resume can't create duplicate rows. No e-mail is sent from here (notification-service
+     * reads match.computed itself). applicantStatus is never touched here: a re-score must not undo consent.
      */
     async saveMatchResult(data: MatchComputed) {
         const where = { applicantId_jobRoleId: { applicantId: data.applicantId, jobRoleId: data.jobRoleId } };
-        const existing = await this.prisma.match.findUnique({ where });
 
         const fields = {
             roleTitle: data.roleTitle ?? null,
@@ -59,33 +68,35 @@ export class MatchesService {
             missingSkills: data.missingSkills ?? [],
             breakdown: data.breakdown ?? undefined,
             modelVersion: data.modelVersion ?? null,
+            // always overwritten: a re-score with complete data must clear the old "could not verify" list
+            unverifiedRules: Array.isArray(data.unverifiedRules) ? data.unverifiedRules.filter((r) => typeof r === 'string') : [],
         };
 
-        const match = await this.prisma.match.upsert({
+        return await this.prisma.match.upsert({
             where,
             create: { applicantId: data.applicantId, jobRoleId: data.jobRoleId, ...fields },
             // an applicant who became eligible no longer needs the old "how to improve" feedback
             update: { ...fields, ...(data.eligible ? { feedback: null } : {}) },
         });
-
-        if (!existing || existing.eligible !== data.eligible) {
-            await this.emailQueue.enqueueEligibilityEmail(data.applicantId, data.jobRoleId, data.eligible);
-        }
-        return match;
     }
 
-    /** matching-agent reports every pair it evaluated (chunked). Idempotent upsert per (role, applicant). */
-    async saveScans(data: { scans?: any[] }) {
+    /**
+     * matching-agent reports every (role, resume) pair it evaluated (chunked). Idempotent upsert per
+     * (jobRoleId, resumeId); inputHash is stored so the agent can skip unchanged pairs next time.
+     */
+    async saveScans(data: { scans?: Partial<ScanInput>[] }) {
         const scans = (data?.scans ?? []).filter(
-            (x) => x && typeof x.jobRoleId === 'string' && typeof x.applicantId === 'string' && typeof x.eligible === 'boolean' && Number.isFinite(x.score),
+            (x): x is ScanInput =>
+                !!x && typeof x.jobRoleId === 'string' && typeof x.applicantId === 'string' && typeof x.resumeId === 'string' &&
+                typeof x.eligible === 'boolean' && Number.isFinite(x.score),
         );
         if (scans.length === 0) return;
         await this.prisma.$transaction(
             scans.map((x) =>
                 this.prisma.roleScan.upsert({
-                    where: { jobRoleId_applicantId: { jobRoleId: x.jobRoleId, applicantId: x.applicantId } },
-                    create: { jobRoleId: x.jobRoleId, applicantId: x.applicantId, resumeId: x.resumeId ?? null, eligible: x.eligible, score: x.score },
-                    update: { resumeId: x.resumeId ?? null, eligible: x.eligible, score: x.score, scannedAt: new Date() },
+                    where: { jobRoleId_resumeId: { jobRoleId: x.jobRoleId, resumeId: x.resumeId } },
+                    create: { jobRoleId: x.jobRoleId, applicantId: x.applicantId, resumeId: x.resumeId, eligible: x.eligible, score: x.score, inputHash: x.inputHash ?? null },
+                    update: { applicantId: x.applicantId, eligible: x.eligible, score: x.score, inputHash: x.inputHash ?? null, scannedAt: new Date() },
                 }),
             ),
         );
@@ -99,8 +110,6 @@ export class MatchesService {
         if (!match) throw new Error(`match ${data.applicantId}/${data.jobRoleId} not found for feedback`);
         if (match.eligible) return; // became eligible meanwhile: "how to improve" is obsolete
         await this.prisma.match.update({ where: { id: match.id }, data: { feedback: data.feedback } });
-        // e-mail only the FIRST guide per role, later re-matches just refresh the text on the website
-        if (!match.feedback) await this.emailQueue.enqueueFeedbackEmail(data.applicantId, data.feedback, match.roleTitle);
     }
 
     // ------------------------------------------------------------------ reads
@@ -112,8 +121,8 @@ export class MatchesService {
         });
         const info = await this.roleInfo(matches.map((m) => m.jobRoleId));
         return matches.map((full) => {
-            // what a recruiter decided and the raw scoring internals are not the applicant's business
-            const { decision, decidedAt, decidedBy, breakdown, ...m } = full;
+            // what a recruiter decided (incl. the reject reason / note) and the raw scoring internals are not the applicant's business
+            const { decision, decidedAt, decidedBy, breakdown, rejectReason, rejectMessage, ...m } = full;
             const r = info.get(m.jobRoleId);
             return { ...m, roleTitle: r?.title ?? m.roleTitle, companyName: r?.companyName || 'A hiring company', companyIndustry: r?.industry ?? null, jobStopped: r?.stopped ?? false };
         });
@@ -186,7 +195,7 @@ export class MatchesService {
     }
 
     // ------------------------------------------------------------------ PDF pipeline results
-    /** resume-parser-agent finished the PDF -> tell the company by e-mail (no attachment) and light up their dashboard. */
+    /** resume-parser-agent finished the PDF -> publish candidate.ready (company notification + dashboard). */
     async onResumePdfReady(data: { matchId: string; resumeId?: string; pdfPublicId: string; fileName: string }) {
         const match = await this.prisma.match.findUnique({ where: { id: data.matchId } });
         if (!match || match.applicantStatus !== 'approved') return;
@@ -200,17 +209,15 @@ export class MatchesService {
         try {
             const info = (await this.roleInfo([match.jobRoleId])).get(match.jobRoleId);
             if (!info?.companyId) throw new Error(`company of role ${match.jobRoleId} not found`);
-            await this.emailQueue.enqueueCandidateReadyEmail({
+            // no applicantId in this payload on purpose: websocket-gateway then routes it to the COMPANY.
+            // notification-service turns this event into the in-app notification AND the e-mail (contract §7).
+            await this.redis.client.xadd('candidate.ready', '*', 'data', JSON.stringify({
                 companyId: info.companyId,
                 matchId: match.id,
                 jobRoleId: match.jobRoleId,
                 roleTitle: info.title ?? match.roleTitle,
                 applicantName: await this.applicantName(match.applicantId),
                 score: match.score,
-            });
-            // no applicantId in this payload on purpose: websocket-gateway then routes it to the COMPANY
-            await this.redis.client.xadd('candidate.ready', '*', 'data', JSON.stringify({
-                companyId: info.companyId, matchId: match.id, jobRoleId: match.jobRoleId, roleTitle: info.title ?? match.roleTitle,
             }));
         } catch (err) {
             await this.prisma.match.update({ where: { id: match.id }, data: { resumeStatus: 'none', resumeSharedAt: null } });

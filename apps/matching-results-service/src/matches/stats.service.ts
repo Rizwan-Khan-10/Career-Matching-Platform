@@ -8,8 +8,8 @@ export interface RoleStats {
     companyId?: string;
     companyName?: string | null;
     stopped: boolean;
-    scanned: number;   // applicants the matching-agent evaluated for this role
-    matched: number;   // ... of which eligible
+    scanned: number;   // distinct applicants the matching-agent evaluated for this role (any of their resumes)
+    matched: number;   // ... of which eligible with at least one resume
     applied: number;   // ... of which approved sharing their resume with the company
     shortlisted: number;
 }
@@ -39,7 +39,7 @@ export class StatsService {
             JOIN "jobs_service"."JobPosting" jp ON jp.id = jr."jobPostingId"
             LEFT JOIN "users_service"."CompanyProfile" cp ON cp."userId" = jp."companyId"
             LEFT JOIN (
-                SELECT "jobRoleId", COUNT(*) AS scanned, COUNT(*) FILTER (WHERE eligible) AS matched
+                SELECT "jobRoleId", COUNT(DISTINCT "applicantId") AS scanned, COUNT(DISTINCT "applicantId") FILTER (WHERE eligible) AS matched
                 FROM "matches_service"."RoleScan" GROUP BY "jobRoleId"
             ) s ON s."jobRoleId" = jr.id
             LEFT JOIN (

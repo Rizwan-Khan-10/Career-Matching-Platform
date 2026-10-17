@@ -1,0 +1,29 @@
+name: CI - Taxonomy copies
+
+on:
+  push:
+    paths:
+      - 'apps/resume-service/src/taxonomy/tech-roles.json'
+      - 'apps/jd-extractor-agent/app/taxonomy/tech_roles.json'
+      - 'apps/matching-agent/app/taxonomy/tech_roles.json'
+      - 'apps/matching-agent/scripts/check_taxonomy.py'
+      - '.github/workflows/ci-taxonomy.yml'
+  pull_request:
+    paths:
+      - 'apps/resume-service/src/taxonomy/tech-roles.json'
+      - 'apps/jd-extractor-agent/app/taxonomy/tech_roles.json'
+      - 'apps/matching-agent/app/taxonomy/tech_roles.json'
+      - 'apps/matching-agent/scripts/check_taxonomy.py'
+      - '.github/workflows/ci-taxonomy.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: The three copies of the target-role taxonomy are identical (contract 4.10)
+        working-directory: apps/matching-agent
+        run: python -m scripts.check_taxonomy --root ../..

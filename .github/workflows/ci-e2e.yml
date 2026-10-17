@@ -1,0 +1,25 @@
+name: CI - E2E suite
+
+on:
+  push:
+    paths: ['e2e/**', 'package.json', 'pnpm-lock.yaml', '.github/workflows/ci-e2e.yml']
+  pull_request:
+    paths: ['e2e/**', 'package.json', 'pnpm-lock.yaml', '.github/workflows/ci-e2e.yml']
+
+# Only the typecheck runs here: the 13 checkpoints need the whole stack (Postgres, Redis, nginx, all apps, Groq).
+# The real run happens inside docker compose in the Docker phase (task 4.13).
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run e2e:typecheck

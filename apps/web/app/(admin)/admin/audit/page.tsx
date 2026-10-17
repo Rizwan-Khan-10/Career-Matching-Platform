@@ -92,7 +92,7 @@ export default function AdminAuditPage() {
                     Target <span className="font-mono">{entry.target}</span>
                   </p>
                   {details && (
-                    <p className="text-xs text-ink mt-1 break-words" title={JSON.stringify(entry.meta)}>
+                    <p className="text-xs text-ink mt-1 wrap-break-words" title={JSON.stringify(entry.meta)}>
                       {details}
                     </p>
                   )}

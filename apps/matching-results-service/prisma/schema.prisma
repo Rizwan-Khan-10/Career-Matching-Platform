@@ -31,6 +31,14 @@ model Match {
   decision      String?   // recruiter verdict: 'shortlisted' | 'rejected' (null = undecided) -> real training labels
   decidedAt     DateTime?
   decidedBy     String?
+  // shortlist / reject flows + coach agent output (contract §4.7)
+  shortlistInfo     Json?     // company details sent to the applicant when shortlisted
+  rejectReason      String?   // recruiter's category: NEVER shown to the applicant
+  rejectMessage     String?   // optional recruiter note
+  prepGuide         String?   // feedback-agent: interview prep guide after shortlist
+  rejectionFeedback String?   // feedback-agent: feedback after rejection (null for position_filled / other)
+  // academic rules that could not be checked because the data was missing (names among cgpa, branch, passingYear, backlogs)
+  unverifiedRules   String[]  @default([])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 
@@ -40,19 +48,22 @@ model Match {
   @@schema("matches_service")
 }
 
-// One row per (role, applicant) the matching-agent EVALUATED, eligible or not. Source of the "scanned / matched"
-// numbers on the company and admin dashboards (Match only holds the pairs worth showing to people).
+// One row per (role, resume) the matching-agent EVALUATED, eligible or not (contract §4.7). Source of the
+// "scanned / matched" numbers on the company and admin dashboards (Match only holds the pairs worth showing to
+// people). Dashboard numbers count DISTINCT applicants: a person with two resumes is still one person.
 model RoleScan {
   id          String   @id @default(uuid())
   jobRoleId   String
   applicantId String
-  resumeId    String?
+  resumeId    String
   eligible    Boolean
   score       Float
+  inputHash   String?  // sha1 of everything that influenced the score (contract §4.12), lets matching-agent skip unchanged pairs
   scannedAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
-  @@unique([jobRoleId, applicantId])
+  @@unique([jobRoleId, resumeId])
   @@index([jobRoleId, eligible])
+  @@index([jobRoleId, applicantId])
   @@schema("matches_service")
 }

@@ -34,7 +34,7 @@ class FakeRedis:
         self.streams.setdefault(stream, [])
         self.groups[(stream, group)] = {"next": 0, "pending": {}}
 
-    def xadd(self, stream, fields):
+    def xadd(self, stream, fields, maxlen=None, approximate=True):
         self._seq += 1
         mid = f"{self._seq}-0"
         self.streams.setdefault(stream, []).append((mid, dict(fields)))
@@ -76,7 +76,8 @@ sys.modules["redis"] = fake_mod
 
 from app.core import redis_stream as rs  # noqa: E402
 
-rs.time = CLOCK
+# redis_stream may already have been imported by another test module -> point it at the fake explicitly
+rs.r, rs.redis, rs.time = fake, fake_mod, CLOCK
 
 
 class Stop(BaseException):
@@ -98,7 +99,7 @@ class RetryTest(unittest.TestCase):
         seen = []
         for mid, fields in self._deliver():
             rs._process(self.stream, self.group, mid, fields, seen.append, None, 1)
-        self.assertEqual(seen, [{"a": 1}])
+        self.assertEqual([d["a"] for d in seen], [1])   # publish() also adds requestId
         self.assertEqual(fake.pending(self.stream, self.group), [])
 
     def test_failed_message_is_retried_after_idle_then_succeeds(self):
@@ -133,7 +134,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(fake.pending(self.stream, self.group), [])
         self.assertEqual(len(fake.streams[f"{self.stream}.dead"]), 1)
         self.assertEqual(len(dead), 1)
-        self.assertEqual(dead[0][0], {"resumeId": "r1"})
+        self.assertEqual(dead[0][0]["resumeId"], "r1")
 
     def test_undecodable_message_is_dead_lettered_immediately(self):
         fake.xadd(self.stream, {"data": "{not json"})

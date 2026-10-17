@@ -8,6 +8,17 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")   # training only (training/llm_client.py); the agent itself never calls an LLM
 PORT = int(os.getenv("PORT", 8000))
 
+# --- ops (contract §3) --------------------------------------------------------
+def _flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() == "true"
+
+
+SERVICE_NAME = "matching-agent"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+ENABLE_DOCS = _flag("ENABLE_DOCS", "false")                         # FastAPI /docs only when true
+ENABLE_MATCHING_CONSUMER = _flag("ENABLE_MATCHING_CONSUMER", "true")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")  
+
 # --- embeddings -------------------------------------------------------------
 # "minilm" = real semantic model (production). "hash" = tiny offline fallback used ONLY for
 # unit tests / CI where the model can't be downloaded. Never use "hash" in production.

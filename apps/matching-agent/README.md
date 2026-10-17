@@ -29,7 +29,10 @@ job.role.deleted -> drop the role's vector
 | `taxonomy/tech_roles.json` | copy of the target-role taxonomy (3 identical copies, see below) |
 | `workers/stream_consumer.py` | Redis stream handlers |
 | `training/` | dataset generator, training, evaluation (see `training/README.md`) |
-| `scripts/` | `backfill_embeddings.py`, `export_real_labels.py` |
+|`core/redis_stream.py` | consume loop: retry, reclaim idle messages, dead-letter; `publish` adds `MAXLEN ~ 10000` + `requestId` |
+| `core/health_state.py` | consumer registry read by `/health` |
+| `core/security.py` | `x-internal-key` check |
+| `core/logging_setup.py` | JSON logs |
 | `scripts/` | `backfill_embeddings.py`, `export_real_labels.py`, `check_taxonomy.py` |
 
 Run tests: `EMBEDDING_BACKEND=hash python -m unittest discover -s tests -t . -v` (hash = offline stand-in, tests logic only).
@@ -84,3 +87,78 @@ Input hash: `rules.academic_hash_part(req, parsed, profile)` returns the effecti
 The three new features are appended to `FEATURE_NAMES`. A `scorer.json` trained on the 14 base features still loads; for the new features it uses **interim** weights
 `FRESHER_PROJECT_WEIGHT` (0.6) and `FRESHER_INTERNSHIP_WEIGHT` (0.3) (logit units, `0` switches them off) and `modelVersion` gets the suffix `+fresher-interim`.
 After retraining with the new features (task 2.10) the trained weights are used and the suffix disappears.
+
+
+## Port
+8003 (suggested): `uvicorn app.main:app --port 8003`
+
+## Routes
+| method | path | role | notes |
+|---|---|---|---|
+| GET | `/health` (also `/`) | none | 200 `ok`; **503 `degraded`** when startup failed or a consumer thread died (`errors` lists which) |
+| GET | `/model` | internal | live scorer version, threshold, embedder, metrics |
+| GET | `/stats` | internal | per-run efficiency counters + totals + cache hit rates |
+| GET | `/docs` | none | only when `ENABLE_DOCS=true` |
+
+"internal" = header `x-internal-key: $INTERNAL_API_KEY` (check skipped when the variable is unset). Agents are never exposed by nginx.
+
+## Events
+| stream | direction | payload |
+|---|---|---|
+| `resume.confirmed` | consumed | `{ resumeId, applicantId, targetTrack, targetStack }` |
+| `resume.updated` | consumed | parsed resume fields, only for confirmed resumes |
+| `profile.updated` | consumed | `{ applicantId }` |
+| `jd.extracted` | consumed | `{ jobPostingId, companyId, roleIds }` |
+| `job.role.deleted` | consumed | `{ roleId }` |
+| `resume.deleted` | consumed | `{ resumeId, applicantId }` |
+| `match.computed` | produced | applicantId, jobRoleId, roleTitle, resumeId, score, eligible, reason, skills, `unverifiedRules`, breakdown, modelVersion |
+| `match.scanned` | produced | `{ scans: [{ jobRoleId, applicantId, resumeId, eligible, score, inputHash }] }` (chunked) |
+
+Consumer group `matching-agent-group`. Every `XADD` uses `MAXLEN ~ 10000`. The `requestId` of an incoming event is copied into every event published because of it, otherwise one new id is created per message. Idle pending messages are reclaimed, retried 4 times, then moved to `<stream>.dead`.
+
+## Database
+Reads `resumes_service."Resume"`, `jobs_service."JobRole"` / `"JobPosting"`, `matches_service."RoleScan"`, `users_service."ApplicantProfile"` (read-only). Owns `resume_embeddings` and `job_role_embeddings` (created at start-up).
+
+## Environment variables
+| name | required | default / example | meaning |
+|---|---|---|---|
+| `PORT` | no | `8000` (suggested `8003`) | port (use the same in the uvicorn command) |
+| `DATABASE_URL` | yes | `postgresql://user:pass@localhost:5432/db` | Postgres with pgvector |
+| `REDIS_URL` | no | `redis://localhost:6379` | Redis streams |
+| `INTERNAL_API_KEY` | no | `change-me` | required in `x-internal-key` for every route except health/docs; unset = no check |
+| `EMBEDDING_BACKEND` | no | `minilm` | `minilm` real model; `hash` offline stand-in for tests/CI only |
+| `EMBEDDING_MODEL_NAME` | no | `all-MiniLM-L6-v2` | sentence-transformers model |
+| `SCORER_PATH` | no | `app/artifacts/scorer.json` | trained scorer file |
+| `ELIGIBILITY_THRESHOLD` | no | unset (trained one) | overrides the trained threshold |
+| `MIN_REQUIRED_SKILL_COVERAGE` | no | `0.35` | gate: required-skill coverage below this = not eligible |
+| `EXPERIENCE_GATE_RATIO` | no | `0.5` | gate: experience below ratio x minimum ... |
+| `EXPERIENCE_GATE_MIN_GAP_YEARS` | no | `1` | ... and gap at least this many years |
+| `FRESHER_PROJECT_WEIGHT` | no | `0.6` | interim projects nudge for fresher/any roles (0 = off) |
+| `FRESHER_INTERNSHIP_WEIGHT` | no | `0.3` | interim internship nudge for fresher/any roles (0 = off) |
+| `TOP_K_ROLES_PER_RESUME` | no | `50` | max roles kept for one resume |
+| `TOP_K_RESUMES_PER_ROLE` | no | `100` | max resumes kept for one role |
+| `BATCH_SIZE` | no | `25` | candidates scored per batch (best first) |
+| `EARLY_STOP_EMPTY_BATCHES` | no | `2` | consecutive batches without an eligible pair before stopping |
+| `MAX_ELIGIBLE_PER_ROLE` | no | `200` | stop once this many eligible pairs were found in a run |
+| `SIDE_CACHE_SIZE` | no | `2000` | LRU entries per side (resume / role) |
+| `PREFILTER_MIN_COSINE` | no | unset (off) | cheap prefilter threshold; enable only after the gold-set recall check |
+| `MAX_INELIGIBLE_PER_RESUME` | no | `5` | near-misses published per resume |
+| `MAX_INELIGIBLE_PER_ROLE` | no | `5` | near-misses published per role |
+| `MIN_PUBLISH_SCORE` | no | `0.20` | minimum score for a published near-miss |
+| `LOG_LEVEL` | no | `INFO` | JSON logs: `ts, level, service, requestId, msg` |
+| `ENABLE_DOCS` | no | `false` | `/docs` only when `true` |
+| `ENABLE_MATCHING_CONSUMER` | no | `true` | run the stream consumers |
+| `GROQ_API_KEY` | no | unset | training only (`training/llm_client.py`) |
+
+## Run locally
+```
+pip install -r requirements.txt
+copy .env.example .env
+uvicorn app.main:app --port 8003
+```
+
+## Docker
+`docker build -t matching-agent apps/matching-agent` (context = this folder). The embedding model is downloaded at build time; `app/artifacts/` is read-only inside the image (compose also mounts it `:ro`). Container port 8000.
+
+## Depends on
+Postgres (pgvector), Redis, resume-service (confirmed resumes, taxonomy), jd-extractor-agent (roles), user-service (academic data), matching-results-service (consumes `match.computed` / `match.scanned`).

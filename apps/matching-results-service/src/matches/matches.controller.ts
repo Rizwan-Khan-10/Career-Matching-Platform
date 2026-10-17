@@ -36,9 +36,12 @@ export class MatchesController {
     return this.service.getForJobRole(jobRoleId);
   }
 
+  // Contract §5.6: COMPANY only (not admin), approved candidates of the company's own roles only.
   @Patch(':id/decision')
   decide(@Param('id') id: string, @Body() dto: SetDecisionDto, @Req() req: AuthenticatedRequest) {
-    assertCompanySide(req);
-    return this.service.setDecision(id, req.user.userId, req.user.role, dto.decision);
+    if ((req.user.role || '').toUpperCase() !== 'COMPANY') {
+      throw new ForbiddenException('Only companies can decide on candidates');
+    }
+    return this.service.setDecision(id, req.user.userId, req.user.role, dto);
   }
 }

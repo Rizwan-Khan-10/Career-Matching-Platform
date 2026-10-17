@@ -2,6 +2,10 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { Prisma } from '../generated/prisma';
+import { SetDecisionDto, ShortlistDto } from './dto/set-decision.dto';
+
+/** Key-order independent compare of a flat JSON object (Postgres jsonb does not keep key order). */
+const canonical = (o: unknown): string => (o && typeof o === 'object' ? JSON.stringify(o, Object.keys(o).sort()) : 'null');
 
 export interface MatchComputed {
     applicantId: string;
@@ -254,17 +258,102 @@ export class MatchesService {
         if (rows.length === 0) throw new ForbiddenException('Not your job role');
     }
 
-    /** Recruiter shortlists / rejects (or clears) an APPROVED candidate. These verdicts are the real labels for retraining. */
-    async setDecision(matchId: string, userId: string, role: string, decision: string | null | undefined) {
+    /**
+     * Recruiter shortlists / rejects (or clears) an APPROVED candidate of one of the company's own roles. These
+     * verdicts are the real labels for retraining. Anything else (unknown, not approved, other company's role) is a
+     * 404 / 403 so a company can never probe matches it must not see.
+     *
+     * Saving a shortlist / rejection publishes candidate.shortlisted / candidate.rejected (contract §7); if the event
+     * cannot be published the change is rolled back, so the applicant is never left without the news. Sending the
+     * very same decision again is a no-op (no second event). `{ decision: null }` clears everything and sends no event.
+     */
+    async setDecision(matchId: string, userId: string, role: string, dto: SetDecisionDto) {
         const match = await this.prisma.match.findUnique({ where: { id: matchId } });
         if (!match || match.applicantStatus !== 'approved') throw new NotFoundException('Match not found');
         await this.assertCompanyOwnsRole(match.jobRoleId, userId, role);
-        return this.prisma.match.update({
+
+        const decision = dto.decision ?? null;
+        if (decision === null) {
+            if (!match.decision) return match; // nothing to clear
+            return this.prisma.match.update({ where: { id: matchId }, data: this.clearedDecision() });
+        }
+
+        const shortlist = decision === 'shortlisted' ? this.cleanShortlist(dto.shortlist) : null;
+        const rejection = decision === 'rejected' ? { reasonCategory: dto.rejection!.reasonCategory, message: dto.rejection!.message || null } : null;
+
+        const unchanged = decision === 'shortlisted'
+            ? match.decision === 'shortlisted' && canonical(match.shortlistInfo) === canonical(shortlist)
+            : match.decision === 'rejected' && match.rejectReason === rejection!.reasonCategory && (match.rejectMessage ?? null) === rejection!.message;
+        if (unchanged) return match;
+
+        const previous: Prisma.MatchUpdateInput = {
+            decision: match.decision, decidedAt: match.decidedAt, decidedBy: match.decidedBy,
+            shortlistInfo: match.shortlistInfo === null ? Prisma.DbNull : (match.shortlistInfo as Prisma.InputJsonValue),
+            rejectReason: match.rejectReason, rejectMessage: match.rejectMessage,
+            prepGuide: match.prepGuide, rejectionFeedback: match.rejectionFeedback,
+        };
+        const updated = await this.prisma.match.update({
             where: { id: matchId },
-            data: decision
-                ? { decision, decidedAt: new Date(), decidedBy: userId }
-                : { decision: null, decidedAt: null, decidedBy: null },
+            data: {
+                decision, decidedAt: new Date(), decidedBy: userId,
+                shortlistInfo: shortlist ? (shortlist as Prisma.InputJsonObject) : Prisma.DbNull,
+                rejectReason: rejection?.reasonCategory ?? null,
+                rejectMessage: rejection?.message ?? null,
+                // the AI guide of the OTHER outcome (or of the old details) no longer fits; feedback-agent writes a fresh one
+                prepGuide: null,
+                rejectionFeedback: null,
+            },
         });
+
+        try {
+            await this.publishDecision(updated, shortlist, rejection);
+        } catch (err) {
+            await this.prisma.match.update({ where: { id: matchId }, data: previous });
+            throw new ServiceUnavailableException('Could not save the decision, please try again');
+        }
+        return updated;
+    }
+
+    private clearedDecision(): Prisma.MatchUpdateInput {
+        return {
+            decision: null, decidedAt: null, decidedBy: null,
+            shortlistInfo: Prisma.DbNull, rejectReason: null, rejectMessage: null,
+            prepGuide: null, rejectionFeedback: null,
+        };
+    }
+
+    /** Only the known fields, trimmed, empty ones dropped (what the applicant sees verbatim). */
+    private cleanShortlist(s: ShortlistDto | undefined): Record<string, string> {
+        const out: Record<string, string> = {};
+        for (const key of ['roundName', 'mode', 'scheduledAt', 'bring', 'link', 'address', 'note'] as const) {
+            const v = s?.[key];
+            if (typeof v === 'string' && v.trim() !== '') out[key] = v.trim();
+        }
+        return out;
+    }
+
+    /** candidate.shortlisted / candidate.rejected (contract §7). companyName comes from users_service.CompanyProfile. */
+    private async publishDecision(
+        match: { id: string; applicantId: string; jobRoleId: string; roleTitle: string | null },
+        shortlist: Record<string, string> | null,
+        rejection: { reasonCategory: string; message: string | null } | null,
+    ) {
+        const info = (await this.roleInfo([match.jobRoleId])).get(match.jobRoleId);
+        if (!info?.companyId) throw new Error(`company of role ${match.jobRoleId} not found`);
+        const base = {
+            matchId: match.id,
+            applicantId: match.applicantId,
+            jobRoleId: match.jobRoleId,
+            companyId: info.companyId,
+            roleTitle: info.title ?? match.roleTitle,
+        };
+        if (shortlist) {
+            await this.redis.client.xadd('candidate.shortlisted', '*', 'data', JSON.stringify({ ...base, companyName: info.companyName ?? null, shortlist }));
+        } else if (rejection) {
+            await this.redis.client.xadd('candidate.rejected', '*', 'data', JSON.stringify({
+                ...base, reasonCategory: rejection.reasonCategory, ...(rejection.message ? { message: rejection.message } : {}),
+            }));
+        }
     }
 
     /**

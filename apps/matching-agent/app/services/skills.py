@@ -36,6 +36,42 @@ ALIASES = {
     "golang": "go", "c sharp": "c#", "cpp": "c++",
     "powerbi": "power bi", "ms excel": "excel", "microsoft excel": "excel",
     "ui/ux": "ui ux design", "ux": "ux design", "ui": "ui design",
+        # ---- tech aliases (task 2.8/2.9): frameworks, cloud, data/ML, DevOps, QA. Keys are the form normalize_skill() produces
+    # (lower-case, edge punctuation stripped, so ".NET" arrives as "net"). Values are never keys themselves (applied once).
+    # frontend / backend frameworks and languages
+    "vanilla js": "javascript", "vanilla javascript": "javascript", "javascript es6": "javascript", "type script": "typescript",
+    "tailwind": "tailwind css", "tailwindcss": "tailwind css", "scss": "sass",
+    "sveltejs": "svelte", "nuxtjs": "nuxt.js", "nuxt": "nuxt.js", "express js": "express", "angular 2": "angular", "angular2": "angular",
+    "redux toolkit": "redux", "react-native": "react native", "reactnative": "react native", "bootstrap 5": "bootstrap",
+    "springboot": "spring boot", "spring-boot": "spring boot", "fast api": "fastapi", "drf": "django rest framework",
+    "net": "dotnet", "dot net": "dotnet", "net core": "dotnet", "dotnet core": "dotnet", "net framework": "dotnet",
+    "asp.net core": "asp.net", "asp net": "asp.net", "asp net core": "asp.net",
+    "core java": "java", "java 8": "java", "java 11": "java", "java 17": "java", "python programming": "python",
+    "c language": "c", "c programming": "c", "objective c": "objective-c",
+    "restful web services": "rest api", "rest web services": "rest api", "graphql api": "graphql",
+    "microservice": "microservices", "microservices architecture": "microservices", "web sockets": "websockets", "websocket": "websockets",
+    "oauth2": "oauth", "oauth 2.0": "oauth", "json web token": "jwt", "jwt tokens": "jwt",
+    # databases
+    "mssql": "sql server", "ms sql": "sql server", "microsoft sql server": "sql server", "my sql": "mysql", "pgsql": "postgresql",
+    "oracle db": "oracle", "oracle database": "oracle", "dynamo db": "dynamodb", "elastic search": "elasticsearch",
+    # cloud
+    "amazon aws": "amazon web services", "aws cloud": "amazon web services", "microsoft azure": "azure", "azure cloud": "azure",
+    # devops
+    "docker-compose": "docker compose", "dockercompose": "docker compose", "github action": "github actions", "gh actions": "github actions",
+    "gitlab ci/cd": "gitlab ci", "gitlab-ci": "gitlab ci", "jenkins ci": "jenkins", "iac": "infrastructure as code",
+    "elastic stack": "elk stack", "bash scripting": "shell scripting", "shell": "shell scripting", "bash": "shell scripting",
+    # data / ML / AI
+    "power-bi": "power bi", "microsoft power bi": "power bi", "spark": "apache spark", "tensor flow": "tensorflow",
+    "torch": "pytorch", "py torch": "pytorch", "huggingface": "hugging face", "llm": "large language models",
+    "llms": "large language models", "genai": "generative ai", "gen ai": "generative ai", "open cv": "opencv",
+    "ai": "artificial intelligence", "data visualisation": "data visualization", "data viz": "data visualization",
+    "big query": "bigquery", "tableau desktop": "tableau", "eda": "exploratory data analysis",
+    # QA / testing
+    "selenium webdriver": "selenium", "selenium web driver": "selenium", "junit5": "junit", "junit 5": "junit", "test ng": "testng",
+    "cypress.io": "cypress", "automation testing": "test automation", "testing automation": "test automation",
+    "tdd": "test driven development",
+    "behaviour driven development": "bdd", "behavior driven development": "bdd", "restassured": "rest assured",
+    "apache jmeter": "jmeter", "api test": "api testing",
 }
 
 def _load_extra_aliases() -> dict:

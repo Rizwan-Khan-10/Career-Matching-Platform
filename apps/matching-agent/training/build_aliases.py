@@ -9,6 +9,9 @@ alias -> canonical, all lowercase.  Rules (conservative on purpose):
   * an alias that points to more than one canonical is dropped (ambiguous)
   * an alias that is itself another skill's preferred label is dropped
   * 1-char, numeric-only and > 5-word aliases are dropped
+  * --tech-only: keep only aliases whose canonical is a tech skill (training/tech_filter.py), so the file stays small
+    and relevant for a tech-jobs platform. Hand-written tech aliases (frameworks, cloud, data/ML, DevOps, QA) live in
+    app/services/skills.py and always win over ESCO.
 After changing aliases: re-run  python -m scripts.backfill_embeddings --rematch  and retrain (profile text changes).
 """
 import argparse
@@ -37,7 +40,8 @@ def _col(header, *needles):
     return None
 
 
-def build(rows, header, hand):
+def build(rows, header, hand, keep=None):
+    """keep: optional set of canonical skills; when given, only aliases that point to one of them are returned."""
     pref, alts = _col(header, "preferred"), _col(header, "alt")
     if not pref or not alts:
         raise SystemExit(f"could not find preferred/alt label columns in {header}")
@@ -56,24 +60,32 @@ def build(rows, header, hand):
     for a, cs in a2c.items():
         if len(cs) != 1 or a in hand or a in preferred or len(a) < 2 or a.isdigit() or len(a.split()) > 5:
             continue
-        out[a] = next(iter(cs))
+        canon = next(iter(cs))
+        if keep is not None and canon not in keep:
+            continue
+        out[a] = canon
     return dict(sorted(out.items()))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--esco", required=True, help="path to skills_en.csv")
-    ap.add_argument("--out", default=OUT)
+    ap.add_argument("--tech-only", action="store_true", help="keep only aliases of tech skills")
     a = ap.parse_args()
     with open(a.esco, encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
         header = reader.fieldnames or []
-    aliases = build(rows, header, HAND)
+    keep = None
+    if a.tech_only:
+        from training.tech_filter import TECH_SKILLS
+        keep = TECH_SKILLS
+    aliases = build(rows, header, HAND, keep)
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(aliases, f, indent=0, ensure_ascii=False)
-    print(f"{len(rows)} ESCO skills -> {len(aliases)} aliases written to {a.out}")
+    print(f"{len(rows)} ESCO skills -> {len(aliases)} aliases written to {a.out}" + (" (tech only)" if a.tech_only else ""))
+    print(f"hand-written aliases (always win): {len(HAND)}")
 
 
 if __name__ == "__main__":

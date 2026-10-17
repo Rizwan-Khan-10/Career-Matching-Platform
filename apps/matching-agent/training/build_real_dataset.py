@@ -14,6 +14,16 @@ Every unique resume / JD is parsed ONCE (cached in training/data/.parse_cache, s
 Label mapping: Good Fit -> 1, No Fit -> 0, Potential Fit -> dropped (--potential neg|pos to keep it).
 Rows get `group` = the job (ranking is per job) and `split_group` = the resume (train/test never share a resume).
 
+TECH ONLY: the platform matches tech jobs only, so pairs whose resume OR job is not technical are dropped
+(training/tech_filter.py: title + skills list). `--keep-non-tech` switches the filter off. Stats of what was kept are printed.
+Parsed rows carry the same fields production has: resume `branch / passingYear / backlogs`, role `level / track / stacks`
+and the campus rules (`minCgpa, allowedBranches, passingYears, maxBacklogs`), so level-aware features can be trained (task 2.8).
+The cache files are `*.v2.jsonl`: older caches were parsed without those fields and are ignored (delete them to save disk).
+
+DATASET LICENSE / TERMS: the data comes from the Hugging Face dataset card `cnamuangtoun/resume-job-description-fit`.
+Check the licence shown on that card yourself before using it beyond internal training, and never commit the raw
+text or the generated files: training/data/ is git-ignored on purpose. Only the trained weights (scorer.json) are committed.
+
 KEEP THE PROMPTS IN SYNC with resume-parser-agent/app/services/resume_parser.py and
 jd-extractor-agent/app/services/jd_parser.py (copied below, verbatim).
 """
@@ -24,6 +34,7 @@ import os
 import re
 from collections import Counter
 from datetime import date
+from training.tech_filter import resume_is_tech, role_is_tech
 
 RESUME_PROMPT = """You extract structured data from a resume. Today's date is {today}.
 Respond with valid JSON only, exactly this shape (never omit a key; use null / [] when unknown):
@@ -183,8 +194,34 @@ def _cgpa(v):
     return round(n, 2) if n is not None and 0 < n <= 10 else None
 
 
-def _strs(v):
-    return [str(x).strip() for x in (v if isinstance(v, list) else []) if str(x).strip()]
+TRACK_STACKS = {   # mirrors the taxonomy in the contracts (4.10) / JD_PROMPT; replace by tech_roles.json once 2.1 is merged here
+    "frontend": {"javascript", "other"},
+    "backend": {"java", "python", "javascript", "dotnet", "go", "php", "ruby", "other"},
+    "fullstack": {"java", "python", "javascript", "dotnet", "php", "other"},
+    "mobile": {"android", "ios", "cross_platform", "other"},
+    "data_ml": {"data_analyst", "data_engineer", "ml_ai", "other"},
+    "devops_cloud": {"aws", "azure", "gcp", "general", "other"},
+    "qa": {"manual", "automation", "other"},
+    "other": set(),
+}
+
+
+def _int(v, lo, hi):
+    n = _num(v)
+    return int(n) if n is not None and lo <= n <= hi else None
+
+
+def _level(v):
+    v = str(v or "").strip().lower()
+    return v if v in ("fresher", "experienced", "any") else "any"
+
+
+def _track_and_stacks(track, stacks):
+    t = str(track or "").strip().lower()
+    if t not in TRACK_STACKS:
+        return "other", []
+    ok = [x for x in (str(s).strip().lower() for s in (stacks if isinstance(stacks, list) else [])) if x in TRACK_STACKS[t]]
+    return t, sorted(set(ok))
 
 
 def llm_parse_resume(text, today=None):
@@ -193,10 +230,12 @@ def llm_parse_resume(text, today=None):
     d = json.loads(ask_llm(RESUME_PROMPT.format(today=today.isoformat()), _clean(text)))
     exp = [e for e in (d.get("experience") or []) if isinstance(e, dict)]
     years = total_experience_years(exp, today)
+    branch = str(d.get("branch")).strip() if d.get("branch") else None
     return {
         "skills": _strs(d.get("skills"))[:60], "projects": [p for p in (d.get("projects") or []) if isinstance(p, dict)][:12],
         "experience": exp[:15], "education": d.get("education") or None, "currentTitle": d.get("currentTitle") or None,
         "summary": d.get("summary") or None, "certifications": _strs(d.get("certifications")), "cgpa": _cgpa(d.get("cgpa")),
+        "branch": branch or None, "passingYear": _int(d.get("passingYear"), 1990, 2100), "backlogs": _int(d.get("backlogs"), 0, 99),
         "experienceYears": years if years is not None else _num(d.get("experienceYears")),
     }
 
@@ -206,10 +245,19 @@ def llm_parse_jd(text):
     d = json.loads(ask_llm(JD_PROMPT, _clean(text)))
     for r in d.get("roles") or []:
         if isinstance(r, dict) and (r.get("title") or r.get("requiredSkills")):
-            return {"title": str(r.get("title") or "Untitled role"), "requirements": {
-                "summary": r.get("summary"), "requiredSkills": _strs(r.get("requiredSkills"))[:30],
-                "preferredSkills": _strs(r.get("preferredSkills"))[:20], "minExperienceYears": _num(r.get("minExperienceYears")),
-                "qualifications": r.get("qualifications") or None, "seniority": r.get("seniority")}}
+            track, stacks = _track_and_stacks(r.get("track"), r.get("stacks"))
+            branches = _strs(r.get("allowedBranches"))
+            years = [y for y in (_int(x, 1990, 2100) for x in (r.get("passingYears") if isinstance(r.get("passingYears"), list) else [])) if y]
+            req = {"summary": r.get("summary"), "requiredSkills": _strs(r.get("requiredSkills"))[:30],
+                   "preferredSkills": _strs(r.get("preferredSkills"))[:20], "minExperienceYears": _num(r.get("minExperienceYears")),
+                   "qualifications": r.get("qualifications") or None, "seniority": r.get("seniority"),
+                   "level": _level(r.get("level")), "track": track, "stacks": stacks}
+            # campus rules: a rule that is not stated stays ABSENT (= not set), same as production
+            for key, val in (("minCgpa", _cgpa(r.get("minCgpa"))), ("allowedBranches", branches or None),
+                             ("passingYears", sorted(set(years)) or None), ("maxBacklogs", _int(r.get("maxBacklogs"), 0, 99))):
+                if val is not None:
+                    req[key] = val
+            return {"title": str(r.get("title") or "Untitled role"), "requirements": req}
     return None
 
 
@@ -260,9 +308,10 @@ class DiskCache:
         return v
 
 
-def convert(pairs, parse_resume, parse_jd, cache_dir, potential="drop", max_resumes=None, max_jds=None):
-    """pairs: iterable of dicts(resume, jd, label). -> list of training rows (see module docstring)."""
-    rcache, jcache = DiskCache(os.path.join(cache_dir, "resumes.jsonl")), DiskCache(os.path.join(cache_dir, "jds.jsonl"))
+def convert(pairs, parse_resume, parse_jd, cache_dir, potential="drop", max_resumes=None, max_jds=None, tech_only=True):
+    """pairs: iterable of dicts(resume, jd, label). -> list of training rows (see module docstring).
+    tech_only: drop pairs whose resume or job is not technical (tech_filter.py); the parsed result stays cached either way."""
+    rcache, jcache = DiskCache(os.path.join(cache_dir, "resumes.v2.jsonl")), DiskCache(os.path.join(cache_dir, "jds.v2.jsonl"))
     seen_r, seen_j, rows, stats = set(), set(), [], Counter()
     for p in pairs:
         label_txt = str(p["label"]).strip().lower()
@@ -284,11 +333,39 @@ def convert(pairs, parse_resume, parse_jd, cache_dir, potential="drop", max_resu
         if not resume or not role:
             stats["unparseable"] += 1
             continue
+        if tech_only:
+            if not resume_is_tech(resume):
+                stats["non-tech resume dropped"] += 1
+                continue
+            if not role_is_tech(role):
+                stats["non-tech job dropped"] += 1
+                continue
         stats[f"label={y}"] += 1
         rows.append({"group": f"jd-{jh}", "split_group": f"cv-{rh}", "kind": "hf_fit", "label": y, "weight": 1.0,
                      "role": role, "resume": resume})
     print("converted:", dict(stats), f"| unique resumes={len(seen_r)} unique jds={len(seen_j)}")
+    print_stats(rows, tech_only)
     return rows
+
+
+def print_stats(rows, tech_only=True):
+    """What the dataset looks like after the filter (the 'tech-only stats' of task 2.9)."""
+    n = len(rows)
+    pos = sum(r["label"] for r in rows)
+    resumes, jobs = {r["split_group"] for r in rows}, {r["group"] for r in rows}
+    reqs = [r["role"]["requirements"] for r in rows]
+    print(f"--- {'tech-only' if tech_only else 'ALL (tech filter off)'} dataset ---")
+    print(f"pairs={n}  positives={pos} ({pos / n:.0%})  negatives={n - pos}  unique resumes={len(resumes)}  unique jobs={len(jobs)}" if n else "pairs=0")
+    if not n:
+        return
+    print("level :", dict(Counter(q.get("level", "any") for q in reqs)))
+    print("track :", dict(Counter(q.get("track", "other") for q in reqs).most_common()))
+    rules = Counter(k for q in reqs for k in ("minCgpa", "allowedBranches", "passingYears", "maxBacklogs") if q.get(k) is not None)
+    print("rules set on roles:", dict(rules) or "none")
+    print("resumes with branch / passingYear / backlogs / cgpa:",
+          {k: sum(1 for r in rows if r["resume"].get(k) is not None) for k in ("branch", "passingYear", "backlogs", "cgpa")})
+    avg = sum(len(q.get("requiredSkills") or []) for q in reqs) / n
+    print(f"avg required skills per job: {avg:.1f}")
 
 
 def _load_hf():

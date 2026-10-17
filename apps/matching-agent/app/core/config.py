@@ -16,7 +16,7 @@ SERVICE_NAME = "matching-agent"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ENABLE_DOCS = _flag("ENABLE_DOCS", "false")                         # FastAPI /docs only when true
 ENABLE_MATCHING_CONSUMER = _flag("ENABLE_MATCHING_CONSUMER", "true")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")  
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # --- embeddings -------------------------------------------------------------
 # "minilm" = real semantic model (production). "hash" = tiny offline fallback used ONLY for
@@ -24,6 +24,7 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 # APP_ENV (or ENV) is "production".
 IS_PRODUCTION = (os.getenv("APP_ENV") or os.getenv("ENV") or "").strip().lower() == "production"
 EMBEDDING_BACKEND = os.getenv("EMBEDDING_BACKEND", "minilm")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 # --- retrieval --------------------------------------------------------------
 TOP_K_ROLES_PER_RESUME = int(os.getenv("TOP_K_ROLES_PER_RESUME", 50))

@@ -9,6 +9,7 @@
 //   localStorage.setItem('mock-job-approval', 'pending' | 'rejected' | 'approved') // newest job posting
 // localStorage.removeItem('mock-candidates') // reset the fake company candidates (/company/roles/mock-role/applicants)
 //   window.mockNotify('shortlisted')  // console: fake a live notification (toast + bell + matches refetch)
+//   localStorage.removeItem('mock-admin-settings') // reset the fake admin settings (+ 'mock-imported-emails' for the CSV import)
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
@@ -16,6 +17,7 @@ import { handleAcademicMock } from './academic';
 import { handleMatchMock } from './matches';
 import { handleCandidateMock } from './candidates';
 import { handleNotificationMock } from './notifications';
+import { handleAdminMock } from './admin';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -40,6 +42,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if (method === 'get' && url === '/auth/registration-mode') {
     return respond(config, 200, { mode: regMode, allowedDomains: regMode === 'domain' ? ALLOWED_DOMAINS : [] });
   }
+
+  // contract 5.1: admin settings + CSV import
+  const adminResponse = handleAdminMock(method, url, config);
+  if (adminResponse) return adminResponse;
 
   // contract 5.1: signup is 403 in invite_only, or in domain mode for a wrong email domain
   if (method === 'post' && url === '/auth/signup') {

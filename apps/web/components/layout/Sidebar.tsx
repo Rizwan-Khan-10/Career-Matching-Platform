@@ -24,6 +24,8 @@ const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
         { label: 'Dashboard', href: '/admin/dashboard' },
         { label: 'Companies', href: '/admin/companies' },
         { label: 'Applicants', href: '/admin/applicants' },
+        { label: 'Import users', href: '/admin/import' },
+        { label: 'Settings', href: '/admin/settings' },
         { label: 'Notifications', href: '/admin/notifications' },
     ],
 };

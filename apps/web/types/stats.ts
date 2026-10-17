@@ -27,9 +27,19 @@ export interface AdminCompanyRow extends Totals {
     stoppedJobs: number;
 }
 
+// contract 5.6: GET /stats/admin -> byBranch (effective branch, contract 4.3)
+export interface BranchStats {
+    branch: string | null;
+    scanned: number;
+    matched: number;
+    applied: number;
+    shortlisted: number;
+}
+
 export interface AdminStats {
     platform: { applicants: number; resumesScanned: number; jobs: number; stoppedJobs: number };
     totals: Totals;
     companies: AdminCompanyRow[];
     roles: RoleStats[];
+    byBranch?: BranchStats[]; // missing on an older backend
 }

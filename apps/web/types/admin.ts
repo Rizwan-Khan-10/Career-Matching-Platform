@@ -64,3 +64,24 @@ export interface PendingJob {
   createdAt: string;
   approvalStatus?: JobApprovalStatus;
 }
+
+// contract 5.2: GET /admin/health
+export interface HealthStream {
+  name: string; // e.g. "resume.uploaded"; dead letters live in "<name>.dead"
+  length: number;
+  deadLength: number; // messages that failed after all retries
+}
+
+export interface SystemHealth {
+  streams: HealthStream[];
+}
+
+// contract 5.2: GET /admin/audit?limit=50
+export interface AuditEntry {
+  id: string;
+  actorId: string;
+  action: string;
+  target: string;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+}

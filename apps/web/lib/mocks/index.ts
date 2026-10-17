@@ -8,12 +8,14 @@
 // localStorage.removeItem('mock-matches') // reset the fake matches
 //   localStorage.setItem('mock-job-approval', 'pending' | 'rejected' | 'approved') // newest job posting
 // localStorage.removeItem('mock-candidates') // reset the fake company candidates (/company/roles/mock-role/applicants)
+//   window.mockNotify('shortlisted')  // console: fake a live notification (toast + bell + matches refetch)
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
 import { handleAcademicMock } from './academic';
 import { handleMatchMock } from './matches';
 import { handleCandidateMock } from './candidates';
+import { handleNotificationMock } from './notifications';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -87,7 +89,11 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if ((isRoleCreate || isUpload) && companyStatus !== 'approved') {
     return respond(config, 403, errorBody(403, 'Company is not approved yet', 'Forbidden'));
   }
-  
+
+  // contract 5.3: notification list, unread count, mark read / read-all
+  const notificationResponse = handleNotificationMock(method, url, config);
+  if (notificationResponse) return notificationResponse;
+
   // contract 5.6: company candidates + decision (use /company/roles/mock-role/applicants)
   const candidateResponse = handleCandidateMock(method, url, config);
   if (candidateResponse) return candidateResponse;

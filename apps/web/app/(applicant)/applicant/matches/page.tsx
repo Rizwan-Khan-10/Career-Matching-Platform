@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { toast } from '@/lib/toast';
@@ -26,6 +26,7 @@ export default function MatchesPage() {
   const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const scrolledTo = useRef<string | null>(null);
 
   const { data: matches, isLoading, isError, refetch } = useQuery<Match[]>({
     queryKey: ['matches'],
@@ -53,6 +54,16 @@ export default function MatchesPage() {
       LIVE_EVENTS.forEach((event) => socket.off(event, refresh));
     };
   }, [token, queryClient]);
+
+  // deep link from a notification: /applicant/matches#match-<id>; scroll to the card once the list has loaded
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id || !matches || scrolledTo.current === id) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    scrolledTo.current = id;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [matches]);
 
   const decide = useMutation({
     mutationFn: ({ id, approved }: { id: string; approved: boolean }) => apiClient.patch(`/matches/${id}/approval`, { approved }),
@@ -107,12 +118,14 @@ export default function MatchesPage() {
       <div className="flex flex-col gap-3">
         {matches?.map((match, i) => (
           <FadeIn key={match.id} delay={i * 0.05}>
-            <MatchCard
-              match={match}
-              busy={decide.isPending}
-              onDecide={(approved) => decide.mutate({ id: match.id, approved })}
-              onOpenProfile={() => setIsProfileOpen(true)}
-            />
+            <div id={`match-${match.id}`} className="scroll-mt-20 rounded-xl transition-shadow target:ring-2 target:ring-accent">
+              <MatchCard
+                match={match}
+                busy={decide.isPending}
+                onDecide={(approved) => decide.mutate({ id: match.id, approved })}
+                onOpenProfile={() => setIsProfileOpen(true)}
+              />
+            </div>
           </FadeIn>
         ))}
       </div>

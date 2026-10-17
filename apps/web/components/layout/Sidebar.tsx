@@ -12,16 +12,19 @@ const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
         { label: 'Matches', href: '/applicant/matches' },
         { label: 'Feedback', href: '/applicant/feedback' },
         { label: 'Chat', href: '/applicant/chat' },
+        { label: 'Notifications', href: '/applicant/notifications' },
     ],
     COMPANY: [
         { label: 'Dashboard', href: '/company/dashboard' },
         { label: 'Jobs', href: '/company/jobs' },
         { label: 'Ask AI', href: '/company/ask' },
+        { label: 'Notifications', href: '/company/notifications' },
     ],
     ADMIN: [
         { label: 'Dashboard', href: '/admin/dashboard' },
         { label: 'Companies', href: '/admin/companies' },
         { label: 'Applicants', href: '/admin/applicants' },
+        { label: 'Notifications', href: '/admin/notifications' },
     ],
 };
 

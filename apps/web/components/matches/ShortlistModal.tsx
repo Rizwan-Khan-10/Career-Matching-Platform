@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -32,7 +32,7 @@ function ShortlistForm({
     const {
         register,
         handleSubmit,
-        watch,
+        control,
         formState: { errors, isSubmitting },
     } = useForm<ShortlistFormValues>({
         resolver: zodResolver(shortlistSchema),
@@ -46,7 +46,7 @@ function ShortlistForm({
             note: info?.note ?? '',
         },
     });
-    const mode = watch('mode');
+    const mode = useWatch({ control, name: 'mode' });
 
     const submit = handleSubmit(async (values) => {
         setServerError(null);

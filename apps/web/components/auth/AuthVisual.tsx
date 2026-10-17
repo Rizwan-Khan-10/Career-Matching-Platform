@@ -155,13 +155,19 @@ export function AuthVisual() {
   const [caption, setCaption] = useState('Every applicant uploads a resume.');
 
   const applicantsRef = useRef(applicants);
-  applicantsRef.current = applicants;
   const finalCountRef = useRef(0);
 
   useEffect(() => {
+    applicantsRef.current = applicants;
+  }, [applicants]);
+
+  useEffect(() => {
+    // client-only init: random data during render would cause a hydration mismatch
+    /* eslint-disable react-hooks/set-state-in-effect */
     setApplicants(makeApplicants(INITIAL_COUNT));
     setMounted(true);
     setPhase('introApplicants');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   function startRound() {

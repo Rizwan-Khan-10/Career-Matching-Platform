@@ -7,17 +7,13 @@ import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { motion } from 'motion/react';
 import { toast } from '@/lib/toast';
+import { getErrorMessage } from '@/lib/errors';
 
 interface Message {
     id: string;
     sender: 'user' | 'agent';
     content: string;
     createdAt: string;
-}
-
-function errorText(err: any, fallback: string): string {
-    const m = err?.response?.data?.message;
-    return (Array.isArray(m) ? m[0] : m) || fallback;
 }
 
 export default function ChatThreadPage() {
@@ -41,10 +37,10 @@ export default function ChatThreadPage() {
             setPending(null);
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
         },
-        onError: (err: any, message) => {
+        onError: (err, message) => {
             setPending(null);
             setInput((cur) => cur || message); // nothing was saved server-side: give the text back so the user can retry
-            toast.error(errorText(err, 'Message failed to send, try again'));
+            toast.error(getErrorMessage(err, 'Message failed to send, try again'));
         },
     });
 
@@ -71,7 +67,7 @@ export default function ChatThreadPage() {
 
                 {messages?.length === 0 && !pending && (
                     <p className="text-sm text-ink-grey">
-                        Ask anything about this role — why you were or weren't a match, or what to improve.
+                        Ask anything about this role — why you were or weren&apos;t a match, or what to improve.
                     </p>
                 )}
 

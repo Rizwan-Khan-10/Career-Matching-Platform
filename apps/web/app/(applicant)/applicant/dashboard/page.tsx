@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/apiClient';
 import { ProfileBanner } from '@/components/ProfileBanner';
 import { ApplicantProfileModal } from '@/components/profile/ApplicantProfileModal';
 import { FadeIn } from '@/components/motion/FadeIn';
+import type { Match } from '@/types/match';
 
 export default function ApplicantDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -19,12 +20,12 @@ export default function ApplicantDashboard() {
     queryKey: ['resumes'],
     queryFn: () => apiClient.get('/resumes/mine').then((r) => r.data),
   });
-  const { data: matches } = useQuery({
+  const { data: matches } = useQuery<Match[]>({
     queryKey: ['matches'],
     queryFn: () => apiClient.get('/matches/mine').then((r) => r.data),
   });
 
-  const eligibleCount = matches?.filter((m: any) => m.eligible).length ?? 0;
+  const eligibleCount = matches?.filter((m) => m.eligible).length ?? 0;
   const resumeStatus = resumes?.[0]?.status ?? 'not uploaded';
 
   return (

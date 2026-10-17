@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -30,13 +30,14 @@ function RejectForm({
     const {
         register,
         handleSubmit,
-        watch,
+        control,
         formState: { errors, isSubmitting },
     } = useForm<RejectFormValues>({
         resolver: zodResolver(rejectSchema),
         defaultValues: { reasonCategory: match.rejectReason ?? undefined, message: match.rejectMessage ?? '' },
     });
-    const reason = REJECT_REASONS.find((r) => r.value === watch('reasonCategory'));
+    const reasonCategory = useWatch({ control, name: 'reasonCategory' });
+    const reason = REJECT_REASONS.find((r) => r.value === reasonCategory);
 
     const submit = handleSubmit(async (values) => {
         setServerError(null);

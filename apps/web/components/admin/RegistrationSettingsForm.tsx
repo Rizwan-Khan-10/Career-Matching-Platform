@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/Button';
 import { FieldError } from '@/components/ui/FieldError';
@@ -62,16 +62,16 @@ export function RegistrationSettingsForm({
     const {
         register,
         handleSubmit,
-        watch,
+        control,
         setValue,
         reset,
         formState: { errors, isDirty, isSubmitting },
     } = useForm<AdminSettingsValues>({ resolver: zodResolver(adminSettingsSchema), defaultValues: initial });
 
-    const mode = watch('registrationMode');
-    const domains = watch('allowedDomains');
-    const companyApproval = watch('companyApprovalRequired');
-    const jobApproval = watch('jobApprovalRequired');
+    const mode = useWatch({ control, name: 'registrationMode' });
+    const domains = useWatch({ control, name: 'allowedDomains' });
+    const companyApproval = useWatch({ control, name: 'companyApprovalRequired' });
+    const jobApproval = useWatch({ control, name: 'jobApprovalRequired' });
     const flag = (name: 'companyApprovalRequired' | 'jobApprovalRequired') => (next: boolean) =>
         setValue(name, next, { shouldDirty: true });
 

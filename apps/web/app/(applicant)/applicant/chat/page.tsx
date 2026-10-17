@@ -44,14 +44,14 @@ export default function ChatListPage() {
         <div className="max-w-2xl">
             <h1 className="font-heading text-2xl text-ink mb-1">Chat</h1>
             <p className="text-sm text-ink-grey mb-6">
-                One conversation per role you've been evaluated against — ask about your match or feedback.
+                One conversation per role you&apos;ve been evaluated against — ask about your match or feedback.
             </p>
 
             {isLoading && <p className="text-sm text-ink-grey">Loading...</p>}
 
             {conversations?.length === 0 && (
                 <p className="text-sm text-ink-grey">
-                    No conversations yet — these appear automatically once you've been matched against a role.
+                    No conversations yet — these appear automatically once you&apos;ve been matched against a role.
                 </p>
             )}
 

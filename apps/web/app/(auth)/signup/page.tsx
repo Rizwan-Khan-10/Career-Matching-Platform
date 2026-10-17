@@ -2,7 +2,7 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -14,11 +14,29 @@ import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
+import { decodeJwtPayload } from '@/lib/jwt';
+
+interface RegistrationModeResponse {
+    mode: 'open' | 'invite_only' | 'domain';
+    allowedDomains: string[];
+}
 
 export default function SignupPage() {
     const router = useRouter();
     const setAuth = useAuthStore((s) => s.setAuth);
     const [serverError, setServerError] = useState<string | null>(null);
+
+    // Contract 5.1: GET /auth/registration-mode is public and decides whether/how signup is allowed.
+    // If the call fails (endpoint not reachable yet) we fall back to "open" — the server is the real
+    // gate anyway (POST /auth/signup enforces it), this is only to adapt the UI.
+    const { data: registrationMode } = useQuery({
+        queryKey: ['registrationMode'],
+        queryFn: () => apiClient.get<RegistrationModeResponse>('/auth/registration-mode').then((r) => r.data),
+        staleTime: 60_000,
+        retry: false,
+    });
+    const mode = registrationMode?.mode ?? 'open';
+    const allowedDomains = registrationMode?.allowedDomains ?? [];
 
     const { register, handleSubmit, watch, formState: { errors } } = useForm<SignupFormValues>({
         resolver: zodResolver(signupSchema),
@@ -30,9 +48,10 @@ export default function SignupPage() {
     const mutation = useMutation({
         mutationFn: (values: SignupFormValues) => apiClient.post('/auth/signup', values),
         onSuccess: (res) => {
-            const { accessToken, role } = res.data;
-            const payload = JSON.parse(atob(accessToken.split('.')[1]));
-            setAuth(accessToken, role, payload.sub);
+            const { accessToken, refreshToken, role } = res.data;
+            const payload = decodeJwtPayload(accessToken);
+            if (!payload) { setServerError('Login failed, please try again'); return; }
+            setAuth(accessToken, role, String(payload.sub), refreshToken);
             if (role === 'APPLICANT') router.push('/applicant/dashboard');
             else router.push('/company/dashboard');
         },
@@ -42,6 +61,25 @@ export default function SignupPage() {
             toast.error(msg);
         },
     });
+
+    if (mode === 'invite_only') {
+        return (
+            <Stagger className="w-full max-w-sm">
+                <StaggerItem>
+                    <h1 className="font-heading text-2xl text-ink mb-1">Registration is closed</h1>
+                    <p className="text-sm text-ink-grey mb-6">
+                        This platform is invite-only right now. Your institution admin adds accounts directly —
+                        if you were expecting access, ask them to add you.
+                    </p>
+                </StaggerItem>
+                <StaggerItem>
+                    <Link href="/login" className="text-sm text-ink font-medium underline underline-offset-2">
+                        Back to login
+                    </Link>
+                </StaggerItem>
+            </Stagger>
+        );
+    }
 
     return (
         <Stagger className="w-full max-w-sm">
@@ -73,6 +111,11 @@ export default function SignupPage() {
                 <StaggerItem>
                     <Input type="email" placeholder="Email" {...register('email')} />
                     <FieldError message={errors.email?.message} />
+                    {mode === 'domain' && allowedDomains.length > 0 && (
+                        <p className="text-xs text-ink-grey mt-1">
+                            Only emails from {allowedDomains.join(', ')} can sign up.
+                        </p>
+                    )}
                 </StaggerItem>
                 <StaggerItem>
                     <Input type="password" placeholder="Password" {...register('password')} />

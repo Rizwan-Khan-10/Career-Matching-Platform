@@ -13,3 +13,7 @@ export function getErrorMessage(err: unknown, fallback: string): string {
 export function isForbidden(err: unknown): boolean {
   return isAxiosError(err) && err.response?.status === 403;
 }
+
+export function isConflict(err: unknown): boolean {
+  return isAxiosError(err) && err.response?.status === 409;
+}

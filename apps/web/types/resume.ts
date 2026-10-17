@@ -23,6 +23,9 @@ export interface ParsedResumeData {
   education?: string | null;
   cgpa?: number | null;
   experienceYears?: number | null;
+  branch?: string | null;
+  passingYear?: number | null;
+  backlogs?: number | null;
   error?: string;
 }
 
@@ -32,4 +35,10 @@ export interface Resume {
   fileUrl: string;
   parsedData: ParsedResumeData | null;
   createdAt: string;
+  // contract 4.9 / 5.4
+  targetTrack?: string;
+  targetStack?: string;
+  targetLabel?: string; // e.g. "Backend · Java"
+  confirmedAt?: string | null;
+  supersededAt?: string | null;
 }

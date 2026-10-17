@@ -387,8 +387,9 @@ def main():
     ap.add_argument("--potential", choices=["drop", "neg", "pos"], default="drop")
     ap.add_argument("--max-resumes", type=int)
     ap.add_argument("--max-jds", type=int)
+    ap.add_argument("--keep-non-tech", action="store_true", help="do not drop non-technical resumes / jobs")
     a = ap.parse_args()
-    rows = convert(_load_hf(), llm_parse_resume, llm_parse_jd, a.cache_dir, a.potential, a.max_resumes, a.max_jds)
+    rows = convert(_load_hf(), llm_parse_resume, llm_parse_jd, a.cache_dir, a.potential, a.max_resumes, a.max_jds, tech_only=not a.keep_non_tech)
     with open(a.out, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")

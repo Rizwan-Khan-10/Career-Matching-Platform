@@ -5,10 +5,12 @@
 //   localStorage.setItem('mock-reg-mode', 'open' | 'invite_only' | 'domain')
 //   localStorage.setItem('mock-company-status', 'pending' | 'approved' | 'rejected')
 //   localStorage.removeItem('mock-resumes')   // reset the fake resume list
+// localStorage.removeItem('mock-matches') // reset the fake matches
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
 import { handleAcademicMock } from './academic';
+import { handleMatchMock } from './matches';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -66,6 +68,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if ((isRoleCreate || isUpload) && companyStatus !== 'approved') {
     return respond(config, 403, errorBody(403, 'Company is not approved yet', 'Forbidden'));
   }
+
+  // contract 5.6: applicant matches (outcome, shortlist details, AI tips, unverified rules)
+  const matchResponse = handleMatchMock(method, url, config);
+  if (matchResponse) return matchResponse
 
   // contract 4.3 / 5.2: academic fields on the applicant profile
   const academicResponse = handleAcademicMock(method, url, config);

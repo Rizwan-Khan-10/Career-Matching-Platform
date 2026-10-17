@@ -1,3 +1,16 @@
+export type ShortlistMode = 'online' | 'offline' | 'phone';
+
+// contract 5.6: written by the company in the shortlist form; the applicant sees it exactly as written
+export interface ShortlistInfo {
+    roundName: string;
+    mode: ShortlistMode;
+    scheduledAt?: string | null;
+    bring?: string | null;
+    link?: string | null;
+    address?: string | null;
+    note?: string | null;
+}
+
 export interface Match {
     id: string;
     applicantId: string;
@@ -18,7 +31,15 @@ export interface Match {
     partialSkills?: string[];
     missingSkills?: string[];
     feedback: string | null;
-    decision?: 'shortlisted' | 'rejected' | null;
+    decision?: 'shortlisted' | 'rejected' | null; // company side (GET /matches/role/:id)
+    // applicant side (GET /matches/mine), contract 5.6
+    outcome?: 'shortlisted' | 'rejected' | null;
+    shortlistInfo?: ShortlistInfo | null;
+    prepGuide?: string | null;           // AI generated
+    rejectionMessage?: string | null;    // written by the company
+    rejectionFeedback?: string | null;   // AI generated, null for position_filled / other
+    unverifiedRules?: string[];          // among cgpa, branch, passingYear, backlogs
+    resumeTargetLabel?: string | null;   // e.g. "Backend · Java"
     createdAt: string;
 }
 

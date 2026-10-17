@@ -6,7 +6,7 @@ Deterministic, explainable, and immune to prompt injection hidden inside a resum
 from dataclasses import dataclass, field
 
 from app.services import scorer
-from app.services.features import compute_features, build_resume_side, FEATURE_NAMES  # noqa: F401  (build_resume_side is re-exported for the worker)
+from app.services.features import compute_features, build_resume_side, build_role_side, FEATURE_NAMES  # noqa: F401  (re-exported for the worker / caches)
 
 MATCHED_AT = 0.80   # credit >= this  -> skill counts as matched
 PARTIAL_AT = 0.30   # credit >= this  -> related / partial, below -> missing
@@ -48,9 +48,10 @@ def _reason(eligible: bool, prob: float, thr: float, gates: list, matched: list,
     return f"Not eligible: {head}; match probability {prob:.0%} is below the {thr:.0%} bar." + tail
 
 
-def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None) -> MatchResult:
-    """`side` = build_resume_side(resume): pass it when scoring one resume against many roles (embeds the resume once)."""
-    fr = compute_features(resume or {}, role_title or "", requirements or {}, side=side)
+def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None, role_side=None) -> MatchResult:
+    """`side` = build_resume_side(resume), `role_side` = build_role_side(title, requirements): pass them (cached) when one
+    resume meets many roles or one role meets many resumes, so each half is prepared once."""
+    fr = compute_features(resume or {}, role_title or "", requirements or {}, side=side, role_side=role_side)
     score, eligible, prob, gates = scorer.decide(fr.features, fr.detail)
 
     req = fr.detail["required"]

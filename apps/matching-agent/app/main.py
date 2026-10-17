@@ -31,6 +31,14 @@ def model_info():
     return {"scorer": m.get("version"), "threshold": scorer.threshold(), "embedder": model_name(), "metrics": m.get("metrics", {})}
 
 
+@app.get("/stats")
+def stats():
+    """Efficiency counters per run (retrieved, gatedOut, prefiltered, skippedByHash, scored, eligible, ms) + totals + cache hit rates."""
+    from app.services import run_stats
+    from app.services.side_cache import cache_stats
+    return {**run_stats.snapshot(), "cache": cache_stats()}
+
+
 def start_consumer():
     if os.getenv("ENABLE_MATCHING_CONSUMER", "true").lower() != "true":
         _state["consumer"] = "disabled"

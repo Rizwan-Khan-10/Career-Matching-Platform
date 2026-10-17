@@ -18,6 +18,16 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 TOP_K_ROLES_PER_RESUME = int(os.getenv("TOP_K_ROLES_PER_RESUME", 50))
 TOP_K_RESUMES_PER_ROLE = int(os.getenv("TOP_K_RESUMES_PER_ROLE", 100))
 
+# --- efficient matching (contract §8) -----------------------------------------
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 25))                                  # candidates scored per batch, best similarity first
+EARLY_STOP_EMPTY_BATCHES = int(os.getenv("EARLY_STOP_EMPTY_BATCHES", 2))       # stop after N consecutive batches with no eligible pair
+MAX_ELIGIBLE_PER_ROLE = int(os.getenv("MAX_ELIGIBLE_PER_ROLE", 200))           # stop once this many eligible pairs were found in a run
+SIDE_CACHE_SIZE = int(os.getenv("SIDE_CACHE_SIZE", 2000))                      # in-process LRU entries, per side (resume / role)
+# Cheap prefilter: skip a pair only when NO required skill matches exactly AND profile cosine < this value.
+# OFF unless set. Enable only after the gold set shows recall drops by <= 1 point (see README).
+_p = os.getenv("PREFILTER_MIN_COSINE")
+PREFILTER_MIN_COSINE = float(_p) if _p else None
+
 # --- what we publish --------------------------------------------------------
 # Every eligible pair is always published. Ineligible pairs are noise unless they are "near misses",
 # so only the best few (and only above MIN_PUBLISH_SCORE) are published for feedback/UX.

@@ -8,13 +8,14 @@ how many applicants were scanned, how many matched. So every evaluated pair is r
 SCAN_CHUNK = 200
 
 
-def scan_entry(job_role_id: str, applicant_id: str, resume_id, result) -> dict:
+def scan_entry(job_role_id: str, applicant_id: str, resume_id, result, input_hash: str | None = None) -> dict:
     return {
         "jobRoleId": job_role_id,
         "applicantId": applicant_id,
         "resumeId": resume_id,
         "eligible": bool(result.eligible),
         "score": float(result.score),
+        "inputHash": input_hash,
     }
 
 

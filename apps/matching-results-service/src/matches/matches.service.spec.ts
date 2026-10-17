@@ -104,11 +104,12 @@ describe('MatchesService', () => {
             await service.onResumePdfReady({ matchId: 'm1', pdfPublicId: 'p', fileName: 'f.pdf' });
 
             expect(redis.client.xadd).toHaveBeenCalledTimes(1);
-            const [stream, , field, json] = redis.client.xadd.mock.calls[0];
+            const [stream, maxlen, approx, limit, id, field, json] = redis.client.xadd.mock.calls[0];
             expect(stream).toBe('candidate.ready');
-            expect(field).toBe('data');
+            expect([maxlen, approx, limit, id, field]).toEqual(['MAXLEN', '~', 10000, '*', 'data']);
             expect(JSON.parse(json)).toEqual({
                 companyId: 'c1', matchId: 'm1', jobRoleId: 'r1', roleTitle: 'Backend Developer', applicantName: 'Asha Rao', score: 0.91,
+                requestId: expect.any(String),
             });
         });
     });

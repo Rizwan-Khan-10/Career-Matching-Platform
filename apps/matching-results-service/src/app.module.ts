@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { JwtStrategy } from './auth/strategies/jwt.strategy';
 import { MatchesModule } from './matches/matches.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MatchesModule } from './matches/matches.module';
     RedisModule,
     MatchesModule,
   ],
+  controllers: [HealthController],
   providers: [JwtStrategy],
 })
 export class AppModule { }

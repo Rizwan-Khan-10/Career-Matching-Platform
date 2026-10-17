@@ -1,8 +1,11 @@
 import { Controller, ForbiddenException, Get, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StatsService } from './stats.service';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 
+@ApiTags('stats')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('stats')
 export class StatsController {

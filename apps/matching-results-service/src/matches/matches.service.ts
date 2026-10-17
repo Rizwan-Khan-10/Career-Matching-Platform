@@ -53,9 +53,16 @@ export class MatchesService {
      * Idempotent: the same (applicant, role) pair is UPDATED, never duplicated, so Redis redelivery or a
      * re-upload of the resume can't create duplicate rows. No e-mail is sent from here (notification-service
      * reads match.computed itself). applicantStatus is never touched here: a re-score must not undo consent.
+     * When a row already exists, shouldReplace() (contract §5.6) decides whether this result may overwrite it.
      */
     async saveMatchResult(data: MatchComputed) {
         const where = { applicantId_jobRoleId: { applicantId: data.applicantId, jobRoleId: data.jobRoleId } };
+
+        const existing = await this.prisma.match.findUnique({
+            where,
+            select: { id: true, resumeId: true, score: true, applicantStatus: true },
+        });
+        if (existing && !(await this.shouldReplace(existing, data))) return existing;
 
         const fields = {
             roleTitle: data.roleTitle ?? null,
@@ -258,6 +265,44 @@ export class MatchesService {
                 ? { decision, decidedAt: new Date(), decidedBy: userId }
                 : { decision: null, decidedAt: null, decidedBy: null },
         });
+    }
+
+    /**
+     * Replacement rule for an existing (applicant, role) match (contract §5.6):
+     *   1. approved  -> the shared resume is frozen: refresh only when it is the SAME resume, ignore any other one
+     *   2. otherwise replace when: same resume, OR strictly better score, OR the existing resume is no longer active
+     *   3. else keep the existing row
+     * The (cheap) resume lookup only runs when the first checks could not already decide.
+     */
+    private async shouldReplace(existing: { resumeId: string | null; score: number; applicantStatus: string }, data: MatchComputed): Promise<boolean> {
+        const sameResume = existing.resumeId === (data.resumeId ?? null);
+        if (existing.applicantStatus === 'approved') return sameResume;
+        if (sameResume || data.score > existing.score) return true;
+        return !(await this.isResumeActive(existing.resumeId));
+    }
+
+    /** Active resume (contract §4.9) = parsed + confirmed + not superseded. A deleted resume has no row at all -> not active. */
+    private async isResumeActive(resumeId: string | null): Promise<boolean> {
+        if (!resumeId) return false;
+        const rows = await this.prisma.$queryRaw<{ ok: boolean }[]>(Prisma.sql`
+            SELECT TRUE AS ok FROM "resumes_service"."Resume"
+            WHERE id = ${resumeId} AND status = 'parsed' AND "confirmedAt" IS NOT NULL AND "supersededAt" IS NULL
+            LIMIT 1`);
+        return rows.length > 0;
+    }
+
+    /**
+     * resume.superseded / resume.deleted: everything computed from that resume is stale. Delete its NON-approved
+     * matches (an approved one is frozen, the company may already hold the resume) and ALL its scan rows.
+     * Idempotent, so Redis redelivery is harmless.
+     */
+    async onResumeRemoved(data: { resumeId?: string; applicantId?: string }) {
+        if (!data || typeof data.resumeId !== 'string' || !data.resumeId) return;
+        const resumeId = data.resumeId;
+        await this.prisma.$transaction([
+            this.prisma.match.deleteMany({ where: { resumeId, applicantStatus: { not: 'approved' } } }),
+            this.prisma.roleScan.deleteMany({ where: { resumeId } }),
+        ]);
     }
 
     /** The role was deleted in job-service -> its matches AND its scan rows (dashboard numbers) are meaningless now. */

@@ -4,7 +4,10 @@
 // Switch scenarios from the browser console (then refresh the page):
 //   localStorage.setItem('mock-reg-mode', 'open' | 'invite_only' | 'domain')
 //   localStorage.setItem('mock-company-status', 'pending' | 'approved' | 'rejected')
-import axios, { AxiosError, type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+//   localStorage.removeItem('mock-resumes')   // reset the fake resume list
+import axios, { type AxiosAdapter } from 'axios';
+import { bodyOf, errorBody, respond } from './helpers';
+import { handleResumeMock } from './resumes';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -16,27 +19,6 @@ function readFlag<T extends string>(key: string, allowed: readonly T[], fallback
   if (typeof window === 'undefined') return fallback;
   const value = window.localStorage.getItem(key);
   return allowed.includes(value as T) ? (value as T) : fallback;
-}
-
-function bodyOf(config: InternalAxiosRequestConfig): Record<string, unknown> {
-  if (typeof config.data !== 'string') return {};
-  try {
-    return JSON.parse(config.data);
-  } catch {
-    return {};
-  }
-}
-
-// same JSON shape as the Nest default error: { statusCode, message, error }
-function errorBody(statusCode: number, message: string, error: string) {
-  return { statusCode, message, error };
-}
-
-function respond(config: InternalAxiosRequestConfig, status: number, data: unknown): Promise<AxiosResponse> {
-  const response = { data, status, statusText: String(status), headers: {}, config, request: {} } as AxiosResponse;
-  if (status >= 200 && status < 300) return Promise.resolve(response);
-  const code = status >= 500 ? AxiosError.ERR_BAD_RESPONSE : AxiosError.ERR_BAD_REQUEST;
-  return Promise.reject(new AxiosError(`Request failed with status code ${status}`, code, config, null, response));
 }
 
 export const mockAdapter: AxiosAdapter = async (config) => {
@@ -83,6 +65,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if ((isRoleCreate || isUpload) && companyStatus !== 'approved') {
     return respond(config, 403, errorBody(403, 'Company is not approved yet', 'Forbidden'));
   }
+
+  // contract 5.4: resume-service (list, upload, delete, patch, target-roles)
+  const resumeResponse = handleResumeMock(method, url, config);
+  if (resumeResponse) return resumeResponse;
 
   // everything else goes to the real backend
   return axios.getAdapter(axios.defaults.adapter)(config);

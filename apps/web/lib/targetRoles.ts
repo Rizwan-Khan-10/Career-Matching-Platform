@@ -28,6 +28,22 @@ export function stackLabel(id: string): string {
   return STACK_LABELS[id] ?? id.replace(/_/g, ' ');
 }
 
+// fallback labels for tracks (the API sends labels too)
+export const TRACK_LABELS: Record<string, string> = {
+  frontend: 'Frontend',
+  backend: 'Backend',
+  fullstack: 'Full-stack',
+  mobile: 'Mobile',
+  data_ml: 'Data / ML / AI',
+  devops_cloud: 'DevOps / Cloud',
+  qa: 'QA / Testing',
+  other: 'Other',
+};
+
+export function trackLabel(id: string): string {
+  return TRACK_LABELS[id] ?? id.replace(/_/g, ' ');
+}
+
 type RawStack = string | { id: string; label?: string };
 interface RawTaxonomy {
   tracks?: { id: string; label?: string; stacks?: RawStack[] }[];

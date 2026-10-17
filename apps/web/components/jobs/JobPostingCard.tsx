@@ -8,6 +8,7 @@ import { RoleForm } from '@/components/jobs/RoleForm';
 import type { JobPosting } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
 import type { RoleStats } from '@/types/stats';
+import { JobApprovalBadge } from '@/components/jobs/JobApprovalBadge';
 
 export function JobPostingCard({
     posting,
@@ -33,6 +34,9 @@ export function JobPostingCard({
     const [isAdding, setIsAdding] = useState(false);
     const [confirmingStop, setConfirmingStop] = useState(false);
     const isStopped = !!posting.stoppedAt;
+    const approval = posting.approvalStatus ?? 'approved'; // old rows have no value
+    const awaitingApproval = approval === 'pending';
+    const isRejected = approval === 'rejected';
 
     return (
         <div className="bg-paper-raised border border-hairline rounded-xl p-5">
@@ -50,14 +54,37 @@ export function JobPostingCard({
                 )}
             </div>
 
-            {isStopped && (
-                <p className="text-sm text-ink-grey bg-paper rounded-lg px-3.5 py-3 mb-3">
-                    This job is stopped: its document is not scanned and no new resumes are matched. Applicants can no longer apply.
-                    Existing candidates stay visible. Reopen it to start matching again.
+            {isStopped ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-paper text-ink-grey border border-hairline">
+                    <PauseCircle className="size-3.5" />
+                    Stopped
+                </span>
+            ) : approval !== 'approved' ? (
+                <JobApprovalBadge status={approval} />
+            ) : (
+                <JobStatusBadge status={posting.status} />
+            )}
+
+            {awaitingApproval && (
+                <p className="text-sm text-ink-grey bg-paper rounded-lg px-3.5 py-3">
+                    An admin needs to approve this job before it is read and matched. You will get a notification once
+                    it is reviewed.
                 </p>
             )}
 
-            {posting.status === 'pending' && (
+            {isRejected && (
+                <div className="flex items-start gap-2.5 text-sm text-danger bg-danger-soft rounded-lg px-3.5 py-3">
+                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="font-medium">An admin did not approve this job</p>
+                        <p className="text-danger/80 mt-0.5">
+                            {posting.approvalNote || 'No reason was given.'} It will not be scanned or matched.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {posting.status === 'pending' && approval === 'approved' && (
                 <p className="text-sm text-ink-grey">
                     Reading through the document — roles and requirements will show up here shortly.
                 </p>

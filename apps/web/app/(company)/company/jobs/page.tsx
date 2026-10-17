@@ -50,11 +50,12 @@ export default function CompanyJobsPage() {
   useEffect(() => {
     if (!token) return;
     const socket = getSocket(token);
-    socket.on('jd.extracted', () => {
-      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
-    });
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+    socket.on('jd.extracted', refresh);
+    socket.on('job.approval.changed', refresh);
     return () => {
-      socket.off('jd.extracted');
+      socket.off('jd.extracted', refresh);
+      socket.off('job.approval.changed', refresh);
     };
   }, [token, queryClient]);
 

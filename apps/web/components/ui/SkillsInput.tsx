@@ -7,9 +7,11 @@ import { X } from 'lucide-react';
 export function SkillsInput({
     value,
     onChange,
+    placeholder = 'Type a skill and press Enter…',
 }: {
     value: string[];
     onChange: (skills: string[]) => void;
+    placeholder?: string;
 }) {
     const [draft, setDraft] = useState('');
 
@@ -67,7 +69,7 @@ export function SkillsInput({
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onBlur={addSkill}
-                placeholder={value.length === 0 ? 'Type a skill and press Enter…' : 'Add another…'}
+                placeholder={value.length === 0 ? placeholder : 'Add another…'}
                 className="w-full text-sm font-body text-ink placeholder:text-ink-grey outline-none bg-transparent"
             />
         </div>

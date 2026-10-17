@@ -10,6 +10,7 @@
 // localStorage.removeItem('mock-candidates') // reset the fake company candidates (/company/roles/mock-role/applicants)
 //   window.mockNotify('shortlisted')  // console: fake a live notification (toast + bell + matches refetch)
 //   localStorage.removeItem('mock-admin-settings') // reset the fake admin settings (+ 'mock-imported-emails' for the CSV import)
+//   localStorage.removeItem('mock-admin-users') // reset fake admin lists; localStorage.setItem('mock-admin-data','off') = use the real backend
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
@@ -18,6 +19,7 @@ import { handleMatchMock } from './matches';
 import { handleCandidateMock } from './candidates';
 import { handleNotificationMock } from './notifications';
 import { handleAdminMock } from './admin';
+import { handleAdminUsersMock } from './adminUsers';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -46,6 +48,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   // contract 5.1: admin settings + CSV import
   const adminResponse = handleAdminMock(method, url, config);
   if (adminResponse) return adminResponse;
+
+  // contracts 5.1 / 5.2 / 5.5: admin lists and actions (must stay BEFORE handleAdminMock below)
+  const adminUsersResponse = handleAdminUsersMock(method, url, config);
+  if (adminUsersResponse) return adminUsersResponse;
 
   // contract 5.1: signup is 403 in invite_only, or in domain mode for a wrong email domain
   if (method === 'post' && url === '/auth/signup') {

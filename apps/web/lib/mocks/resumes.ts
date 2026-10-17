@@ -100,6 +100,31 @@ function toResume(r: MockResume) {
   };
 }
 
+function confirmResume(config: InternalAxiosRequestConfig, id: string): Promise<AxiosResponse> {
+  const list = load();
+  const found = list.find((r) => r.id === id);
+  if (!found) return respond(config, 404, errorBody(404, 'Resume not found', 'Not Found'));
+
+  const view = toResume(found);
+  if (view.status !== 'parsed') return respond(config, 400, errorBody(400, 'The resume is still being processed', 'Bad Request'));
+  if ((view.parsedData?.skills?.length ?? 0) < 1) {
+    return respond(config, 400, errorBody(400, 'Add at least one skill before confirming', 'Bad Request'));
+  }
+  if (found.confirmedAt) return respond(config, 200, view);
+
+  const now = new Date().toISOString();
+  const next = list.flatMap((r) => {
+    if (r.id === found.id) return [{ ...r, confirmedAt: now }];
+    const sameTarget =
+      r.targetTrack === found.targetTrack && r.targetStack === found.targetStack && r.confirmedAt && !r.supersededAt;
+    if (!sameTarget) return [r];
+    // the replaced resume is removed, unless an approved match still uses it (then it is only marked superseded)
+    return r.usedByApprovedMatch ? [{ ...r, supersededAt: now }] : [];
+  });
+  save(next);
+  return respond(config, 200, toResume({ ...found, confirmedAt: now }));
+}
+
 function upload(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   const form = config.data instanceof FormData ? config.data : null;
   const track = String(form?.get('targetTrack') ?? '');
@@ -143,6 +168,9 @@ export function handleResumeMock(method: string, url: string, config: InternalAx
   }
   if (method === 'get' && url === '/resumes/mine') return respond(config, 200, load().map(toResume));
   if (method === 'post' && url === '/resumes/upload') return upload(config);
+
+  const confirmMatch = /^\/resumes\/([^/]+)\/confirm$/.exec(url);
+  if (method === 'post' && confirmMatch) return confirmResume(config, confirmMatch[1]);
 
   const match = /^\/resumes\/([^/]+)$/.exec(url);
   if (!match) return null;

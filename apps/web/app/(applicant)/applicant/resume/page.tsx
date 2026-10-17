@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { toast } from '@/lib/toast';
@@ -11,6 +11,7 @@ import { FadeIn } from '@/components/motion/FadeIn';
 import { UploadDropzone } from '@/components/resume/UploadDropzone';
 import { ResumeCard } from '@/components/resume/ResumeCard';
 import { ResumeHistory } from '@/components/resume/ResumeHistory';
+import { ApplicantProfileModal } from '@/components/profile/ApplicantProfileModal';
 import type { TargetSelection } from '@/components/resume/TargetRolePicker';
 import type { Resume } from '@/types/resume';
 import type { UpdateResumeValues } from '@/lib/schemas/resume';
@@ -22,6 +23,7 @@ const keyOf = (r: Resume) => `${r.targetTrack}:${r.targetStack}`;
 export default function ResumePage() {
   const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const { data: resumes, isLoading, isError, refetch } = useQuery<Resume[]>({
     queryKey: ['resumes'],
@@ -69,6 +71,22 @@ export default function ResumePage() {
     onError: (err) => toast.error(getErrorMessage(err, 'Could not save changes, try again')),
   });
 
+  const confirmMutation = useMutation({
+    mutationFn: ({ id }: { id: string; replacedLabel?: string }) =>
+      apiClient.post(`/resumes/${id}/confirm`).then((r) => r.data),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      toast.success(
+        vars.replacedLabel
+          ? `Resume confirmed — it replaced your older ${vars.replacedLabel} resume. Matching has started.`
+          : 'Resume confirmed — matching has started.',
+      );
+    },
+    // 400 here means e.g. "needs at least one skill": show the server's message
+    onError: (err) => toast.error(getErrorMessage(err, 'Could not confirm the resume, try again')),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/resumes/${id}`),
     onSuccess: () => {
@@ -102,6 +120,8 @@ export default function ResumePage() {
       <p className="text-sm text-ink-grey mb-6">
         Upload a resume for each kind of role you want, up to {MAX_RESUMES}. Each one is matched only with roles for its target.
       </p>
+
+      <ApplicantProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
 
       <FadeIn>
         <UploadDropzone
@@ -137,17 +157,23 @@ export default function ResumePage() {
             Your resumes ({current.length} of {MAX_RESUMES})
           </h2>
           <div className="flex flex-col gap-4">
-            {current.map((resume) => (
-              <ResumeCard
-                key={resume.id}
-                resume={resume}
-                replaces={!resume.confirmedAt ? activeByKey.get(keyOf(resume)) : undefined}
-                isSaving={updateMutation.isPending}
-                onSave={(values) => updateMutation.mutate({ id: resume.id, values })}
-                isDeleting={deleteMutation.isPending && deleteMutation.variables === resume.id}
-                onDelete={() => deleteMutation.mutate(resume.id)}
-              />
-            ))}
+            {current.map((resume) => {
+              const replaces = !resume.confirmedAt ? activeByKey.get(keyOf(resume)) : undefined;
+              return (
+                <ResumeCard
+                  key={resume.id}
+                  resume={resume}
+                  replaces={replaces}
+                  isSaving={updateMutation.isPending}
+                  onSave={(values) => updateMutation.mutate({ id: resume.id, values })}
+                  isConfirming={confirmMutation.isPending && confirmMutation.variables?.id === resume.id}
+                  onConfirm={() => confirmMutation.mutate({ id: resume.id, replacedLabel: replaces?.targetLabel })}
+                  isDeleting={deleteMutation.isPending && deleteMutation.variables === resume.id}
+                  onDelete={() => deleteMutation.mutate(resume.id)}
+                  onOpenProfile={() => setIsProfileOpen(true)}
+                />
+              );
+            })}
           </div>
           <ResumeHistory resumes={replaced} />
         </FadeIn>

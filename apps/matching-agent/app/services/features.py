@@ -155,11 +155,34 @@ def build_resume_side(resume: dict) -> ResumeSide:
     )
 
 
-def _skill_credits(wanted: list, side: ResumeSide) -> list:
-    """For each wanted skill -> dict(skill, credit, via, matchedWith, similarity, sim_skill, sim_ev)."""
+@dataclass
+class RoleSide:
+    """Everything about a ROLE that does not depend on the resume: embedded once, reused for every resume."""
+    title: str
+    req: dict
+    required: list
+    preferred: list
+    role_vec: np.ndarray
+    title_vec: np.ndarray
+    required_vecs: np.ndarray
+    preferred_vecs: np.ndarray
+
+
+def build_role_side(role_title: str, req: dict) -> RoleSide:
+    req = req or {}
+    required = dedupe_skills(req.get("requiredSkills"))[:40]
+    preferred = [s for s in dedupe_skills(req.get("preferredSkills"))[:20] if s not in required]
+    title = role_title or req.get("title") or ""
+    texts = [role_profile_text(role_title, req), title] + [embedding_text_for_skill(s) for s in required + preferred]
+    vecs = embed_many(texts)
+    return RoleSide(title=title, req=req, required=required, preferred=preferred, role_vec=vecs[0], title_vec=vecs[1],
+                    required_vecs=vecs[2:2 + len(required)], preferred_vecs=vecs[2 + len(required):])
+
+
+def _skill_credits(wanted: list, wvecs: np.ndarray, side: ResumeSide) -> list:
+    """For each wanted skill (wvecs = its vectors) -> dict(skill, credit, via, matchedWith, similarity, sim_skill, sim_ev)."""
     if not wanted:
         return []
-    wvecs = embed_many([embedding_text_for_skill(s) for s in wanted])
     s_skill = wvecs @ side.skill_vecs.T if len(side.skills) else np.zeros((len(wanted), 0))
     s_ev = wvecs @ side.evidence_vecs.T if len(side.evidence_texts) else np.zeros((len(wanted), 0))
     have = set(side.skills)
@@ -200,17 +223,17 @@ class FeatureResult:
         return [float(self.features[n]) for n in FEATURE_NAMES]
 
 
-def compute_features(resume: dict, role_title: str, req: dict, side: ResumeSide | None = None) -> FeatureResult:
-    req = req or {}
+def compute_features(resume: dict, role_title: str, req: dict, side: ResumeSide | None = None,
+                     role_side: RoleSide | None = None) -> FeatureResult:
+    """`side` / `role_side` = prepared (and cacheable) resume / role halves; built here when not passed."""
     side = side or build_resume_side(resume)
-    required = dedupe_skills(req.get("requiredSkills"))[:40]
-    preferred = [s for s in dedupe_skills(req.get("preferredSkills"))[:20] if s not in required]
+    rs = role_side or build_role_side(role_title, req)
+    req = rs.req
 
-    role_vec = embed_many([role_profile_text(role_title, req)])[0]
-    global_sim = float(max(0.0, np.dot(side.profile_vec, role_vec)))
+    global_sim = float(max(0.0, np.dot(side.profile_vec, rs.role_vec)))
 
-    req_credits = _skill_credits(required, side)
-    pref_credits = _skill_credits(preferred, side)
+    req_credits = _skill_credits(rs.required, rs.required_vecs, side)
+    pref_credits = _skill_credits(rs.preferred, rs.preferred_vecs, side)
 
     if req_credits:
         credit = np.array([c["credit"] for c in req_credits])
@@ -233,8 +256,7 @@ def compute_features(resume: dict, role_title: str, req: dict, side: ResumeSide 
     pref_cov = float(np.mean([c["credit"] for c in pref_credits])) if pref_credits else f_req["req_cov"]
 
     if side.title_vecs.shape[0]:
-        tvec = embed_many([role_title or req.get("title") or ""])[0]
-        title_sim = float(max(0.0, (side.title_vecs @ tvec).max()))
+        title_sim = float(max(0.0, (side.title_vecs @ rs.title_vec).max()))
     else:
         title_sim = global_sim
 

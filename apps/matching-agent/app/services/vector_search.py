@@ -5,11 +5,14 @@ All id comparisons are cast to text: Prisma ids are TEXT while the *_embeddings 
 and Postgres has no `text = uuid` operator (the old query would raise an error at runtime).
 """
 import json
+import logging
 from app.core.db import get_conn
 from app.core.embeddings import to_pgvector
 from app.services.compatibility import (
     ACADEMIC_RULE_SQL, ACTIVE_RESUME_SQL, RESUME_GATE_SQL, ROLE_GATE_SQL, role_gate_values,
 )
+
+log = logging.getLogger("matching.vector_search")
 
 
 def _json(v):
@@ -26,6 +29,13 @@ def ensure_tables():
         # the pgvector extension is created by the parser agents / DB setup; not our job here
         cur.execute("CREATE TABLE IF NOT EXISTS resume_embeddings (resume_id UUID PRIMARY KEY, embedding VECTOR(384))")
         cur.execute("CREATE TABLE IF NOT EXISTS job_role_embeddings (job_role_id UUID PRIMARY KEY, embedding VECTOR(384))")
+    # HNSW (cosine) indexes, each in its own transaction: an old pgvector without HNSW must not stop the agent starting.
+    for table in ("resume_embeddings", "job_role_embeddings"):
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(f"CREATE INDEX IF NOT EXISTS {table}_embedding_hnsw ON {table} USING hnsw (embedding vector_cosine_ops)")
+        except Exception as exc:
+            log.warning("could not create HNSW index on %s (%s) - retrieval still works, just slower", table, str(exc)[:200])
 
 
 def upsert_resume_embedding(resume_id: str, vec):
@@ -112,49 +122,101 @@ def scanned_role_ids(resume_id: str) -> list:
         return [r[0] for r in cur.fetchall()]
 
 
-def find_compatible_roles_for_resume(resume: dict, top_k: int = 50, role_ids: list | None = None, academic_only: bool = False):
-    """Most similar roles for one ACTIVE resume. The compatibility gate (track/stack) runs in SQL, BEFORE the
-    similarity ordering, so top-K is chosen among compatible roles only.
+def find_compatible_roles_for_resume(resume: dict, vec, limit: int, offset: int = 0,
+                                     role_ids: list | None = None, academic_only: bool = False):
+    """One PAGE (best similarity first) of compatible roles for an ACTIVE resume whose embedding is `vec`.
+    The compatibility gate (track/stack) is part of the WHERE, i.e. applied before the similarity ordering / LIMIT,
+    so pages contain compatible roles only.
     role_ids: restrict to these roles (resume.deleted re-check). academic_only: only roles with academic rules (profile.updated)."""
-    extra, params = "", {"resume_id": resume["resumeId"], "r_track": resume.get("targetTrack") or "other",
-                         "r_stack": resume.get("targetStack") or "other", "top_k": top_k}
+    extra, params = "", {"vec": to_pgvector(vec), "r_track": resume.get("targetTrack") or "other",
+                         "r_stack": resume.get("targetStack") or "other", "limit": limit, "offset": offset}
     if role_ids is not None:
         if not role_ids:
             return []
         extra += " AND jr.id::text = ANY(%(role_ids)s::text[])"
-        params.update(role_ids=list(role_ids), top_k=max(top_k, len(role_ids)))
+        params["role_ids"] = list(role_ids)
     if academic_only:
         extra += f" AND {ACADEMIC_RULE_SQL}"
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(f"""
-            SELECT jr.id, jr.title, jr.requirements, (jre.embedding <=> re.embedding) AS distance
-            FROM resume_embeddings re
-            JOIN job_role_embeddings jre ON TRUE
+            SELECT jr.id, jr.title, jr.requirements, (jre.embedding <=> %(vec)s::vector) AS distance
+            FROM job_role_embeddings jre
             JOIN "jobs_service"."JobRole" jr ON jr.id::text = jre.job_role_id::text
             JOIN "jobs_service"."JobPosting" jp ON jp.id = jr."jobPostingId"
-            WHERE re.resume_id::text = %(resume_id)s AND jp.status = 'extracted' AND jp."stoppedAt" IS NULL
+            WHERE jp.status = 'extracted' AND jp."stoppedAt" IS NULL
               AND {ROLE_GATE_SQL}{extra}
             ORDER BY distance ASC, jr.id
-            LIMIT %(top_k)s
+            LIMIT %(limit)s OFFSET %(offset)s
         """, params)
         rows = cur.fetchall()
     return [{"jobRoleId": r[0], "title": r[1], "requirements": _json(r[2]), "distance": float(r[3])} for r in rows]
 
 
-def find_compatible_resumes_for_role(role: dict, top_k: int = 100):
-    """Most similar ACTIVE resumes for one role (several per applicant are possible: one per target role).
-    The compatibility gate runs in SQL before the similarity ordering."""
+def find_compatible_resumes_for_role(role: dict, vec, limit: int, offset: int = 0):
+    """One PAGE (best similarity first) of compatible ACTIVE resumes for a role whose embedding is `vec`
+    (several per applicant are possible: one per target role). The gate is part of the WHERE."""
     track, stacks = role_gate_values(role.get("requirements"))
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(f"""
-            SELECT {_RESUME_COLUMNS}, (re.embedding <=> jre.embedding) AS distance
+            SELECT {_RESUME_COLUMNS}, (re.embedding <=> %(vec)s::vector) AS distance
             FROM "resumes_service"."Resume" r
             JOIN resume_embeddings re ON re.resume_id::text = r.id
-            JOIN job_role_embeddings jre ON jre.job_role_id::text = %(role_id)s
             WHERE {ACTIVE_RESUME_SQL} AND {RESUME_GATE_SQL}
             ORDER BY distance ASC, r.id
-            LIMIT %(top_k)s
-        """, {"role_id": role["jobRoleId"], "role_track": track, "role_stacks": stacks,
-              "has_stacks": bool(stacks), "top_k": top_k})
+            LIMIT %(limit)s OFFSET %(offset)s
+        """, {"vec": to_pgvector(vec), "role_track": track, "role_stacks": stacks,
+              "has_stacks": bool(stacks), "limit": limit, "offset": offset})
         rows = cur.fetchall()
     return [{**_resume_row(r), "distance": float(r[5])} for r in rows]
+
+
+def count_roles_for_resume(resume: dict) -> tuple[int, int]:
+    """(all matchable roles, roles that pass the gate) - the difference is what the gate saved (stats 'gatedOut')."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE {ROLE_GATE_SQL})
+            FROM job_role_embeddings jre
+            JOIN "jobs_service"."JobRole" jr ON jr.id::text = jre.job_role_id::text
+            JOIN "jobs_service"."JobPosting" jp ON jp.id = jr."jobPostingId"
+            WHERE jp.status = 'extracted' AND jp."stoppedAt" IS NULL
+        """, {"r_track": resume.get("targetTrack") or "other", "r_stack": resume.get("targetStack") or "other"})
+        total, ok = cur.fetchone()
+    return int(total), int(ok)
+
+
+def count_resumes_for_role(role: dict) -> tuple[int, int]:
+    """(all active resumes with an embedding, those that pass the gate)."""
+    track, stacks = role_gate_values(role.get("requirements"))
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE {RESUME_GATE_SQL})
+            FROM "resumes_service"."Resume" r
+            JOIN resume_embeddings re ON re.resume_id::text = r.id
+            WHERE {ACTIVE_RESUME_SQL}
+        """, {"role_track": track, "role_stacks": stacks, "has_stacks": bool(stacks)})
+        total, ok = cur.fetchone()
+    return int(total), int(ok)
+
+
+def _scan_hashes(where: str, params: tuple, key_index: int) -> dict:
+    """{key: (inputHash, eligible)} from RoleScan (owned by matching-results-service; read-only here).
+    If the column does not exist yet (that service's schema not merged) or the read fails, return {}: nothing is skipped,
+    everything is simply scored - slower but always correct."""
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(f'''SELECT "jobRoleId", "resumeId", "inputHash", eligible FROM "matches_service"."RoleScan"
+                            WHERE "inputHash" IS NOT NULL AND {where}''', params)
+            return {r[key_index]: (r[2], bool(r[3])) for r in cur.fetchall()}
+    except Exception as exc:
+        log.warning("could not read RoleScan.inputHash (%s) - scoring every pair", str(exc)[:200])
+        return {}
+
+
+def load_scan_hashes_for_resume(resume_id: str) -> dict:
+    """{jobRoleId: (inputHash, eligible)} of the pairs already scanned for this resume."""
+    return _scan_hashes('"resumeId" = %s', (resume_id,), 0)
+
+
+def load_scan_hashes_for_role(role_id: str) -> dict:
+    """{resumeId: (inputHash, eligible)} of the pairs already scanned for this role."""
+    return _scan_hashes('"jobRoleId" = %s', (role_id,), 1)

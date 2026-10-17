@@ -6,7 +6,10 @@ os.environ.setdefault("EMBEDDING_BACKEND", "hash")
 from tests import _shims  # noqa: E402
 _shims.install()
 
+from app.core import config  # noqa: E402
+from app.services import run_stats  # noqa: E402
 from app.services.scan_report import chunked, scan_entry  # noqa: E402
+from app.services.side_cache import clear_caches  # noqa: E402
 from app.workers import stream_consumer as sc  # noqa: E402
 
 RESUME = {"resumeId": "res1", "applicantId": "a1",
@@ -16,12 +19,15 @@ RESUME = {"resumeId": "res1", "applicantId": "a1",
 GOOD = {"jobRoleId": "good", "title": "Frontend Developer", "requirements": {"requiredSkills": ["React", "JavaScript", "HTML", "CSS"], "minExperienceYears": 2}}
 BAD = {"jobRoleId": "bad", "title": "DevOps Engineer", "requirements": {"requiredSkills": ["Kubernetes", "Terraform", "AWS", "Linux"], "minExperienceYears": 3}}
 
+
 ACTIVE = {"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME, "targetTrack": "frontend", "targetStack": "javascript"}
 
 
 class Base(unittest.TestCase):
     def setUp(self):
         self.out = []
+        clear_caches()
+        run_stats.reset()
         sc.publish = lambda stream, data: self.out.append((stream, data))
         sc.upsert_resume_embedding = lambda *a: None
         sc.upsert_role_embedding = lambda *a: None
@@ -33,15 +39,25 @@ class Base(unittest.TestCase):
         self.resumes = {"res1": ACTIVE}                       # active resumes by id
         sc.get_active_resume = lambda rid: self.resumes.get(rid)
         sc.get_active_resumes_for_applicant = lambda aid: [r for r in self.resumes.values() if r["applicantId"] == aid]
-        self.calls = []                                        # (resume id, filters) passed to the gated retrieval
+        self.calls = []                                        # (resume id, filters) of every gated retrieval (first page only)
+        self.role_pool = [dict(GOOD), dict(BAD)]               # compatible roles, best similarity first
+        self.stored_resume_hashes, self.stored_role_hashes = {}, {}
+        sc.count_roles_for_resume = lambda resume: (10, len(self.role_pool))
+        sc.count_resumes_for_role = lambda role: (10, 2)
+        sc.load_scan_hashes_for_resume = lambda rid: self.stored_resume_hashes
+        sc.load_scan_hashes_for_role = lambda rid: self.stored_role_hashes
 
-        def roles(resume, k, **filters):
-            self.calls.append((resume["resumeId"], filters))
-            return [dict(GOOD), dict(BAD)]
+        def roles(resume, vec, limit, offset=0, **filters):
+            if offset == 0:
+                self.calls.append((resume["resumeId"], filters))
+            return self.role_pool[offset:offset + limit]
         sc.find_compatible_roles_for_resume = roles
 
     def streams(self, name):
         return [d for s, d in self.out if s == name]
+
+    def last_run(self):
+        return run_stats.snapshot()["recent"][0]
 
 
 class ResumeDirectionTest(Base):
@@ -119,7 +135,12 @@ class RoleDirectionTest(Base):
         self.cands = [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME},
                       {"resumeId": "res2", "applicantId": "a2", "parsedData": {"skills": ["Excel"], "experienceYears": 0}}]
         self.seen_roles = []
-        sc.find_compatible_resumes_for_role = lambda role, k: (self.seen_roles.append(role), self.cands)[1]
+
+        def cands(role, vec, limit, offset=0):
+            if offset == 0:
+                self.seen_roles.append(role)
+            return self.cands[offset:offset + limit]
+        sc.find_compatible_resumes_for_role = cands
         self.role = {"jobRoleId": "good", "title": GOOD["title"], "requirements": GOOD["requirements"], "stopped": False}
         sc.get_role = lambda rid: self.role
 
@@ -153,6 +174,98 @@ class RoleDirectionTest(Base):
         self.assertEqual(gone, ["r9"])
 
 
+class HashSkipTest(Base):
+    def first_run_hashes(self):
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        scans = {x["jobRoleId"]: x for x in self.streams("match.scanned")[0]["scans"]}
+        self.assertTrue(all(x["inputHash"] for x in scans.values()))
+        return {rid: (x["inputHash"], x["eligible"]) for rid, x in scans.items()}
+
+    def test_unchanged_pairs_are_not_scored_or_published_again(self):
+        self.stored_resume_hashes = self.first_run_hashes()
+        self.out.clear()
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})          # same event again
+        self.assertEqual(self.out, [])
+        run = self.last_run()
+        self.assertEqual((run["skippedByHash"], run["scored"]), (2, 0))
+
+    def test_edited_resume_is_scored_again(self):
+        self.stored_resume_hashes = self.first_run_hashes()
+        self.out.clear()
+        self.resumes["res1"] = {**ACTIVE, "parsedData": {**RESUME, "skills": RESUME["skills"] + ["Vue"]}}
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.last_run()["scored"], 2)
+        self.assertTrue(self.streams("match.scanned"))
+
+    def test_edited_role_is_scored_again_but_other_pairs_stay_skipped(self):
+        self.stored_resume_hashes = self.first_run_hashes()
+        self.out.clear()
+        self.role_pool[0] = {**GOOD, "requirements": {**GOOD["requirements"], "minExperienceYears": 1}}
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        run = self.last_run()
+        self.assertEqual((run["scored"], run["skippedByHash"]), (1, 1))
+        self.assertEqual([x["jobRoleId"] for x in self.streams("match.scanned")[0]["scans"]], ["good"])
+
+    def test_model_change_invalidates_the_hash(self):
+        self.stored_resume_hashes = self.first_run_hashes()
+        self.out.clear()
+        real, sc.scorer.model_version = sc.scorer.model_version, lambda: "another-model"
+        try:
+            sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        finally:
+            sc.scorer.model_version = real
+        self.assertEqual(self.last_run()["scored"], 2)
+
+    def test_resume_deleted_ignores_hashes_so_lost_matches_come_back(self):
+        self.stored_resume_hashes = self.first_run_hashes()
+        self.out.clear()
+        sc.scanned_role_ids = lambda rid: []
+        sc.handle_resume_deleted({"resumeId": "gone", "applicantId": "a1"})
+        self.assertEqual(self.last_run()["skippedByHash"], 0)
+        self.assertIn("good", {m["jobRoleId"] for m in self.streams("match.computed")})
+
+    def test_role_direction_skips_unchanged_pairs(self):
+        sc.get_role = lambda rid: {"jobRoleId": "good", "title": GOOD["title"], "requirements": GOOD["requirements"], "stopped": False}
+        sc.find_compatible_resumes_for_role = lambda role, vec, limit, offset=0: [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME}][offset:offset + limit]
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["good"]})
+        scan = self.streams("match.scanned")[0]["scans"][0]
+        self.stored_role_hashes = {"res1": (scan["inputHash"], scan["eligible"])}
+        self.out.clear()
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["good"]})
+        self.assertEqual(self.out, [])
+        self.assertEqual(self.last_run()["skippedByHash"], 1)
+
+
+class EarlyStopInWorkerTest(Base):
+    def test_hopeless_tail_is_not_scored(self):
+        old = config.BATCH_SIZE
+        config.BATCH_SIZE = 10
+        try:
+            self.role_pool = [{**BAD, "jobRoleId": f"bad{i}"} for i in range(100)]
+            sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        finally:
+            config.BATCH_SIZE = old
+        run = self.last_run()
+        self.assertEqual((run["retrieved"], run["scored"], run["stoppedBy"]), (20, 20, "empty_batches"))
+
+    def test_gate_count_is_reported(self):
+        sc.count_roles_for_resume = lambda resume: (40, 12)
+        sc.handle_resume_event({"resumeId": "res1", "applicantId": "a1"})
+        self.assertEqual(self.last_run()["gatedOut"], 28)
+
+
+class BestResumePerApplicantWorkerTest(Base):
+    def test_only_the_best_resume_of_an_applicant_is_published_but_all_are_scanned(self):
+        weak = {"skills": ["React", "JavaScript"], "experienceYears": 3}
+        sc.get_role = lambda rid: {"jobRoleId": "good", "title": GOOD["title"], "requirements": GOOD["requirements"], "stopped": False}
+        cands = [{"resumeId": "weak", "applicantId": "a1", "parsedData": weak},
+                 {"resumeId": "strong", "applicantId": "a1", "parsedData": RESUME}]
+        sc.find_compatible_resumes_for_role = lambda role, vec, limit, offset=0: cands[offset:offset + limit]
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["good"]})
+        self.assertEqual({x["resumeId"] for x in self.streams("match.scanned")[0]["scans"]}, {"weak", "strong"})
+        self.assertEqual([m["resumeId"] for m in self.streams("match.computed")], ["strong"])
+
+
 class ScanReportTest(unittest.TestCase):
     def test_chunking(self):
         sizes = [len(c) for c in chunked(list(range(450)), 200)]
@@ -161,7 +274,7 @@ class ScanReportTest(unittest.TestCase):
 
     def test_entry_shape(self):
         r = type("R", (), {"eligible": 1, "score": 0.5})()
-        self.assertEqual(scan_entry("r", "a", None, r), {"jobRoleId": "r", "applicantId": "a", "resumeId": None, "eligible": True, "score": 0.5})
+        self.assertEqual(scan_entry("r", "a", None, r), {"jobRoleId": "r", "applicantId": "a", "resumeId": None, "eligible": True, "score": 0.5, "inputHash": None})
 
 
 if __name__ == "__main__":

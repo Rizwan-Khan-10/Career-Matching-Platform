@@ -1,1 +1,21 @@
-{"name":"career-matching-platform","private":true} 
+{
+  "name": "career-matching-platform",
+  "private": true,
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "db:reset:services": "pnpm -r --workspace-concurrency=1 --if-present run db:reset",
+    "seed": "pnpm --filter auth-service run seed",
+    "db:reset:all": "pnpm run db:reset:services && pnpm run seed",
+    "e2e": "vitest run --config e2e/vitest.config.ts",
+    "e2e:typecheck": "tsc -p e2e/tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "ioredis": "^6.0.0",
+    "socket.io-client": "^4.8.3",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

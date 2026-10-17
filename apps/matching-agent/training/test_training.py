@@ -263,6 +263,36 @@ class GroqModelTest(unittest.TestCase):
         self.assertNotIn("GROQ_MODEL\"", src.split("DEFAULT_MODEL", 1)[1])        # the env var is not read
 
 
+class RealDataOnlyTest(unittest.TestCase):
+    HERE = os.path.dirname(os.path.abspath(__file__))
+
+    def test_train_has_no_synthetic_path(self):
+        src = open(os.path.join(self.HERE, "train.py"), encoding="utf-8").read().lower()
+        self.assertNotIn("synthetic", src)
+
+    def test_evaluate_stops_when_gold_is_missing_unless_no_gold(self):
+        import sys
+        from unittest import mock
+        from training import evaluate
+        argv = ["evaluate", "--gold", os.path.join(tempfile.mkdtemp(), "missing.jsonl")]
+        with mock.patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as ctx:
+            evaluate.main()
+        self.assertIn("gold set not found", str(ctx.exception))
+
+    def test_evaluate_stops_when_data_is_missing(self):
+        import sys
+        from unittest import mock
+        from training import evaluate
+        with mock.patch.object(sys, "argv", ["evaluate", "--no-gold", "--data", "nope.jsonl"]), self.assertRaises(SystemExit) as ctx:
+            evaluate.main()
+        self.assertIn("training data not found", str(ctx.exception))
+
+    def test_track_stacks_come_from_the_shared_taxonomy(self):
+        from training.build_real_dataset import TRACK_STACKS
+        self.assertEqual(TRACK_STACKS["backend"], {"java", "python", "javascript", "dotnet", "go", "php", "ruby", "other"})
+        self.assertEqual(TRACK_STACKS["other"], set())
+
+
 class ModelCardTest(unittest.TestCase):
     CARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MODEL_CARD.md")
 

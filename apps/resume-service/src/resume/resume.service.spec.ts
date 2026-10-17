@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ResumeService } from './resume.service';
 import { ResumeRemovalService } from '../cleanup/resume-removal.service';
+import { requestIdMiddleware } from '../common/request-context';
 
 const file = { originalname: 'cv.pdf', size: 100, buffer: Buffer.from('x') } as Express.Multer.File;
 const dto = { targetTrack: 'backend', targetStack: 'java' };
@@ -79,6 +80,25 @@ describe('ResumeService.upload', () => {
         expect(res.targetLabel).toBe('Backend · Java');
         const args = redis.client.xadd.mock.calls[0];
         expect(args.slice(0, 4)).toEqual(['resume.uploaded', 'MAXLEN', '~', 10000]);
+    });
+
+    it('puts a requestId into resume.uploaded (contract 3.1)', async () => {
+        const { service, redis } = setup();
+        await service.upload('app-1', file, dto);
+        const [[stream, payload]] = published(redis);
+        expect(stream).toBe('resume.uploaded');
+        expect(payload).toMatchObject({ applicantId: 'app-1', resumeId: 'new-id' });
+        expect(typeof payload.requestId).toBe('string');
+    });
+
+    it('uses the x-request-id of the HTTP request for the event', async () => {
+        const { service, redis } = setup();
+        await new Promise<void>((resolve, reject) => {
+            requestIdMiddleware({ headers: { 'x-request-id': 'req-42' } } as any, { setHeader: () => undefined } as any, () => {
+                service.upload('app-1', file, dto).then(() => resolve(), reject);
+            });
+        });
+        expect(published(redis)[0][1].requestId).toBe('req-42');
     });
 
     it('rejects a stack that does not belong to the track (400) before touching storage', async () => {

@@ -5,7 +5,6 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")   # training only (training/llm_client.py); the agent itself never calls an LLM
 PORT = int(os.getenv("PORT", 8000))
 
 # --- ops (contract §3) --------------------------------------------------------
@@ -17,11 +16,13 @@ SERVICE_NAME = "matching-agent"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ENABLE_DOCS = _flag("ENABLE_DOCS", "false")                         # FastAPI /docs only when true
 ENABLE_MATCHING_CONSUMER = _flag("ENABLE_MATCHING_CONSUMER", "true")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")  
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # --- embeddings -------------------------------------------------------------
 # "minilm" = real semantic model (production). "hash" = tiny offline fallback used ONLY for
-# unit tests / CI where the model can't be downloaded. Never use "hash" in production.
+# unit tests / CI where the model can't be downloaded. The agent refuses to start with "hash" when
+# APP_ENV (or ENV) is "production".
+IS_PRODUCTION = (os.getenv("APP_ENV") or os.getenv("ENV") or "").strip().lower() == "production"
 EMBEDDING_BACKEND = os.getenv("EMBEDDING_BACKEND", "minilm")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 

@@ -104,6 +104,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", nargs="*", default=[], help="training files (same list as train.py): gives the held-out split + baseline thresholds")
     ap.add_argument("--gold", default="training/gold/gold_pairs.jsonl")
+    ap.add_argument("--no-gold", action="store_true", help="skip the gold set on purpose (otherwise a missing gold file is an error)")
     ap.add_argument("--beta", type=float, default=0.5, help="F-beta used to pick the baselines' thresholds (<1 favours precision)")
     ap.add_argument("--test-frac", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=7)
@@ -117,9 +118,14 @@ def main():
 
     thr_a = thr_b = None
     held = None
-    data_paths = [p for p in a.data if os.path.exists(p)]
-    if a.data and not data_paths:
-        print(f"WARNING: none of {a.data} exists - skipping the held-out part")
+    missing = [p for p in a.data if not os.path.exists(p)]
+    if missing:
+        raise SystemExit(f"training data not found: {missing}  (python -m training.build_real_dataset ...)")
+    if not a.no_gold and not os.path.exists(a.gold):
+        raise SystemExit(f"gold set not found: {a.gold}  (python -m training.gold.build_gold), or pass --no-gold to skip it on purpose")
+    if a.no_gold and not a.data:
+        raise SystemExit("nothing to evaluate: --no-gold without --data")
+    data_paths = list(a.data)
     if data_paths:
         rows, dropped = drop_gold_overlap(load_rows(*data_paths), a.gold)
         M = build_matrix(rows)
@@ -132,7 +138,7 @@ def main():
         report["held_out"] = held
         print_set("held-out", held)
 
-    if os.path.exists(a.gold):
+    if not a.no_gold:
         G = build_matrix(load_rows(a.gold))
         source = "chosen on the train split"
         if thr_a is None:
@@ -143,8 +149,6 @@ def main():
         report["gold"] = gold
         report["baseline_source"] = source
         print_set("gold", gold)
-    else:
-        print(f"WARNING: gold set {a.gold} not found (python -m training.gold.build_gold)")
 
     report["baseline_thresholds"] = {"A": thr_a, "B": thr_b}
     report.setdefault("baseline_source", "chosen on the train split")

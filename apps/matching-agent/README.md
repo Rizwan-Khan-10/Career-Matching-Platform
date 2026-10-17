@@ -36,6 +36,7 @@ job.role.deleted -> drop the role's vector
 | `scripts/` | `backfill_embeddings.py`, `export_real_labels.py`, `check_taxonomy.py` |
 
 Run tests: `EMBEDDING_BACKEND=hash python -m unittest discover -s tests -t . -v` (hash = offline stand-in, tests logic only).
+**No silent fallback:** with `EMBEDDING_BACKEND=minilm` a missing / invalid / mismatching `app/artifacts/scorer.json` stops the agent at start-up with a clear `ScorerError`. The hand-set `TEST_MODEL` and the `hash` embedder exist only for unit tests / CI (`EMBEDDING_BACKEND=hash`); `hash` is refused when `APP_ENV=production`.
 `GET /model` shows the live scorer/threshold/embedder. `GET /stats` shows per-run efficiency counters. Tunables are env vars, see `app/core/config.py`.
 
 ## Efficient matching (contract §8)
@@ -133,6 +134,7 @@ Reads `resumes_service."Resume"`, `jobs_service."JobRole"` / `"JobPosting"`, `ma
 | `MIN_REQUIRED_SKILL_COVERAGE` | no | `0.35` | gate: required-skill coverage below this = not eligible |
 | `EXPERIENCE_GATE_RATIO` | no | `0.5` | gate: experience below ratio x minimum ... |
 | `EXPERIENCE_GATE_MIN_GAP_YEARS` | no | `1` | ... and gap at least this many years |
+| `APP_ENV` | no | unset | `production` makes the agent refuse `EMBEDDING_BACKEND=hash` at start-up |
 | `FRESHER_PROJECT_WEIGHT` | no | `0.6` | interim projects nudge for fresher/any roles (0 = off) |
 | `FRESHER_INTERNSHIP_WEIGHT` | no | `0.3` | interim internship nudge for fresher/any roles (0 = off) |
 | `TOP_K_ROLES_PER_RESUME` | no | `50` | max roles kept for one resume |
@@ -148,7 +150,6 @@ Reads `resumes_service."Resume"`, `jobs_service."JobRole"` / `"JobPosting"`, `ma
 | `LOG_LEVEL` | no | `INFO` | JSON logs: `ts, level, service, requestId, msg` |
 | `ENABLE_DOCS` | no | `false` | `/docs` only when `true` |
 | `ENABLE_MATCHING_CONSUMER` | no | `true` | run the stream consumers |
-| `GROQ_API_KEY` | no | unset | training only (`training/llm_client.py`) |
 
 ## Run locally
 ```

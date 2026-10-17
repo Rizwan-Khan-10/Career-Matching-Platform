@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { JwtStrategy } from './auth/strategies/jwt.strategy';
 import { ResumeModule } from './resume/resume.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ResumeModule } from './resume/resume.module';
     PrismaModule,
     RedisModule,
     ResumeModule,
+    HealthModule
   ],
   providers: [JwtStrategy],
 })

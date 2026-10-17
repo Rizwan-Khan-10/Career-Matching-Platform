@@ -91,7 +91,7 @@ def build_matrix(rows, cache_dir="training/data/.cache", verbose=True):
         if verbose and (i + 1) % 500 == 0:
             print(f"[features] {i + 1}/{len(rows)}")
     out = dict(X=np.array(X, dtype=np.float64), y=np.array(y), groups=np.array(groups), splits=np.array(splits), weights=np.array(weights), kinds=np.array(kinds),
-           exp=np.array(exp), min_exp=np.array(min_exp), level=np.array(level)))
+           exp=np.array(exp), min_exp=np.array(min_exp), level=np.array(level))
     np.savez(path, **out)
     return out
 

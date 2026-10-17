@@ -23,3 +23,5 @@ Thumbs.db
 .cache/
 .parse_cache/
 *.jsonl
+# the hand-labelled gold set is committed on purpose (raw training data stays ignored)
+!training/gold/gold_pairs.jsonl

@@ -1,8 +1,8 @@
 """Logistic regression with SIGN CONSTRAINTS (scipy L-BFGS-B), so the scorer stays sane and explainable.
 
 Plain sklearn LogisticRegression happily learns things like  global_sim: -2.47, req_exact: -1.59,
-has_req_skills: -10.2  (see the old scorer.json) - an artefact of correlated features and of a constant column
-in the synthetic data. Here every "more of this is good" feature is forced to have weight >= 0, and columns
+has_req_skills: -10.2 - an artefact of correlated features and of a constant column
+in the training data. Here every "more of this is good" feature is forced to have weight >= 0, and columns
 that never vary in the training data get weight 0 (they are constants -> the bias already covers them).
 """
 import numpy as np

@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   '@parcel/watcher': true
   '@prisma/engines': true
+  '@scarf/scarf': false
   bcrypt: true
   esbuild: false
   msgpackr-extract: false

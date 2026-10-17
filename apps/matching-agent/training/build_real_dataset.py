@@ -1,4 +1,4 @@
-"""Builds a REAL labelled training set (replaces the old synthetic training/data/dataset.jsonl).
+"""Builds the REAL labelled training set (training/data/real_pairs.jsonl).
 
 Source: Hugging Face `cnamuangtoun/resume-job-description-fit` - ~8k real-text (resume, job description) pairs
 labelled "Good Fit" / "Potential Fit" / "No Fit".  Raw text is converted to the SAME structured shape that
@@ -199,16 +199,14 @@ def _strs(v):
     return [str(x).strip() for x in (v if isinstance(v, list) else []) if str(x).strip()]
 
 
-TRACK_STACKS = {   # mirrors the taxonomy in the contracts (4.10) / JD_PROMPT; replace by tech_roles.json once 2.1 is merged here
-    "frontend": {"javascript", "other"},
-    "backend": {"java", "python", "javascript", "dotnet", "go", "php", "ruby", "other"},
-    "fullstack": {"java", "python", "javascript", "dotnet", "php", "other"},
-    "mobile": {"android", "ios", "cross_platform", "other"},
-    "data_ml": {"data_analyst", "data_engineer", "ml_ai", "other"},
-    "devops_cloud": {"aws", "azure", "gcp", "general", "other"},
-    "qa": {"manual", "automation", "other"},
-    "other": set(),
-}
+def _load_track_stacks() -> dict:
+    """Same taxonomy file the agent uses (identical copy of resume-service's tech-roles.json, see scripts/check_taxonomy.py)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "taxonomy", "tech_roles.json")
+    with open(path, encoding="utf-8") as f:
+        return {t["id"]: set(t["stacks"]) for t in json.load(f)["tracks"]}
+
+
+TRACK_STACKS = _load_track_stacks()   # contract 4.10
 
 
 def _int(v, lo, hi):

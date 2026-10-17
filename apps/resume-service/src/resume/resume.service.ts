@@ -7,7 +7,7 @@ import {
     ServiceUnavailableException,
     Logger,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { newRequestId } from '../common/request-context';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -75,7 +75,7 @@ export class ResumeService {
             10000,
             '*',
             'data',
-            JSON.stringify({ resumeId: resume.id, applicantId, fileUrl }),
+            JSON.stringify({ resumeId: resume.id, applicantId, fileUrl, requestId: newRequestId() }),
         );
 
         // an unconfirmed upload can never be in a match, so no approved-match check is needed
@@ -104,7 +104,7 @@ export class ResumeService {
             throw new BadRequestException('Add at least one skill before confirming your resume');
         }
 
-        const requestId = randomUUID();
+        const requestId = newRequestId();
 
         // Already confirmed: nothing to change, but re-publish so a confirm whose event was lost can be retried safely
         // (matching-agent skips unchanged pairs by inputHash, so this is cheap).
@@ -251,7 +251,7 @@ export class ResumeService {
                 ...mergedData,
                 resumeId: resume.id,
                 applicantId,
-                requestId: randomUUID(),
+                requestId: newRequestId(),
             });
         }
 

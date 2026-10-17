@@ -1,25 +1,58 @@
 import logging
-import os
 import threading
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+from app.core import health_state
+from app.core.config import ENABLE_DOCS, ENABLE_MATCHING_CONSUMER
+from app.core.logging_setup import setup_logging
+from app.core.security import require_internal_key
+
+setup_logging()
 log = logging.getLogger("matching.main")
 
-app = FastAPI()
 
-# "disabled" (ENABLE_MATCHING_CONSUMER=false) | "starting" | "failed"
-_state = {"consumer": "starting", "error": None}
+def start_consumer():
+    """Runs forever (blocks) in its own thread. A startup failure or a dead consumer turns /health into 503."""
+    if not ENABLE_MATCHING_CONSUMER:
+        health_state.set_startup("disabled")
+        return
+    try:
+        from app.workers.stream_consumer import run
+        health_state.set_startup("running")
+        run()
+        health_state.set_startup("failed", "consumer threads exited")
+    except Exception as exc:
+        health_state.set_startup("failed", exc)
+        log.exception("Matching-agent consumer startup failed")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    threading.Thread(target=start_consumer, daemon=True, name="matching-consumer").start()
+    yield
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    dependencies=[Depends(require_internal_key)],   # everything except /health and docs needs x-internal-key
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
+)
 
 
 @app.get("/")
 @app.get("/health")
 def health():
-    """503 when the Redis consumer crashed on startup, so Docker/uptime checks notice instead of a fake 'ok'."""
-    failed = _state["consumer"] == "failed"
-    return JSONResponse(status_code=503 if failed else 200,
-                        content={"status": "degraded" if failed else "ok", "consumer": _state["consumer"], "error": _state["error"]})
+    """503 {"status": "degraded"} when the consumers failed to start or a consumer thread died (contract §3.5)."""
+    failed = health_state.failures()
+    body = {"status": "degraded" if failed else "ok", **health_state.snapshot()}
+    if failed:
+        body["errors"] = failed
+    return JSONResponse(status_code=503 if failed else 200, content=body)
 
 
 @app.get("/model")
@@ -37,18 +70,3 @@ def stats():
     from app.services import run_stats
     from app.services.side_cache import cache_stats
     return {**run_stats.snapshot(), "cache": cache_stats()}
-
-
-def start_consumer():
-    if os.getenv("ENABLE_MATCHING_CONSUMER", "true").lower() != "true":
-        _state["consumer"] = "disabled"
-        return
-    try:
-        from app.workers.stream_consumer import run
-        run()
-    except Exception as exc:
-        _state.update(consumer="failed", error=str(exc)[:300])
-        log.exception("Matching-agent consumer startup failed")
-
-
-threading.Thread(target=start_consumer, daemon=True).start()

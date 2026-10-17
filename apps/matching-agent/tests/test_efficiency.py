@@ -174,7 +174,8 @@ class RunStatsTest(unittest.TestCase):
             from app import main
         except Exception as exc:  # fastapi / httpx not installed on a bare machine
             self.skipTest(f"fastapi test client unavailable: {exc}")
-        main._state["consumer"] = "disabled"
+        from app.core import health_state
+        health_state.set_startup("disabled")   # (the consumer now starts in the app lifespan, not on import)
         body = TestClient(main.app).get("/stats").json()
         self.assertEqual(set(body), {"since", "totals", "recent", "cache"})
         self.assertEqual(set(body["cache"]), {"resumeSide", "roleSide"})

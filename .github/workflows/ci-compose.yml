@@ -1,0 +1,21 @@
+name: CI - Compose file
+
+on:
+  push:
+    paths: ['docker-compose.yml', '.env.compose.example', 'apps/web/Dockerfile', 'apps/web/Dockerfile.dockerignore', '.github/workflows/ci-compose.yml']
+  pull_request:
+    paths: ['docker-compose.yml', '.env.compose.example', 'apps/web/Dockerfile', 'apps/web/Dockerfile.dockerignore', '.github/workflows/ci-compose.yml']
+
+# Static checks only. Starting the whole stack needs real Groq and Cloudinary keys, so the full run
+# (up --build, then the e2e profile) is done by hand or in a separate job that has those secrets.
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose file is valid with the example env (all profiles)
+        run: |
+          cp .env.compose.example .env.compose
+          docker compose --env-file .env.compose --profile e2e config --quiet
+      - name: Web image builds
+        run: docker build -f apps/web/Dockerfile -t web-ci .

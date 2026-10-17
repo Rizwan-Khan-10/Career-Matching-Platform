@@ -18,6 +18,19 @@ export const updateResumeSchema = z.object({
         .min(0, 'Can\'t be negative')
         .max(60, 'That looks too high')
         .optional(),
+    branch: z.string().max(100, 'Keep it under 100 characters').optional(),
+    passingYear: z
+        .number({ error: 'Enter a number' })
+        .int('Use a whole year')
+        .min(2000, 'Enter a valid year')
+        .max(2100, 'Enter a valid year')
+        .optional(),
+    backlogs: z
+        .number({ error: 'Enter a number' })
+        .int('Use a whole number')
+        .min(0, 'Can\'t be negative')
+        .max(50, 'That looks too high')
+        .optional(),
     projects: z.array(resumeProjectSchema).max(20, 'Keep it under 20 projects'),
 });
 

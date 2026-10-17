@@ -8,6 +8,7 @@
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
+import { handleAcademicMock } from './academic';
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
@@ -65,6 +66,10 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if ((isRoleCreate || isUpload) && companyStatus !== 'approved') {
     return respond(config, 403, errorBody(403, 'Company is not approved yet', 'Forbidden'));
   }
+
+  // contract 4.3 / 5.2: academic fields on the applicant profile
+  const academicResponse = handleAcademicMock(method, url, config);
+  if (academicResponse) return academicResponse;
 
   // contract 5.4: resume-service (list, upload, delete, patch, target-roles)
   const resumeResponse = handleResumeMock(method, url, config);

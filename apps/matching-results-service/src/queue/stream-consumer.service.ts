@@ -24,6 +24,10 @@ export class StreamConsumerService implements OnModuleInit {
         this.loop('match.scanned', 'matching-results-group', (data) => this.matches.saveScans(data));
         this.loop('match.computed', 'matching-results-group', (data) => this.matches.saveMatchResult(data));
         this.loop('feedback.ready', 'matching-results-group', (data) => this.matches.saveFeedback(data));
+        await this.ensureGroup('resume.superseded', 'matching-results-group');
+        await this.ensureGroup('resume.deleted', 'matching-results-group');
+        this.loop('resume.superseded', 'matching-results-group', (data) => this.matches.onResumeRemoved(data));
+        this.loop('resume.deleted', 'matching-results-group', (data) => this.matches.onResumeRemoved(data));
     }
 
     private async ensureGroup(stream: string, group: string) {

@@ -1,4 +1,5 @@
 export type ShortlistMode = 'online' | 'offline' | 'phone';
+export type RejectReasonCategory = 'skills_gap' | 'experience' | 'resume_quality' | 'position_filled' | 'other';
 
 // contract 5.6: written by the company in the shortlist form; the applicant sees it exactly as written
 export interface ShortlistInfo {
@@ -32,6 +33,9 @@ export interface Match {
     missingSkills?: string[];
     feedback: string | null;
     decision?: 'shortlisted' | 'rejected' | null; // company side (GET /matches/role/:id)
+    // company side only, contract 5.6. rejectReason is private; the applicant only ever sees rejectMessage
+    rejectReason?: RejectReasonCategory | null;
+    rejectMessage?: string | null;
     // applicant side (GET /matches/mine), contract 5.6
     outcome?: 'shortlisted' | 'rejected' | null;
     shortlistInfo?: ShortlistInfo | null;

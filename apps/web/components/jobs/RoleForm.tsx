@@ -5,8 +5,14 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FieldError } from '@/components/ui/FieldError';
 import { SkillsInput } from '@/components/ui/SkillsInput';
+import { RoleStackPicker } from '@/components/jobs/RoleStackPicker';
+import { EligibilityFields } from '@/components/jobs/EligibilityFields';
 import { jobRoleSchema, type JobRoleValues } from '@/lib/schemas/job';
+import { LEVEL_LABELS, toFormState, toPayload, type RoleFormState } from '@/lib/roleForm';
 import type { JobRoleRequirements } from '@/types/job';
+
+const selectClass =
+    'w-full border border-hairline bg-paper-raised rounded px-3 py-2.5 text-sm font-body text-ink outline-none transition-colors focus:border-ink';
 
 export function RoleForm({
     initial,
@@ -21,29 +27,19 @@ export function RoleForm({
     isSaving: boolean;
     submitLabel?: string;
 }) {
-    const [title, setTitle] = useState(initial?.title ?? '');
-    const [skills, setSkills] = useState<string[]>(initial?.requirements?.requiredSkills ?? []);
-    const [preferred, setPreferred] = useState<string[]>(initial?.requirements?.preferredSkills ?? []);
-    const [minExperienceYears, setMinExperienceYears] = useState(
-        initial?.requirements?.minExperienceYears != null ? String(initial.requirements.minExperienceYears) : '',
-    );
-    const [qualifications, setQualifications] = useState(initial?.requirements?.qualifications ?? '');
+    const [form, setForm] = useState<RoleFormState>(() => toFormState(initial));
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    const update = (patch: Partial<RoleFormState>) => setForm((prev) => ({ ...prev, ...patch }));
+
     const handleSave = () => {
-        const parsed = jobRoleSchema.safeParse({
-            title: title.trim(),
-            requiredSkills: skills,
-            preferredSkills: preferred,
-            // null (not undefined) so that emptying a field really clears it on the server
-            minExperienceYears: minExperienceYears.trim() === '' ? null : Number(minExperienceYears),
-            qualifications: qualifications.trim() || null,
-        });
+        const parsed = jobRoleSchema.safeParse(toPayload(form));
 
         if (!parsed.success) {
             const fieldErrors: Record<string, string> = {};
             for (const issue of parsed.error.issues) {
-                fieldErrors[issue.path[0] as string] = issue.message;
+                const key = issue.path[0] as string;
+                if (!fieldErrors[key]) fieldErrors[key] = issue.message;
             }
             setErrors(fieldErrors);
             return;
@@ -56,44 +52,73 @@ export function RoleForm({
         <div className="space-y-4">
             <div>
                 <label className="text-xs text-ink-grey mb-1.5 block">Role title</label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Backend Engineer" />
+                <Input value={form.title} onChange={(e) => update({ title: e.target.value })} placeholder="Backend Engineer" />
                 <FieldError message={errors.title} />
             </div>
 
+            <RoleStackPicker
+                track={form.track}
+                stacks={form.stacks}
+                onChange={(next) => update({ track: next.track, stacks: next.stacks })}
+            />
+            <FieldError message={errors.track ?? errors.stacks} />
+
             <div>
                 <label className="text-xs text-ink-grey mb-1.5 block">Required skills</label>
-                <SkillsInput value={skills} onChange={setSkills} />
+                <SkillsInput value={form.skills} onChange={(skills) => update({ skills })} />
                 <FieldError message={errors.requiredSkills} />
             </div>
 
             <div>
                 <label className="text-xs text-ink-grey mb-1.5 block">Preferred skills (nice to have)</label>
-                <SkillsInput value={preferred} onChange={setPreferred} />
+                <SkillsInput value={form.preferred} onChange={(preferred) => update({ preferred })} />
                 <FieldError message={errors.preferredSkills} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label htmlFor="role-level" className="text-xs text-ink-grey mb-1.5 block">
+                        Level
+                    </label>
+                    <select
+                        id="role-level"
+                        value={form.level}
+                        onChange={(e) => update({ level: e.target.value })}
+                        className={selectClass}
+                    >
+                        <option value="">Not set</option>
+                        {Object.entries(LEVEL_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                                {label}
+                            </option>
+                        ))}
+                    </select>
+                    <FieldError message={errors.level} />
+                </div>
                 <div>
                     <label className="text-xs text-ink-grey mb-1.5 block">Min. experience (yrs)</label>
                     <Input
                         type="number"
                         step="0.5"
-                        value={minExperienceYears}
-                        onChange={(e) => setMinExperienceYears(e.target.value)}
+                        value={form.minExperienceYears}
+                        onChange={(e) => update({ minExperienceYears: e.target.value })}
                         placeholder="2"
                     />
                     <FieldError message={errors.minExperienceYears} />
                 </div>
-                <div>
-                    <label className="text-xs text-ink-grey mb-1.5 block">Qualifications</label>
-                    <Input
-                        value={qualifications}
-                        onChange={(e) => setQualifications(e.target.value)}
-                        placeholder="B.Tech in CS or related"
-                    />
-                    <FieldError message={errors.qualifications} />
-                </div>
             </div>
+
+            <div>
+                <label className="text-xs text-ink-grey mb-1.5 block">Qualifications</label>
+                <Input
+                    value={form.qualifications}
+                    onChange={(e) => update({ qualifications: e.target.value })}
+                    placeholder="B.Tech in CS or related"
+                />
+                <FieldError message={errors.qualifications} />
+            </div>
+
+            <EligibilityFields form={form} onChange={update} errors={errors} />
 
             <div className="flex gap-2 pt-1">
                 <Button onClick={handleSave} disabled={isSaving}>

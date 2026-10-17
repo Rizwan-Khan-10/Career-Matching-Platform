@@ -6,6 +6,7 @@
 //   localStorage.setItem('mock-company-status', 'pending' | 'approved' | 'rejected')
 //   localStorage.removeItem('mock-resumes')   // reset the fake resume list
 // localStorage.removeItem('mock-matches') // reset the fake matches
+//   localStorage.setItem('mock-job-approval', 'pending' | 'rejected' | 'approved') // newest job posting
 import axios, { type AxiosAdapter } from 'axios';
 import { bodyOf, errorBody, respond } from './helpers';
 import { handleResumeMock } from './resumes';
@@ -17,6 +18,7 @@ export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 const REG_MODES = ['open', 'invite_only', 'domain'] as const;
 const COMPANY_STATUSES = ['pending', 'approved', 'rejected'] as const;
 const ALLOWED_DOMAINS = ['college.edu', 'students.college.edu'];
+const JOB_APPROVALS = ['approved', 'pending', 'rejected'] as const;
 
 function readFlag<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -60,6 +62,21 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   if (method === 'get' && url === '/companies/me') {
     const real = await axios.getAdapter(axios.defaults.adapter)(config);
     return { ...real, data: { ...real.data, status: companyStatus } };
+  }
+
+    // contract 4.6: job postings get approvalStatus (real call, field added on top; only the newest posting is switched)
+  if (method === 'get' && url === '/jobs/mine') {
+    const approval = readFlag('mock-job-approval', JOB_APPROVALS, 'approved');
+    const real = await axios.getAdapter(axios.defaults.adapter)(config);
+    const list: Record<string, unknown>[] = Array.isArray(real.data) ? real.data : [];
+    return {
+      ...real,
+      data: list.map((posting, i) => ({
+        ...posting,
+        approvalStatus: i === 0 ? approval : 'approved',
+        approvalNote: i === 0 && approval === 'rejected' ? 'Please upload a clearer document.' : null,
+      })),
+    };
   }
 
   // contract 5.5: unapproved company cannot upload or add roles

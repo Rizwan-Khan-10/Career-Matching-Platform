@@ -7,6 +7,8 @@ import { RoleForm } from '@/components/jobs/RoleForm';
 import type { JobRole } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
 import type { RoleStats } from '@/types/stats';
+import { LEVEL_LABELS, describeRules } from '@/lib/roleForm';
+import { stackLabel, trackLabel } from '@/lib/targetRoles';
 
 export function RoleCard({
     role,
@@ -28,6 +30,15 @@ export function RoleCard({
     const [isEditing, setIsEditing] = useState(false);
     const skills = role.requirements?.requiredSkills ?? [];
     const preferredSkills = role.requirements?.preferredSkills ?? [];
+    const req = role.requirements;
+    const levelText = req?.level ? LEVEL_LABELS[req.level] : null;
+    const stackText = req?.stacks?.length ? req.stacks.map(stackLabel).join(', ') : 'any stack';
+    const targetText = req?.track
+        ? req.track === 'other'
+            ? trackLabel('other')
+            : `${trackLabel(req.track)} · ${stackText}`
+        : null;
+    const rules = describeRules(req);
 
     if (isEditing) {
         return (
@@ -106,6 +117,23 @@ export function RoleCard({
                     ))}
                 </div>
             )}
+
+            {(levelText || targetText) && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    {levelText && (
+                        <span className="bg-paper text-ink border border-hairline text-xs font-medium px-2.5 py-1 rounded-full">
+                            {levelText}
+                        </span>
+                    )}
+                    {targetText && (
+                        <span className="bg-paper text-ink border border-hairline text-xs font-medium px-2.5 py-1 rounded-full">
+                            {targetText}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {rules.length > 0 && <p className="text-xs text-ink-grey mt-2">{rules.join(' · ')}</p>}
 
             {role.requirements?.qualifications && (
                 <p className="text-xs text-ink-grey mt-2">{role.requirements.qualifications}</p>

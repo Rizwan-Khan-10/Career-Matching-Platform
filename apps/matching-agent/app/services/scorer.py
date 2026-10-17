@@ -10,7 +10,7 @@ import os
 
 from app.core import config
 from app.core.embeddings import model_name
-from app.services.features import FEATURE_NAMES
+from app.services.features import FEATURE_NAMES, BASE_FEATURE_NAMES, FRESHER_FEATURE_NAMES
 
 log = logging.getLogger("matching.scorer")
 
@@ -32,6 +32,19 @@ DEFAULT_MODEL = {
 _model = None
 
 
+def _interim_fresher_weights() -> dict:
+    """Used only for fresher features the loaded artifact has no weight for (trained before 2.8). See config.py."""
+    return {"is_fresher_role": 0.0, "project_evidence": config.FRESHER_PROJECT_WEIGHT,
+            "has_internship": config.FRESHER_INTERNSHIP_WEIGHT}
+
+
+def _weight(m: dict, name: str) -> float:
+    w = m["weights"]
+    if name in w:
+        return float(w[name])
+    return _interim_fresher_weights().get(name, 0.0)   # a missing base weight stays 0.0 as before
+
+
 def _load() -> dict:
     global _model
     if _model is not None:
@@ -42,7 +55,8 @@ def _load() -> dict:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 cand = json.load(f)
-            if cand.get("features") != FEATURE_NAMES:
+             # an artifact trained before the fresher features (the 14 base ones) stays valid: extras use interim weights
+            if cand.get("features") not in (FEATURE_NAMES, BASE_FEATURE_NAMES):
                 log.warning("scorer.json feature list differs from code -> using default weights. Retrain!")
             elif cand.get("embedding_model") and cand["embedding_model"] != model_name():
                 log.warning("scorer trained with embedder %s but running %s -> using default weights. Retrain!",
@@ -62,8 +76,14 @@ def reload():
     return _load()
 
 
+def _uses_interim() -> bool:
+    return any(n not in _load()["weights"] for n in FRESHER_FEATURE_NAMES)
+
+
 def model_version() -> str:
-    return _load().get("version", "unknown")
+    """Part of the input hash: the suffix makes pairs re-score once when the interim fresher weights apply."""
+    v = _load().get("version", "unknown")
+    return f"{v}+fresher-interim" if _uses_interim() else v
 
 
 def threshold() -> float:
@@ -73,7 +93,7 @@ def threshold() -> float:
 def probability(features: dict) -> float:
     m = _load()
     z = float(m["bias"]) + sum(
-        float(m["weights"].get(n, 0.0)) * (1.0 if n == "has_req_skills" else float(features[n])) for n in FEATURE_NAMES
+        _weight(m, n) * (1.0 if n == "has_req_skills" else float(features[n])) for n in FEATURE_NAMES
     )
     if z >= 0:
         return 1.0 / (1.0 + math.exp(-z))
@@ -88,16 +108,19 @@ def apply_gates(features: dict, detail: dict) -> list:
         failed.append(f"covers only {features['req_cov']:.0%} of the required skills")
     min_exp = detail.get("minExperienceYears") or 0.0
     exp = detail.get("experienceYears") or 0.0
-    if min_exp and exp < min_exp * config.EXPERIENCE_GATE_RATIO and (min_exp - exp) >= config.EXPERIENCE_GATE_MIN_GAP_YEARS:
+    # experience gate: experienced roles only (level fresher / any = off; a missing level means experienced)
+    if detail.get("level", "experienced") == "experienced" and min_exp and exp < min_exp * config.EXPERIENCE_GATE_RATIO and (min_exp - exp) >= config.EXPERIENCE_GATE_MIN_GAP_YEARS:
+        failed.append(f"{exp:g} yrs experience vs {min_exp:g} yrs required")
         failed.append(f"{exp:g} yrs experience vs {min_exp:g} yrs required")
     return failed
 
 
-def decide(features: dict, detail: dict):
-    """-> (score, eligible, prob, gates_failed). Score is always consistent with eligibility."""
+def decide(features: dict, detail: dict, extra_gates: list | None = None):
+    """-> (score, eligible, prob, gates_failed). Score is always consistent with eligibility.
+    `extra_gates` = reasons of other hard rules (campus rules) that veto the pair like the built-in gates."""
     prob = probability(features)
     thr = threshold()
-    gates = apply_gates(features, detail)
+    gates = apply_gates(features, detail) + list(extra_gates or [])
     eligible = prob >= thr and not gates
     score = prob if eligible or prob < thr else thr * 0.99   # vetoed pairs never display above threshold
     return round(float(score), 4), eligible, prob, gates

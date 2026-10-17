@@ -46,3 +46,4 @@ class MatchComputedEvent(BaseModel):
     missingSkills: list[str] = []
     breakdown: dict[str, Any] = {}
     modelVersion: Optional[str] = None
+    unverifiedRules: list[str] = []   # rule fields whose applicant value is unknown (cgpa, branch, passingYear, backlogs)

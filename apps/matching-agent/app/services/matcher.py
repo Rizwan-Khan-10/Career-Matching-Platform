@@ -5,7 +5,7 @@ Deterministic, explainable, and immune to prompt injection hidden inside a resum
 """
 from dataclasses import dataclass, field
 
-from app.services import scorer
+from app.services import rules, scorer
 from app.services.features import compute_features, build_resume_side, build_role_side, FEATURE_NAMES  # noqa: F401  (re-exported for the worker / caches)
 
 MATCHED_AT = 0.80   # credit >= this  -> skill counts as matched
@@ -22,6 +22,7 @@ class MatchResult:
     missingSkills: list = field(default_factory=list)
     breakdown: dict = field(default_factory=dict)
     modelVersion: str = ""
+    unverifiedRules: list = field(default_factory=list)   # names among cgpa, branch, passingYear, backlogs (contract 6)
 
 
 def _skill_row(c: dict) -> dict:
@@ -29,30 +30,38 @@ def _skill_row(c: dict) -> dict:
             "matchedWith": c["matchedWith"], "similarity": c["similarity"]}
 
 
-def _reason(eligible: bool, prob: float, thr: float, gates: list, matched: list, partial: list, missing: list, detail: dict) -> str:
+def _reason(eligible: bool, prob: float, thr: float, gates: list, matched: list, partial: list, missing: list, detail: dict,
+            unverified: list | None = None) -> str:
+    note = rules.unverified_note(unverified or [])
+    suffix = f" {note}." if note else ""        # e.g. " CGPA not verified." -> shown to applicant and company
     total = len(matched) + len(partial) + len(missing)
     if gates:
-        return "Not eligible: " + "; ".join(gates) + "."
+        return "Not eligible: " + "; ".join(gates) + "." + suffix
     if total == 0:
-        return ("Eligible on overall profile similarity." if eligible
-                else "Not eligible: the role lists no required skills and the overall profile similarity is low.")
+        return (("Eligible on overall profile similarity." + suffix) if eligible
+                else "Not eligible: the role lists no required skills and the overall profile similarity is low." + suffix)
     head = f"Covers {len(matched)} of {total} required skills"
     if partial:
         head += f" (+{len(partial)} partially)"
     if eligible:
-        return head + f"; match probability {prob:.0%}."
+        return head + f"; match probability {prob:.0%}." + suffix
     tail = f" Missing: {', '.join(missing[:5])}." if missing else ""
     min_exp, exp = detail.get("minExperienceYears"), detail.get("experienceYears")
-    if min_exp and (exp or 0) < min_exp:
+    if min_exp and (exp or 0) < min_exp and detail.get("level") == "experienced":   # fresher / any: experience is not asked
         tail += f" Experience {exp or 0:g} yrs vs {min_exp:g} yrs asked."
-    return f"Not eligible: {head}; match probability {prob:.0%} is below the {thr:.0%} bar." + tail
+    return f"Not eligible: {head}; match probability {prob:.0%} is below the {thr:.0%} bar." + tail + suffix
 
 
-def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None, role_side=None) -> MatchResult:
+def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None, role_side=None,
+                   academic: dict | None = None) -> MatchResult:
     """`side` = build_resume_side(resume), `role_side` = build_role_side(title, requirements): pass them (cached) when one
-    resume meets many roles or one role meets many resumes, so each half is prepared once."""
-    fr = compute_features(resume or {}, role_title or "", requirements or {}, side=side, role_side=role_side)
-    score, eligible, prob, gates = scorer.decide(fr.features, fr.detail)
+    resume meets many roles or one role meets many resumes, so each half is prepared once.
+    `academic` = the applicant's users_service.ApplicantProfile values {cgpa, branch, passingYear, backlogs, academicVerified}
+    (None when unknown). Campus rules are hard gates: failed -> not eligible, unknown -> eligible + `unverifiedRules`."""
+    requirements = requirements or {}
+    fr = compute_features(resume or {}, role_title or "", requirements, side=side, role_side=role_side)
+    rule_out = rules.evaluate_rules(requirements, resume, academic)
+    score, eligible, prob, gates = scorer.decide(fr.features, fr.detail, extra_gates=rule_out.failed)
 
     req = fr.detail["required"]
     matched = [c["skill"] for c in req if c["credit"] >= MATCHED_AT]
@@ -62,7 +71,7 @@ def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None,
 
     return MatchResult(
         score=score, eligible=eligible,
-        reason=_reason(eligible, prob, thr, gates, matched, partial, missing, fr.detail),
+        reason=_reason(eligible, prob, thr, gates, matched, partial, missing, fr.detail, rule_out.unverified),
         matchedSkills=matched, partialSkills=partial, missingSkills=missing,
         breakdown={
             "probability": round(float(prob), 4), "threshold": thr, "gatesFailed": gates,
@@ -70,6 +79,8 @@ def evaluate_match(resume: dict, role_title: str, requirements: dict, side=None,
             "skills": [_skill_row(c) for c in req],
             "preferred": [_skill_row(c) for c in fr.detail["preferred"]],
             "experienceYears": fr.detail["experienceYears"], "minExperienceYears": fr.detail["minExperienceYears"],
+            "level": fr.detail["level"], "rules": rule_out.detail,
         },
         modelVersion=scorer.model_version(),
+        unverifiedRules=rule_out.unverified,
     )

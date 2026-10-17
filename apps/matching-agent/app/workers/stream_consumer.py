@@ -6,7 +6,8 @@ from app.core import config
 from app.core.embeddings import embed_one
 from app.core.redis_stream import consume_loop, publish
 from app.models.matching import ResumeEvent, ResumeDeletedEvent, ProfileUpdatedEvent, JdExtractedEvent, MatchComputedEvent
-from app.services import scorer
+from app.services import rules, scorer
+from app.services.academic import get_academic_profile, get_academic_profiles
 from app.services.input_hash import compute_input_hash
 from app.services.matcher import evaluate_match
 from app.services.retrieval import best_per_applicant, prefilter_skips, scan_best_first
@@ -31,6 +32,7 @@ def _publish(applicant_id: str, role_id: str, role_title: str, resume_id: str, r
         score=result.score, eligible=result.eligible, reason=result.reason,
         matchedSkills=result.matchedSkills, partialSkills=result.partialSkills,
         missingSkills=result.missingSkills, breakdown=result.breakdown, modelVersion=result.modelVersion,
+        unverifiedRules=result.unverifiedRules,
     )
     publish("match.computed", evt.model_dump())
 
@@ -59,12 +61,22 @@ def _match_resume(resume: dict, trigger: str = "resume", force: bool = False, **
     role_ids = role_filters.get("role_ids") or []
     top_k = max(config.TOP_K_ROLES_PER_RESUME, len(role_ids))
     scored = []
+    _academic = []
+
+    def academic() -> dict | None:
+        """The applicant's ApplicantProfile, read lazily and at most once per run (only when a role has academic rules)."""
+        if not _academic:
+            _academic.append(get_academic_profile(applicant_id))
+        return _academic[0]
 
     def process(rows: list) -> int:
         eligible = 0
         for role in rows:
             role_id, title, req = role["jobRoleId"], role["title"], role["requirements"]
-            h = compute_input_hash(resume_id, profile, title, req, model_version)
+            ruled = rules.has_academic_rules(req)
+            acad = academic() if ruled else None
+            h = compute_input_hash(resume_id, profile, title, req, model_version,
+                                   academic=rules.academic_hash_part(req, profile, acad))
             prev = stored.get(role_id)
             if prev and prev[0] == h:                       # unchanged pair: no scoring, no event
                 run.add("skippedByHash")
@@ -75,7 +87,7 @@ def _match_resume(resume: dict, trigger: str = "resume", force: bool = False, **
                 run.add("prefiltered")
                 continue
             try:
-                result = evaluate_match(profile, title, req, side=side, role_side=role_side)
+                result = evaluate_match(profile, title, req, side=side, role_side=role_side, academic=acad)
             except Exception as exc:  # one bad role must not kill the rest
                 log.exception("scoring failed resume=%s role=%s: %s", resume_id, role_id, exc)
                 continue
@@ -157,10 +169,16 @@ def _match_role(role: dict):
     model_version = scorer.model_version()
     scored = []
 
+    ruled = rules.has_academic_rules(req)
+
     def process(rows: list) -> int:
         eligible = 0
+        # one query for the whole batch, and only when this role has academic rules at all
+        academics = get_academic_profiles([c["applicantId"] for c in rows]) if ruled else {}
         for cand in rows:
-            h = compute_input_hash(cand["resumeId"], cand["parsedData"], title, req, model_version)
+            acad = academics.get(cand["applicantId"])
+            h = compute_input_hash(cand["resumeId"], cand["parsedData"], title, req, model_version,
+                                   academic=rules.academic_hash_part(req, cand["parsedData"], acad))
             prev = stored.get(cand["resumeId"])
             if prev and prev[0] == h:                       # unchanged pair: no scoring, no event
                 run.add("skippedByHash")
@@ -171,7 +189,7 @@ def _match_role(role: dict):
                 run.add("prefiltered")
                 continue
             try:
-                result = evaluate_match(cand["parsedData"], title, req, side=side, role_side=role_side)
+                result = evaluate_match(cand["parsedData"], title, req, side=side, role_side=role_side, academic=acad)
             except Exception as exc:
                 log.exception("scoring failed resume=%s role=%s: %s", cand["resumeId"], role_id, exc)
                 continue

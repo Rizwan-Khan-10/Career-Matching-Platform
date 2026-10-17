@@ -40,6 +40,13 @@ MIN_REQUIRED_SKILL_COVERAGE = float(os.getenv("MIN_REQUIRED_SKILL_COVERAGE", 0.3
 EXPERIENCE_GATE_RATIO = float(os.getenv("EXPERIENCE_GATE_RATIO", 0.5))   # exp < ratio * min_exp ...
 EXPERIENCE_GATE_MIN_GAP_YEARS = float(os.getenv("EXPERIENCE_GATE_MIN_GAP_YEARS", 1.0))  # ... and gap >= 1 yr
 
+# --- role level (fresher / any roles) ----------------------------------------
+# INTERIM nudges (logit units) for projects / internship on fresher + any roles. They are used ONLY while the
+# loaded scorer.json was trained without the fresher features; a scorer trained with them (task 2.10) uses its own
+# weights. Set both to 0 to switch the nudge off.
+FRESHER_PROJECT_WEIGHT = float(os.getenv("FRESHER_PROJECT_WEIGHT", 0.6))
+FRESHER_INTERNSHIP_WEIGHT = float(os.getenv("FRESHER_INTERNSHIP_WEIGHT", 0.3))
+
 # Optional override of the probability threshold stored in the trained scorer (None = use trained one)
 _t = os.getenv("ELIGIBILITY_THRESHOLD")
 ELIGIBILITY_THRESHOLD = float(_t) if _t else None

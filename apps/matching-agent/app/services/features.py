@@ -14,8 +14,10 @@ import numpy as np
 from app.core.embeddings import embed_many
 from app.services.skills import dedupe_skills, normalize_skill, embedding_text_for_skill
 from app.services.profile_text import resume_profile_text, role_profile_text
+from app.services.rules import normalize_level, is_fresher_level
 
-FEATURE_NAMES = [
+# The 14 features the committed scorer.json was trained with.
+BASE_FEATURE_NAMES = [
     "req_cov",        # soft coverage of required skills (headline feature)
     "req_exact",      # fraction of required skills literally present after normalisation
     "req_sem_mean",   # mean over required skills of best skill-vs-skill cosine
@@ -31,6 +33,14 @@ FEATURE_NAMES = [
     "edu_score",      # education level vs required level
     "has_req_skills", # 1 if the JD listed required skills at all
 ]
+
+# Role-level features (spec 9.5). They are 0 for experienced roles, so experienced scoring is unchanged.
+FRESHER_FEATURE_NAMES = [
+    "is_fresher_role",   # 1 for level fresher / any
+    "project_evidence",  # fresher/any only: how well projects + experience text back the required skills
+    "has_internship",    # fresher/any only: 1 if an experience entry is an internship / trainee role
+]
+FEATURE_NAMES = BASE_FEATURE_NAMES + FRESHER_FEATURE_NAMES
 
 # ramps that turn a raw cosine into a 0..1 credit
 SKILL_LO, SKILL_HI = 0.45, 0.80   # skill-vs-skill
@@ -104,6 +114,26 @@ def _mention_set(texts) -> set:
 
 
 # ---------------------------------------------------------------- core
+
+# ------------------------------------------------------------ fresher signals
+_INTERN = re.compile(r"\b(intern|internship|trainee|apprentice)\b", re.I)
+
+
+def has_internship(resume: dict) -> bool:
+    """True when an experience entry is an internship / traineeship (title or description says so)."""
+    for e in (resume or {}).get("experience") or []:
+        if isinstance(e, dict) and _INTERN.search(f"{e.get('title') or ''} {e.get('description') or ''}"):
+            return True
+    return False
+
+
+def _project_evidence(resume: dict, req_credits: list) -> float:
+    """0..1. Share of required skills backed by project/experience text; with no required skills, 'has real projects'."""
+    if req_credits:
+        return float(np.mean([c["ev_credit"] for c in req_credits]))
+    projects = [p for p in (resume or {}).get("projects") or [] if isinstance(p, dict) and (p.get("name") or p.get("description"))]
+    return min(len(projects), 3) / 3.0
+
 @dataclass
 class ResumeSide:
     skills: list
@@ -208,9 +238,10 @@ def _skill_credits(wanted: list, wvecs: np.ndarray, side: ResumeSide) -> list:
                 via, with_, sim = "evidence", "project/experience text", best_e
             else:
                 via, with_, sim = "none", None, max(best_s, best_e)
+        ev_credit = 1.0 if mentioned else _ramp(best_e, EVID_LO, EVID_HI)   # backed by projects / experience text?
         out.append({"skill": skill, "credit": round(float(credit), 4), "via": via,
                     "matchedWith": with_, "similarity": round(float(sim), 4),
-                    "sim_skill": best_s, "sim_ev": best_e, "exact": skill in have})
+                    "sim_skill": best_s, "sim_ev": best_e, "exact": skill in have, "ev_credit": ev_credit})
     return out
 
 
@@ -262,12 +293,20 @@ def compute_features(resume: dict, role_title: str, req: dict, side: ResumeSide 
 
     min_exp = _num(req.get("minExperienceYears")) or 0.0
     exp = side.experience_years if side.experience_years is not None else 0.0
-    exp_score = 1.0 if min_exp <= 0 else min(max(exp / min_exp, 0.0), 1.0)
-    exp_over = min(max(exp - min_exp, 0.0) / 5.0, 1.0)
+    fresher = is_fresher_level(req)
+    if fresher:
+        # fresher / any: experience is not asked -> neutral (same value roles without a minimum get), no bonus for extra years
+        exp_score, exp_over = 1.0, 0.0
+    else:
+        exp_score = 1.0 if min_exp <= 0 else min(max(exp / min_exp, 0.0), 1.0)
+        exp_over = min(max(exp - min_exp, 0.0) / 5.0, 1.0)
 
     features = {**f_req, "pref_cov": pref_cov, "global_sim": min(global_sim, 1.0), "title_sim": min(title_sim, 1.0),
                 "exp_score": exp_score, "exp_over": exp_over,
-                "edu_score": _edu_score(side.education, req.get("qualifications")), "has_req_skills": has_req}
-    detail = {"required": req_credits, "preferred": pref_credits, "experienceYears": side.experience_years,
-              "minExperienceYears": min_exp or None, "candidateSkillCount": len(side.skills)}
+                "edu_score": _edu_score(side.education, req.get("qualifications")), "has_req_skills": has_req,
+                "is_fresher_role": 1.0 if fresher else 0.0,
+                "project_evidence": _project_evidence(resume, req_credits) if fresher else 0.0,
+                "has_internship": 1.0 if (fresher and has_internship(resume)) else 0.0}
+    detail = {"level": normalize_level(req), "required": req_credits, "preferred": pref_credits, "experienceYears": side.experience_years,
+               "minExperienceYears": min_exp or None, "candidateSkillCount": len(side.skills)}
     return FeatureResult(features=features, detail=detail)

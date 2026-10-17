@@ -31,6 +31,8 @@ class Base(unittest.TestCase):
         sc.publish = lambda stream, data: self.out.append((stream, data))
         sc.upsert_resume_embedding = lambda *a: None
         sc.upsert_role_embedding = lambda *a: None
+        sc.get_academic_profile = lambda aid: None
+        sc.get_academic_profiles = lambda ids: {}
         sc.delete_resume_embedding = lambda *a: None
         self.active = True
         sc.is_role_active = lambda rid: self.active
@@ -59,6 +61,41 @@ class Base(unittest.TestCase):
     def last_run(self):
         return run_stats.snapshot()["recent"][0]
 
+
+class CampusRulesWorkerTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.ruled = {"jobRoleId": "ruled", "title": GOOD["title"],
+                      "requirements": {**GOOD["requirements"], "minCgpa": 8.0}}
+        sc.find_matching_roles_for_resume = lambda rid, k: [dict(self.ruled)]
+
+    def test_unknown_cgpa_is_published_eligible_with_unverified_flag(self):
+        sc.handle_resume_event(dict(RESUME))
+        evt = self.streams("match.computed")[0]
+        self.assertTrue(evt["eligible"])
+        self.assertEqual(evt["unverifiedRules"], ["cgpa"])
+
+    def test_profile_value_from_users_service_is_used_and_can_fail_the_pair(self):
+        sc.get_academic_profile = lambda aid: {"cgpa": 6.0, "academicVerified": True}
+        sc.handle_resume_event(dict(RESUME))
+        scan = self.streams("match.scanned")[0]["scans"][0]
+        self.assertFalse(scan["eligible"])
+        evt = self.streams("match.computed")[0]                      # near miss: published, but not eligible
+        self.assertFalse(evt["eligible"])
+        self.assertEqual(evt["unverifiedRules"], [])
+        self.assertTrue(any("CGPA 6" in g for g in evt["breakdown"]["gatesFailed"]))
+
+    def test_role_direction_reads_all_profiles_with_one_query(self):
+        calls = []
+        sc.get_academic_profiles = lambda ids: (calls.append(list(ids)) or {"a2": {"cgpa": 9.0, "academicVerified": True}})
+        sc.find_matching_resumes_for_role = lambda rid, k: [{"resumeId": "res1", "applicantId": "a1", "parsedData": RESUME},
+                                                            {"resumeId": "res2", "applicantId": "a2", "parsedData": RESUME}]
+        sc.get_role = lambda rid: {**self.ruled, "stopped": False}
+        sc.handle_jd_extracted({"jobPostingId": "p", "companyId": "c", "roleIds": ["ruled"]})
+        self.assertEqual(calls, [["a1", "a2"]])
+        by_app = {m["applicantId"]: m for m in self.streams("match.computed")}
+        self.assertEqual(by_app["a1"]["unverifiedRules"], ["cgpa"])   # no profile row -> unknown
+        self.assertEqual(by_app["a2"]["unverifiedRules"], [])         # verified 9.0 >= 8.0
 
 class ResumeDirectionTest(Base):
     def test_every_evaluated_role_is_reported_and_only_relevant_ones_published(self):

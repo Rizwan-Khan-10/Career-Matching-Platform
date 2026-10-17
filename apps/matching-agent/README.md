@@ -17,6 +17,8 @@ job.role.deleted -> drop the role's vector
 | `services/profile_text.py` | structured text that is embedded (same builder on resume + role side) |
 | `services/features.py` | per-skill semantic similarity -> 14 features |
 | `services/scorer.py` | logistic model (`artifacts/scorer.json`) + hard gates |
+| `services/rules.py` | campus rules (`minCgpa, allowedBranches, passingYears, maxBacklogs`), effective-value rule, role level |
+| `services/academic.py` | read-only SQL: `users_service.ApplicantProfile` academic columns |
 | `services/matcher.py` | one resume x one role -> score, eligible, reason, matched/missing skills |
 | `services/compatibility.py` | target-role gate (contract §4.11) in Python + SQL form, active-resume SQL |
 | `services/vector_search.py` | paged best-first retrieval with pgvector (cosine, HNSW), gate applied in SQL first; RoleScan hash reads |
@@ -55,3 +57,30 @@ Run tests: `EMBEDDING_BACKEND=hash python -m unittest discover -s tests -t . -v`
 
 Taxonomy copies: `apps/resume-service/src/taxonomy/tech-roles.json` (owner), `apps/jd-extractor-agent/app/taxonomy/tech_roles.json`
 and `app/taxonomy/tech_roles.json` here must be identical. Check: `python -m scripts.check_taxonomy` (also runs inside the unit tests).
+
+## Campus rules (hard gates)
+Role requirements may carry `minCgpa`, `allowedBranches[]`, `passingYears[]`, `maxBacklogs`. **Absent / null / empty = rule not set**
+(`maxBacklogs: 0` *is* a rule; `minCgpa: 0` asks nothing).
+Applicant value = contract 4.3: **verified** (`academicVerified` profile) > **resume** (the resume being scored) > **self** (profile). CGPA > 10 is a percentage (/10).
+
+| value | result |
+|---|---|
+| known, rule holds | pass |
+| known, rule broken | **hard gate**: not eligible, reason names the rule, listed in `breakdown.gatesFailed` (score never above threshold) |
+| unknown | **never fails**: pair stays eligible, field name goes to `unverifiedRules` (`cgpa, branch, passingYear, backlogs`), `reason` ends with e.g. "CGPA not verified." |
+
+Branches are compared alias-aware after normalising (`CSE` = `B.Tech in Computer Science & Engineering` = `Computer Science`); the table is `_BRANCH_ALIASES` in `rules.py`.
+`breakdown.rules` has per rule `required / value / source / status` (passed | failed | unverified).
+Input hash: `rules.academic_hash_part(req, parsed, profile)` returns the effective values the role's rules used (None when the role has no rule).
+
+## Role level (decision)
+| `level` | experience gate | `exp_score` / `exp_over` | extra features |
+|---|---|---|---|
+| `experienced` | on (unchanged) | real ratio | `is_fresher_role = project_evidence = has_internship = 0` -> scoring identical to before |
+| `fresher`, `any` | **off** | neutral: `exp_score = 1.0`, `exp_over = 0` | `is_fresher_role = 1`, `project_evidence` (share of required skills backed by projects/experience text), `has_internship` |
+| missing / invalid | same as `experienced` (old roles keep behaving as before) | | |
+
+`any` is treated like `fresher` (the spec groups them). A role with `level` fresher/any but `minExperienceYears` set is **not** gated on experience.
+The three new features are appended to `FEATURE_NAMES`. A `scorer.json` trained on the 14 base features still loads; for the new features it uses **interim** weights
+`FRESHER_PROJECT_WEIGHT` (0.6) and `FRESHER_INTERNSHIP_WEIGHT` (0.3) (logit units, `0` switches them off) and `modelVersion` gets the suffix `+fresher-interim`.
+After retraining with the new features (task 2.10) the trained weights are used and the suffix disappears.

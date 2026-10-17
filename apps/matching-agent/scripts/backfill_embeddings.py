@@ -3,7 +3,7 @@
 Old vectors were built from raw resume text / a JSON dump of the role, so they are not comparable.
 
     python -m scripts.backfill_embeddings            # re-embed resumes + roles
-    python -m scripts.backfill_embeddings --rematch  # ...then re-score every applicant's latest resume
+    python -m scripts.backfill_embeddings --rematch  # ...then re-score every ACTIVE (confirmed, non-superseded) resume
 """
 import argparse
 import json
@@ -28,9 +28,9 @@ def main():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute('SELECT id, title, requirements FROM "jobs_service"."JobRole"')
         roles = cur.fetchall()
-        cur.execute("""SELECT DISTINCT ON ("applicantId") id, "applicantId", "parsedData"
-                       FROM "resumes_service"."Resume" WHERE status = 'parsed'
-                       ORDER BY "applicantId", "createdAt" DESC""")
+        cur.execute("""SELECT id, "applicantId", "parsedData"
+                       FROM "resumes_service"."Resume"
+                       WHERE status = 'parsed' AND "confirmedAt" IS NOT NULL AND "supersededAt" IS NULL""")
         resumes = cur.fetchall()
 
     texts = [role_profile_text(t, _j(req)) for _, t, req in roles]
@@ -43,7 +43,7 @@ def main():
 
     if a.rematch:
         for rid, applicant, pd in resumes:
-            publish("resume.updated", {"resumeId": rid, "applicantId": applicant, **_j(pd)})
+            publish("resume.updated", {"resumeId": rid, "applicantId": applicant})
         print(f"queued re-matching for {len(resumes)} resumes")
 
 

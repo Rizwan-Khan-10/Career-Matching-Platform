@@ -2,24 +2,27 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional, Any
 
 
-class ResumeParsedEvent(BaseModel):
-    """Incoming 'resume.parsed' / 'resume.updated' event. Extra parsed fields are kept (extra=allow)."""
+class ResumeEvent(BaseModel):
+    """Incoming 'resume.confirmed' / 'resume.updated' event. Only the ids matter: the parsed data is always
+    re-read from the DB (and the resume must still be active), so a stale event can never score stale data."""
+    model_config = ConfigDict(extra="allow")
+    resumeId: str
+    applicantId: Optional[str] = None
+    targetTrack: Optional[str] = None
+    targetStack: Optional[str] = None
+
+
+class ResumeDeletedEvent(BaseModel):
+    """Incoming 'resume.deleted' event."""
     model_config = ConfigDict(extra="allow")
     resumeId: str
     applicantId: str
-    skills: list[str] = []
-    projects: list[dict] = []
-    experience: list[dict] = []
-    education: Optional[str] = None
-    cgpa: Optional[float] = None
-    experienceYears: Optional[float] = None
 
-    def profile(self) -> dict:
-        """The parsed-resume dict used for embedding + scoring (identity fields removed)."""
-        d = self.model_dump()
-        d.pop("resumeId", None)
-        d.pop("applicantId", None)
-        return d
+
+class ProfileUpdatedEvent(BaseModel):
+    """Incoming 'profile.updated' event (academic fields of the applicant changed)."""
+    model_config = ConfigDict(extra="allow")
+    applicantId: str
 
 
 class JdExtractedEvent(BaseModel):

@@ -71,7 +71,35 @@ LibreOffice (for resume PDFs), a Cloudinary account, a Groq API key.
 9. Start the frontend: `pnpm --filter web dev`, then open http://localhost:3000 (`NEXT_PUBLIC_API_URL=http://localhost`).
 
 Fresh database at any time: stop all services, `pnpm db:reset:all`, start them again.
-Docker for the whole stack (`docker compose up --build`) is the last project phase and is not available yet.
+Docker for the whole stack: see "Run with Docker" below.
+
+## Run with Docker
+
+One command starts everything: PostgreSQL with pgvector, Redis, the 8 NestJS services, the 5 agents, the web app and nginx.
+Only nginx publishes a port (80); everything else stays on the compose network.
+
+Needs Docker with Compose 2.23.1 or newer (about 8 GB RAM for Docker) and Cloudinary + Groq keys.
+The first build is slow: the matching agent downloads its embedding model, the parser installs Tesseract and LibreOffice.
+
+1. Create the env file and fill it in:
+   - Windows cmd: `copy .env.compose.example .env.compose`
+   - macOS / Linux: `cp .env.compose.example .env.compose`
+2. `docker compose --env-file .env.compose up --build`
+3. Open http://localhost and log in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` (the admin is created on first start, `SEED_ADMIN_ON_BOOT=true`).
+
+Run the 13 e2e checkpoints inside compose (the stack must be up; about 10 to 20 minutes):
+
+```bash
+docker compose --env-file .env.compose --profile e2e run --rm e2e
+```
+
+Useful: `docker compose --env-file .env.compose ps` (health of every container), `... logs -f <service>`, `... down` (stop), `... down -v` (stop and wipe all data).
+
+Notes:
+- Each service applies its own schema when it starts; compose creates the `vector` extension on the first start of an empty database.
+- `PUBLIC_URL` is baked into the web bundle: after changing it run `up --build` again. If port 80 is busy set `HTTP_PORT=8080` and `PUBLIC_URL=http://localhost:8080`.
+- Email: set `EMAIL_DEV_REDIRECT_TO` to your own address so every mail goes to you. Without a working transport only emails fail, in-app notifications still work.
+- The compose file does not run the web mocks (`NEXT_PUBLIC_USE_MOCKS=false`).
 
 ## Shared environment
 

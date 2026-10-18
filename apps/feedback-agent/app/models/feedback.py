@@ -61,3 +61,23 @@ class PrepReadyEvent(BaseModel):
     applicantId: str
     jobRoleId: str
     guide: str
+
+
+class CandidateRejectedEvent(BaseModel):
+    """Shape of the incoming 'candidate.rejected' event (contract section 6). `message` (the company's note to the
+    candidate) is shown to the candidate by results-service / notification-service and is never given to the LLM."""
+    matchId: str
+    applicantId: str
+    jobRoleId: str
+    companyId: Optional[str] = None
+    roleTitle: Optional[str] = None
+    reasonCategory: str
+    message: Optional[str] = None
+
+
+class RejectionFeedbackReadyEvent(BaseModel):
+    """Shape of the outgoing 'rejection-feedback.ready' event: `feedback` is None for position_filled / other."""
+    matchId: str
+    applicantId: str
+    jobRoleId: str
+    feedback: Optional[str] = None

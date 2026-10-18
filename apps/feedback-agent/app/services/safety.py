@@ -24,3 +24,26 @@ def invented_details(text: str, source: str) -> list[str]:
             if item.lower() not in haystack and item not in found:
                 found.append(item)
     return found
+
+
+_OTHERS = re.compile(
+    r"\b(?:other|another|different|rival|competing|competitor'?s?)\s+(?:candidates?|applicants?)\b"
+    r"|\b(?:selected|successful|shortlisted|top)\s+(?:candidates?|applicants?|profiles?)\b"
+    r"|\bcompetitors?\b|\bcompared (?:to|with) (?:the )?(?:others|other applicants|them)\b",
+    re.I,
+)
+_PROMISES = re.compile(
+    r"\bguarantee[sd]?\b|\bassured\b|\byou will (?:definitely |certainly |surely )?(?:get|land|secure|be (?:selected|hired|shortlisted|offered))\b"
+    r"|\bwill (?:definitely |certainly |surely )?(?:get|land) you (?:the|a) (?:job|role|offer|interview)\b|\bensure[s]? (?:you )?(?:the )?(?:job|selection|offer)\b",
+    re.I,
+)
+
+
+def mentions_other_applicants(text: str) -> list[str]:
+    """Phrases that talk about other applicants or rankings. The benchmark behind the advice is anonymous and must stay invisible."""
+    return list(dict.fromkeys(m.group(0).strip() for m in _OTHERS.finditer(text or "")))
+
+
+def promises_outcome(text: str) -> list[str]:
+    """Phrases that promise a job, a selection or an interview."""
+    return list(dict.fromkeys(m.group(0).strip() for m in _PROMISES.finditer(text or "")))

@@ -3,7 +3,8 @@ from app.core.db import get_connection
 from app.services.academics import effective_academics
 from app.services.gap_analyzer import generate_feedback
 from app.services.prep_guide import generate_prep_guide
-from app.models.feedback import CandidateShortlistedEvent, MatchComputedEvent, PrepReadyEvent
+from app.services.rejection_feedback import GUIDED_REASONS, generate_rejection_feedback
+from app.models.feedback import CandidateRejectedEvent, CandidateShortlistedEvent, MatchComputedEvent, PrepReadyEvent, RejectionFeedbackReadyEvent
 import logging
 import threading
 import psycopg2
@@ -161,16 +162,56 @@ def handle_shortlisted(data: dict):
     ).model_dump())
 
 
+def handle_rejected(data: dict):
+    """candidate.rejected -> improvement feedback (skills_gap / experience / resume_quality) or null (position_filled / other)
+    -> rejection-feedback.ready. The company's reason only chooses the focus; its note and decision details never reach the model,
+    and the benchmark stays anonymous."""
+    event = CandidateRejectedEvent(**data)
+
+    match = get_match(event.matchId)
+    if match is None:
+        log.info("match %s no longer exists, skipping rejection feedback", event.matchId)
+        return
+    if match["applicantId"] != event.applicantId or match["jobRoleId"] != event.jobRoleId:
+        log.warning("match %s does not belong to applicant/role of the event, skipping rejection feedback", event.matchId)
+        return
+    if match["decision"] != "rejected":
+        log.info("match %s is no longer rejected, skipping rejection feedback", event.matchId)
+        return  # decision was changed or cleared meanwhile
+
+    feedback = None
+    if event.reasonCategory in GUIDED_REASONS:
+        requirements = get_role_requirements(event.jobRoleId)
+        if requirements is None:
+            log.info("role %s no longer exists, skipping rejection feedback", event.jobRoleId)
+            return
+        resume = get_applicant_resume_data(match["resumeId"], event.applicantId) if match["resumeId"] else {}
+        benchmark = get_selected_profiles(event.jobRoleId, event.applicantId)
+        analysis = {"score": match["score"], "matchedSkills": match["matchedSkills"] or [], "partialSkills": match["partialSkills"] or [],
+                    "missingSkills": match["missingSkills"] or []}
+        feedback = generate_rejection_feedback(requirements, resume, benchmark, analysis, event.reasonCategory, event.roleTitle)
+    else:
+        log.info("reason %s gets no AI feedback", event.reasonCategory)  # position_filled / other (or an unknown category)
+
+    publish("rejection-feedback.ready", RejectionFeedbackReadyEvent(
+        matchId=event.matchId, applicantId=event.applicantId, jobRoleId=event.jobRoleId, feedback=feedback,
+    ).model_dump())
+
+
 CONSUMERS = [
     ("match.computed", handle),
     ("candidate.shortlisted", handle_shortlisted),
+    ("candidate.rejected", handle_rejected),
 ]
-consumer_threads: list[threading.Thread] = []
 
 
 def run():
-    """One daemon thread per stream; each blocks in its own consume loop."""
-    for stream, handler in CONSUMERS:
-        thread = threading.Thread(target=consume_loop, args=(stream, GROUP, "consumer-1", handler), name=f"consumer-{stream}", daemon=True)
+    """One daemon thread per stream, each blocking in its own consume loop. Returns only if they all exit (/health then reports it)."""
+    threads = [
+        threading.Thread(target=consume_loop, args=(stream, GROUP, "consumer-1", handler), name=f"consumer-{stream}", daemon=True)
+        for stream, handler in CONSUMERS
+    ]
+    for thread in threads:
         thread.start()
-        consumer_threads.append(thread)
+    for thread in threads:
+        thread.join()

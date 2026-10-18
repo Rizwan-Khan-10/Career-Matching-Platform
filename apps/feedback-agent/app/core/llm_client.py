@@ -1,7 +1,9 @@
+import logging
 import time
 from groq import Groq, RateLimitError, APIStatusError
 from app.core.config import GROQ_API_KEY
 
+log = logging.getLogger("feedback.llm")
 client = Groq(api_key=GROQ_API_KEY)
 
 # Controlled-call settings
@@ -40,13 +42,13 @@ def ask_llm(system_prompt: str, user_prompt: str, json_mode: bool = True) -> str
             if attempt == MAX_RETRIES:
                 raise
             wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-            print(f"Groq rate limit hit (attempt {attempt}/{MAX_RETRIES}) — waiting {wait}s before retry")
+            log.warning("Groq rate limit hit (attempt %s/%s), waiting %ss before retry", attempt, MAX_RETRIES, wait)
             time.sleep(wait)
 
         except APIStatusError as e:
             if e.status_code >= 500 and attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
-                print(f"Groq server error {e.status_code} (attempt {attempt}/{MAX_RETRIES}) — waiting {wait}s before retry")
+                log.warning("Groq server error %s (attempt %s/%s), waiting %ss before retry", e.status_code, attempt, MAX_RETRIES, wait)
                 time.sleep(wait)
             else:
                 raise

@@ -1,0 +1,16 @@
+# Used because the build context is the repo root (BuildKit reads <Dockerfile>.dockerignore).
+**
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!package.json
+!apps/websocket-gateway
+apps/websocket-gateway/node_modules
+apps/websocket-gateway/dist
+apps/websocket-gateway/coverage
+apps/websocket-gateway/.env
+apps/websocket-gateway/.env.*
+apps/websocket-gateway/test
+apps/websocket-gateway/scripts
+apps/websocket-gateway/README.md
+**/.git
+**/.DS_Store

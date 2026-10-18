@@ -4,22 +4,66 @@ from app.core.db import get_connection
 from app.services.target_label import target_label
 
 
-def get_context_for_applicant(applicant_id: str, job_role_id: str | None = None) -> dict:
-    """Everything the bot may know: this applicant's latest PARSED resume + their match result(s) + the role. Always scoped by applicantId."""
-    with closing(get_connection()) as conn, conn.cursor() as cur:
-        cur.execute(
-            'SELECT "parsedData" FROM "resumes_service"."Resume" '
-            "WHERE \"applicantId\" = %s AND status = 'parsed' ORDER BY \"createdAt\" DESC LIMIT 1",
-            (applicant_id,),
-        )
-        resume = cur.fetchone()
+MAX_MATCHES = 20
 
-        cols = 'SELECT "jobRoleId", "roleTitle", score, eligible, reason, "matchedSkills", "partialSkills", "missingSkills", feedback FROM "matches_service"."Match" '
+_MATCHES_SQL = '''SELECT "jobRoleId", "roleTitle", score, eligible, reason, "matchedSkills", "partialSkills", "missingSkills", feedback,
+                  "resumeId", decision, "shortlistInfo", "prepGuide", "rejectionFeedback", "unverifiedRules"
+           FROM "matches_service"."Match" '''
+
+_RESUME_SQL = 'SELECT "parsedData", "targetTrack", "targetStack" FROM "resumes_service"."Resume" '
+
+
+def _match(row) -> dict:
+    """One match as the applicant may see it (contract 5.6 GET /matches/mine). Never the company's reject reason or who decided.
+    The shortlist details / prep guide only belong to a shortlist, the rejection feedback only to a rejection."""
+    (role_id, title, score, eligible, reason, matched, partial, missing, feedback,
+     _resume_id, decision, shortlist_info, prep_guide, rejection_feedback, unverified) = row
+    outcome = decision if decision in ("shortlisted", "rejected") else None
+    return {
+        "jobRoleId": role_id, "roleTitle": title, "score": score, "eligible": eligible, "reason": reason,
+        "matchedSkills": matched, "partialSkills": partial, "missingSkills": missing, "feedback": feedback,
+        "outcome": outcome,
+        "shortlistInfo": shortlist_info if outcome == "shortlisted" else None,
+        "prepGuide": prep_guide if outcome == "shortlisted" else None,
+        "rejectionFeedback": rejection_feedback if outcome == "rejected" else None,
+        "unverifiedRules": unverified or [],
+    }
+
+
+def _resume_of_match(cur, applicant_id: str, resume_id: str | None):
+    """The resume the match was computed on. It stays the right one even if the applicant replaced it later (an approved match is frozen)."""
+    if not resume_id:
+        return None
+    cur.execute(_RESUME_SQL + "WHERE id = %s AND \"applicantId\" = %s AND status = 'parsed'", (resume_id, applicant_id))
+    return cur.fetchone()
+
+
+def _best_active_resume(cur, applicant_id: str):
+    """Fallback (no role, no match yet, or the match's resume is gone): the applicant's active resume (contract 4.9: parsed,
+    confirmed, not superseded); if there are several, the one confirmed last."""
+    cur.execute(
+        _RESUME_SQL + "WHERE \"applicantId\" = %s AND status = 'parsed' AND \"confirmedAt\" IS NOT NULL AND \"supersededAt\" IS NULL "
+        "ORDER BY \"confirmedAt\" DESC, \"createdAt\" DESC LIMIT 1",
+        (applicant_id,),
+    )
+    return cur.fetchone()
+
+
+def get_context_for_applicant(applicant_id: str, job_role_id: str | None = None) -> dict:
+    """Everything the bot may know about ONE applicant: the resume the match was computed on (fallback: their best active resume),
+    their match result(s) with the company's outcome (shortlisted / rejected), the shortlist details, the AI prep guide / rejection
+    feedback and the campus rules that could not be verified, plus the role. Always scoped by applicantId.
+    Never: the company's reject reason or decider, other applicants, other companies' data."""
+    with closing(get_connection()) as conn, conn.cursor() as cur:
         if job_role_id:
-            cur.execute(cols + 'WHERE "applicantId" = %s AND "jobRoleId" = %s', (applicant_id, job_role_id))
+            cur.execute(_MATCHES_SQL + 'WHERE "applicantId" = %s AND "jobRoleId" = %s', (applicant_id, job_role_id))
         else:
-            cur.execute(cols + 'WHERE "applicantId" = %s ORDER BY score DESC LIMIT 20', (applicant_id,))
+            cur.execute(_MATCHES_SQL + 'WHERE "applicantId" = %s ORDER BY score DESC LIMIT %s', (applicant_id, MAX_MATCHES))
         matches = cur.fetchall()
+
+        resume = _resume_of_match(cur, applicant_id, matches[0][9]) if job_role_id and matches else None
+        if resume is None:
+            resume = _best_active_resume(cur, applicant_id)
 
         role_info = None
         if job_role_id:
@@ -30,11 +74,8 @@ def get_context_for_applicant(applicant_id: str, job_role_id: str | None = None)
 
     return {
         "resume": resume[0] if resume else None,
-        "matches": [
-            {"jobRoleId": m[0], "roleTitle": m[1], "score": m[2], "eligible": m[3], "reason": m[4],
-             "matchedSkills": m[5], "partialSkills": m[6], "missingSkills": m[7], "feedback": m[8]}
-            for m in matches
-        ],
+        "resumeTarget": target_label(resume[1], resume[2]) if resume else None,
+        "matches": [_match(m) for m in matches],
         "role": role_info,
     }
 

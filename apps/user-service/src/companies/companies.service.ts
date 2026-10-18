@@ -29,7 +29,10 @@ export class CompaniesService {
   }
 
   async updateAvatar(userId: string, file: Express.Multer.File) {
+    const previousUrl = (await this.createOrGet(userId)).avatarUrl;
     const avatarUrl = await this.storage.uploadAvatar(userId, file);
-    return this.prisma.companyProfile.update({ where: { userId }, data: { avatarUrl } });
+    const updated = await this.prisma.companyProfile.update({ where: { userId }, data: { avatarUrl } });
+    await this.storage.deleteAvatarByUrl(previousUrl, userId);
+    return updated;
   }
 }

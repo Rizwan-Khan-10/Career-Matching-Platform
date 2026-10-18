@@ -19,7 +19,10 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "db:push": "prisma db push",
+    "db:reset": "node scripts/db-reset.cjs && prisma db push",
+    "seed": "nest build && node dist/seed/run-seed.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

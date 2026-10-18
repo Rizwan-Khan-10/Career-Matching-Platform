@@ -66,8 +66,7 @@ export class StorageService {
     /** Original upload and the generated PDF (if any). true only when both are gone. */
     async destroyResumeFiles(publicId: string, pdfPublicId?: string | null): Promise<boolean> {
         const original = await this.destroy(publicId);
-        // when the upload already was a PDF, resume-parser-agent reuses it as the PDF (same public id): delete it only once
-        const pdf = pdfPublicId && pdfPublicId !== publicId ? await this.destroy(pdfPublicId) : true;
+        const pdf = pdfPublicId ? await this.destroy(pdfPublicId) : true;
         return original && pdf;
     }
 }

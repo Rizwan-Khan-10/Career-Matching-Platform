@@ -11,4 +11,9 @@ export class MailQueueService {
   async enqueuePasswordReset(email: string, resetToken: string) {
     await this.queue.add('password-reset', { email, resetToken });
   }
+
+  /** Same job as a password reset, flagged so the e-mail says "set your password" (contract §5.1). */
+  async enqueueInvite(email: string, resetToken: string) {
+    await this.queue.add('password-reset', { email, resetToken, invite: true });
+  }
 }

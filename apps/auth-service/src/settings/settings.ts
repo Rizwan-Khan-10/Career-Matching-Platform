@@ -45,3 +45,10 @@ export function normalizeSettings(raw: Record<string, unknown>): SystemSettings 
         : DEFAULT_SETTINGS.jobApprovalRequired,
   };
 }
+
+const DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/** Expects an already-normalized (lower-case) domain such as "college.edu". */
+export function isValidDomain(value: string): boolean {
+  return DOMAIN_PATTERN.test(value);
+}

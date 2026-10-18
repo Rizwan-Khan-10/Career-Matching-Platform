@@ -4,12 +4,12 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { MailQueueService } from '../mail/mail-queue.service'
 import { SettingsModule } from '../settings/settings.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({}), SettingsModule],
+  imports: [PassportModule, JwtModule.register({}), SettingsModule, MailModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, MailQueueService],
+  providers: [AuthService, JwtStrategy],
 })
 export class AuthModule { }

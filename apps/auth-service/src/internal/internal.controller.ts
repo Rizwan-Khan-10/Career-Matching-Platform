@@ -1,7 +1,9 @@
-import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, NotFoundException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InternalKeyGuard } from './internal-key.guard';
 
 @Controller('internal/users')
+@UseGuards(InternalKeyGuard)
 export class InternalController {
   constructor(private prisma: PrismaService) {}
 

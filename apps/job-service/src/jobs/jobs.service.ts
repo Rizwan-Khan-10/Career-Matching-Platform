@@ -1,4 +1,6 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+    Injectable, ForbiddenException, NotFoundException, BadRequestException, ConflictException, Logger, ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -7,6 +9,9 @@ import { UpdateJobRoleDto } from './dto/update-job-role.dto';
 import { Prisma } from '../generated/prisma';
 import { validateUpload } from '../common/upload';
 import { roleTargetError } from '../taxonomy/taxonomy';
+import { AuthSettingsService } from '../settings/auth-settings.service';
+import { OutgoingEvent, publishEvent, publishEvents } from '../common/events';
+import { SetJobApprovalDto } from './dto/set-job-approval.dto';
 
 /** Empty list = "rule not set" for these (an empty allow-list must never mean "nobody is allowed"). */
 const EMPTY_MEANS_UNSET = ['allowedBranches', 'passingYears'] as const;
@@ -26,25 +31,32 @@ function assertValidTarget(track: unknown, stacks: unknown) {
 
 @Injectable()
 export class JobsService {
+    private readonly logger = new Logger(JobsService.name);
+
     constructor(
         private prisma: PrismaService,
         private redis: RedisService,
         private storage: StorageService,
+        private settings: AuthSettingsService,
     ) { }
 
+    /**
+     * Stores the document and creates the posting. When the admin approval of postings is switched on
+     * (`jobApprovalRequired`, auth-service) the posting waits as `pending` and `jd.uploaded` is NOT published, so nothing
+     * is scanned or matched until an admin approves it.
+     */
     async upload(companyId: string, file: Express.Multer.File) {
         validateUpload(file);
+        // asked BEFORE the file is stored: when the setting cannot be read (503) nothing is left behind
+        const approvalRequired = await this.settings.jobApprovalRequired();
         const fileUrl = await this.storage.uploadJobDoc(companyId, file);
         const posting = await this.prisma.jobPosting.create({
-            data: { companyId, fileUrl, status: 'pending' },
+            data: { companyId, fileUrl, status: 'pending', approvalStatus: approvalRequired ? 'pending' : 'approved' },
         });
 
-        await this.redis.client.xadd(
-            'jd.uploaded',
-            '*',
-            'data',
-            JSON.stringify({ jobPostingId: posting.id, companyId, fileUrl }),
-        );
+        if (!approvalRequired) {
+            await publishEvent(this.redis, 'jd.uploaded', { jobPostingId: posting.id, companyId, fileUrl });
+        }
 
         return posting;
     }
@@ -63,7 +75,7 @@ export class JobsService {
     }
 
     async createRole(jobPostingId: string, companyId: string, dto: CreateJobRoleDto) {
-        await this.assertOwnsPosting(jobPostingId, companyId);
+        const posting = await this.assertOwnsPosting(jobPostingId, companyId);
         assertValidTarget(dto.track, dto.stacks);
         const role = await this.prisma.jobRole.create({
             data: {
@@ -87,14 +99,14 @@ export class JobsService {
                 }) as Prisma.InputJsonValue,
             },
         });
-        await this.requestMatching(jobPostingId, companyId, role.id);
+        await this.requestMatching(posting, role.id);
         return role;
     }
 
     async updateRole(roleId: string, companyId: string, dto: UpdateJobRoleDto) {
         const role = await this.prisma.jobRole.findUnique({ where: { id: roleId } });
         if (!role) throw new NotFoundException('Role not found');
-        await this.assertOwnsPosting(role.jobPostingId, companyId);
+        const posting = await this.assertOwnsPosting(role.jobPostingId, companyId);
 
         // keys that were not sent must not touch the stored value (class-transformer may leave them as undefined)
         const changes = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
@@ -111,7 +123,7 @@ export class JobsService {
                 requirements: merged as Prisma.InputJsonValue,
             },
         });
-        await this.requestMatching(role.jobPostingId, companyId, roleId);
+        await this.requestMatching(posting, roleId);
         return updated;
     }
 
@@ -124,9 +136,9 @@ export class JobsService {
 
         // results-service drops this role's matches, matching-agent drops its vector (best-effort: delete already succeeded)
         try {
-            await this.redis.client.xadd('job.role.deleted', '*', 'data', JSON.stringify({ roleId, jobPostingId: role.jobPostingId }));
+            await publishEvent(this.redis, 'job.role.deleted', { roleId, jobPostingId: role.jobPostingId });
         } catch (err) {
-            console.error('Failed to publish job.role.deleted', err);
+            this.logger.error(`Failed to publish job.role.deleted: ${(err as Error).message}`);
         }
         return { deleted: true };
     }
@@ -140,36 +152,102 @@ export class JobsService {
         await this.prisma.jobPosting.updateMany({ where: { id: jobPostingId, stoppedAt: null }, data: { stoppedAt: new Date() } });
         const posting = await this.prisma.jobPosting.findUnique({ where: { id: jobPostingId }, include: { roles: true } });
         try {
-            await this.redis.client.xadd('job.stopped', '*', 'data', JSON.stringify({
-                jobPostingId, companyId, roleIds: posting?.roles.map((r) => r.id) ?? [],
-            }));
+            await publishEvent(this.redis, 'job.stopped', { jobPostingId, companyId, roleIds: posting?.roles.map((r) => r.id) ?? [] });
         } catch (err) {
-            console.error('Failed to publish job.stopped', err);
+            this.logger.error(`Failed to publish job.stopped: ${(err as Error).message}`);
         }
         return posting;
     }
 
-    /** Company reopens a stopped job: whatever was skipped while it was stopped is picked up now. */
+    /**
+     * Company reopens a stopped job: whatever was skipped while it was stopped is picked up now.
+     * A posting that is still waiting for (or was refused) the admin approval is reopened but NOT processed.
+     */
     async reopen(jobPostingId: string, companyId: string) {
         await this.assertOwnsPosting(jobPostingId, companyId);
         const cleared = await this.prisma.jobPosting.updateMany({ where: { id: jobPostingId, stoppedAt: { not: null } }, data: { stoppedAt: null } });
         const posting = await this.prisma.jobPosting.findUnique({ where: { id: jobPostingId }, include: { roles: true } });
         if (!posting || cleared.count === 0) return posting; // was not stopped: nothing to do (no duplicate work)
+        if (posting.approvalStatus !== 'approved') return posting;
 
         try {
             if (posting.status === 'pending') {
                 // the document was never scanned (it was stopped first) -> scan it now
-                await this.redis.client.xadd('jd.uploaded', '*', 'data', JSON.stringify({ jobPostingId, companyId, fileUrl: posting.fileUrl }));
+                await publishEvent(this.redis, 'jd.uploaded', { jobPostingId, companyId, fileUrl: posting.fileUrl });
             } else if (posting.status === 'extracted' && posting.roles.length > 0) {
                 // roles exist: match everybody who uploaded a resume while the job was stopped
-                await this.redis.client.xadd('jd.extracted', '*', 'data', JSON.stringify({
-                    jobPostingId, companyId, roleIds: posting.roles.map((r) => r.id),
-                }));
+                await publishEvent(this.redis, 'jd.extracted', { jobPostingId, companyId, roleIds: posting.roles.map((r) => r.id) });
             }
         } catch (err) {
-            console.error('Failed to restart processing after reopen', err);
+            this.logger.error(`Failed to restart processing after reopen: ${(err as Error).message}`);
         }
         return posting;
+    }
+
+    // ------------------------------------------------------------------ admin approval of postings (contract 5.5)
+
+    /** Postings waiting for an admin decision, oldest first. */
+    async listPending() {
+        return this.prisma.jobPosting.findMany({
+            where: { approvalStatus: 'pending' },
+            include: { roles: true },
+            orderBy: { createdAt: 'asc' },
+        });
+    }
+
+    /**
+     * Admin approves / rejects a posting. Approving releases it: `jd.uploaded` (scan the document) and / or `jd.extracted`
+     * (match the roles that already exist), then `job.approval.changed` for the company, all in ONE Redis transaction: if it
+     * cannot be published the decision is rolled back (503), so the admin can simply press the button again.
+     * Deciding the same way twice is a no-op. An approved posting is live (data exists, applicants may see matches), so it
+     * cannot be turned into "rejected": the company stops it instead.
+     */
+    async decideApproval(jobPostingId: string, dto: SetJobApprovalDto) {
+        const posting = await this.prisma.jobPosting.findUnique({ where: { id: jobPostingId }, include: { roles: true } });
+        if (!posting) throw new NotFoundException('Job posting not found');
+
+        const target = dto.approved ? 'approved' : 'rejected';
+        const note = dto.note?.trim() || null;
+        if (posting.approvalStatus === target) return posting;
+        if (posting.approvalStatus === 'approved') {
+            throw new ConflictException('This posting is already approved and live. The company can stop it.');
+        }
+
+        // compare-and-set: two admins (or a double click) can never both "win" and publish twice
+        const changed = await this.prisma.jobPosting.updateMany({
+            where: { id: jobPostingId, approvalStatus: posting.approvalStatus },
+            data: { approvalStatus: target, approvalNote: note },
+        });
+        if (changed.count === 0) return this.prisma.jobPosting.findUnique({ where: { id: jobPostingId }, include: { roles: true } });
+
+        const events: OutgoingEvent[] = [];
+        if (target === 'approved' && !posting.stoppedAt) events.push(...this.releaseEvents(posting));
+        events.push({
+            stream: 'job.approval.changed',
+            payload: { companyId: posting.companyId, jobPostingId, status: target, ...(note ? { note } : {}) },
+        });
+        try {
+            await publishEvents(this.redis, events);
+        } catch (err) {
+            this.logger.error(`Could not publish the approval of ${jobPostingId}, rolling it back: ${(err as Error).message}`);
+            await this.prisma.jobPosting
+                .updateMany({ where: { id: jobPostingId, approvalStatus: target }, data: { approvalStatus: posting.approvalStatus, approvalNote: posting.approvalNote } })
+                .catch((e: Error) => this.logger.error(`Rollback of ${jobPostingId} failed: ${e.message}`));
+            throw new ServiceUnavailableException('Could not publish the decision right now. Nothing was changed, please try again.');
+        }
+        return this.prisma.jobPosting.findUnique({ where: { id: jobPostingId }, include: { roles: true } });
+    }
+
+    /** What an approved posting needs to start: scan the document (if it was never scanned) and match the roles that exist. */
+    private releaseEvents(posting: { id: string; companyId: string; fileUrl: string; status: string; roles: { id: string }[] }): OutgoingEvent[] {
+        const events: OutgoingEvent[] = [];
+        if (posting.status === 'pending') {
+            events.push({ stream: 'jd.uploaded', payload: { jobPostingId: posting.id, companyId: posting.companyId, fileUrl: posting.fileUrl } });
+        }
+        if (posting.roles.length > 0) {
+            events.push({ stream: 'jd.extracted', payload: { jobPostingId: posting.id, companyId: posting.companyId, roleIds: posting.roles.map((r) => r.id) } });
+        }
+        return events;
     }
 
     /**
@@ -177,16 +255,13 @@ export class JobsService {
      * never matched (and edits left old vectors/scores behind). 'jd.extracted' makes matching-agent
      * re-embed the role and re-score the candidates. Matching is best-effort: the save itself must not fail.
      */
-    private async requestMatching(jobPostingId: string, companyId: string, roleId: string) {
+    private async requestMatching(posting: { id: string; companyId: string; approvalStatus: string }, roleId: string) {
+        // a posting that waits for (or was refused) the admin approval is never matched: nobody may see it yet
+        if (posting.approvalStatus !== 'approved') return;
         try {
-            await this.redis.client.xadd(
-                'jd.extracted',
-                '*',
-                'data',
-                JSON.stringify({ jobPostingId, companyId, roleIds: [roleId] }),
-            );
+            await publishEvent(this.redis, 'jd.extracted', { jobPostingId: posting.id, companyId: posting.companyId, roleIds: [roleId] });
         } catch (err) {
-            console.error('Failed to publish jd.extracted for manual role change', err);
+            this.logger.error(`Failed to publish jd.extracted for manual role change: ${(err as Error).message}`);
         }
     }
 

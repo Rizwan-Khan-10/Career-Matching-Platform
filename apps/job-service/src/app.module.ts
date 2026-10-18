@@ -7,6 +7,7 @@ import { RedisModule } from './redis/redis.module';
 import { JwtStrategy } from './auth/strategies/jwt.strategy';
 import { JobsModule } from './jobs/jobs.module';
 import { InternalModule } from './internal/internal.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { InternalModule } from './internal/internal.module';
     JobsModule,
     InternalModule,
   ],
+  controllers: [HealthController],
   providers: [JwtStrategy],
 })
 export class AppModule { }

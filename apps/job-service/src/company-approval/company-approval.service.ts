@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
+import { internalHeaders } from '../common/events';
 
 /** Contract 5.5: the answer of user-service is cached for 60 seconds. */
 export const APPROVAL_CACHE_TTL_MS = 60_000;
@@ -50,7 +51,7 @@ export class CompanyApprovalService {
         try {
             const res = await axios.get<{ status?: unknown }>(
                 `${base}/internal/companies/${encodeURIComponent(companyId)}/status`,
-                { headers: { 'x-internal-key': process.env.INTERNAL_API_KEY }, timeout: REQUEST_TIMEOUT_MS },
+                { headers: internalHeaders(), timeout: REQUEST_TIMEOUT_MS },
             );
             if (typeof res.data?.status !== 'string') throw new Error('unexpected response body');
             return res.data.status;

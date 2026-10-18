@@ -1,114 +1,94 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# job-service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Job postings of companies: the uploaded document, the roles extracted from it (or added by hand), stop / reopen, and the optional
+admin approval of postings. Port **3004**, schema `jobs_service`. nginx routes `/jobs/*` here; `/internal/*` is for other services only.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Run
 
 ```bash
-$ pnpm install
+pnpm install
+cp apps/job-service/.env.example apps/job-service/.env      # fill in the values
+pnpm --filter job-service exec prisma generate
+pnpm --filter job-service db:push
+pnpm --filter job-service start:dev
 ```
 
-## Compile and run the project
+| Command (`pnpm --filter job-service ...`) | What it does |
+|---|---|
+| `test` | unit tests (Prisma, Redis, Cloudinary and the other services are mocked) |
+| `lint` | oxlint |
+| `build` | `nest build` (this is what CI runs) |
+| `db:push` | `prisma db push` (there is no migrations folder) |
+| `db:reset` | drops and recreates **only** the `jobs_service` schema, then `db push`. Stop the service first. Refuses `NODE_ENV=production` unless `ALLOW_DB_RESET=true` |
 
-```bash
-# development
-$ pnpm run start
+## Environment
 
-# watch mode
-$ pnpm run start:dev
+| Variable | Required | Default | Meaning |
+|---|---|---|---|
+| `DATABASE_URL` | yes | - | Postgres (the service stops at start-up with a clear error when missing) |
+| `JWT_SECRET` | yes | - | must be identical in every service |
+| `INTERNAL_API_KEY` | in production | unset | sent as `x-internal-key` to other services and required on this service's `/internal/*` routes; unset = check skipped (local dev) |
+| `USER_SERVICE_URL` | yes | - | company approval check |
+| `AUTH_SERVICE_URL` | yes | - | `GET /internal/settings` for `jobApprovalRequired` |
+| `REDIS_URL` | no | `redis://localhost:6379` | Redis for the event streams |
+| `PORT` | no | `3004` | HTTP port |
+| `CLOUDINARY_*` | yes | - | storage of the job documents |
+| `ENABLE_DOCS` | no | `false` | `true` serves Swagger at `/docs` |
+| `LOG_LEVEL` | no | `info` | `error`, `warn`, `info` or `debug` |
+| `ALLOW_DB_RESET` | no | unset | only for `db:reset` in production |
 
-# production mode
-$ pnpm run start:prod
+## HTTP
+
+JWT roles: `COMPANY | ADMIN | APPLICANT`. Errors use Nest's default JSON (`{ statusCode, message, error }`).
+
+| Route | Who | What |
+|---|---|---|
+| `GET /health` | anyone | `200 {status:"ok"}`, or `503 {status:"degraded"}` when the database or Redis is down |
+| `POST /jobs/upload` | approved company | multipart `file`. `403 "Company is not approved yet"` (user-service, cached 60 s), `503` when that cannot be checked. Creates the posting: `approvalStatus` is `approved`, or `pending` when `jobApprovalRequired` is on |
+| `GET /jobs/mine` | company | own postings with roles, **`approvalStatus`** and **`approvalNote`** |
+| `POST /jobs/:id/stop` · `POST /jobs/:id/reopen` | company | stop / reopen scanning and matching |
+| `GET /jobs/:id/roles` · `POST /jobs/:id/roles` · `PATCH /jobs/roles/:roleId` · `DELETE /jobs/roles/:roleId` | company | roles (every requirement key of contract 4.1; `track` / `stacks` are checked against the taxonomy) |
+| `GET /jobs/admin/pending` | **admin** | postings waiting for approval, oldest first |
+| `PATCH /jobs/admin/:id/approval` | **admin** | `{ approved: boolean, note?: string }` |
+| `GET /internal/roles/:id` | internal (`x-internal-key`) | role + `companyId` + requirements |
+
+## Admin approval of postings
+
+`jobApprovalRequired` is an admin setting in auth-service (default off), read through `GET auth-service /internal/settings` and cached for 60 s.
+If it cannot be read, uploads answer 503 (nothing is stored): a posting never skips the approval by accident.
+
 ```
-
-## Run tests
-
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+upload ── jobApprovalRequired = false ─▶ approvalStatus "approved" ─▶ jd.uploaded  (document is scanned)
+       └─ jobApprovalRequired = true  ─▶ approvalStatus "pending"  ─▶ nothing is published
+admin PATCH approved:true  ─▶ "approved" ─▶ jd.uploaded (if never scanned) + jd.extracted (roles that already exist) + job.approval.changed
+admin PATCH approved:false ─▶ "rejected" (+ note) ─▶ job.approval.changed
 ```
+- A posting that is `pending` or `rejected` is **never scanned or matched**: no `jd.uploaded`, and adding / editing roles or reopening it publishes
+  no `jd.extracted`. Roles can still be prepared; they are matched once the posting is approved.
+- The events of one decision are written in **one Redis transaction**. If it fails the decision is rolled back (503), so pressing the button again is safe.
+- The same decision twice is a no-op (no second event). An approved posting cannot be rejected (409): it is live, and the company can stop it.
+  A rejected posting can still be approved later.
+- A stopped posting that is approved only gets `job.approval.changed`; reopening it starts the processing.
+- The admin routes live in their own controller (`jobs-admin.controller.ts`) because `JobsController` is `@Roles('COMPANY')` for the whole class.
 
-## Deployment
+## Events
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Every payload is JSON in one field `data` with a `requestId`; every `XADD` uses `MAXLEN ~ 10000`.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Publishes | Payload | When |
+|---|---|---|
+| `jd.uploaded` | `{ jobPostingId, companyId, fileUrl }` | an approved posting is uploaded / approved / reopened (never scanned) |
+| `jd.extracted` | `{ jobPostingId, companyId, roleIds }` | a role of an **approved** posting was added / edited, a posting was approved or reopened |
+| `job.approval.changed` | `{ companyId, jobPostingId, status, note? }` | every admin decision (notification-service, websocket-gateway) |
+| `job.stopped` | `{ jobPostingId, companyId, roleIds }` | the company stopped a job |
+| `job.role.deleted` | `{ roleId, jobPostingId }` | a role was deleted |
 
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
+This service consumes no streams.
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Ops
 
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **requestId:** taken from the `x-request-id` header (or created), in every JSON log line, copied into every published event and sent on to
+  the internal calls (`x-request-id`).
+- **Logs:** one JSON line per message: `ts, level, service, requestId, msg`. No personal data.
+- **Internal calls:** `GET user-service /internal/companies/:id/status` and `GET auth-service /internal/settings` send `x-internal-key`.
+  `InternalKeyGuard` protects this service's own `/internal/*` routes.

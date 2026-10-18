@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -6,6 +6,23 @@ import { CreateJobRoleDto } from './dto/create-job-role.dto';
 import { UpdateJobRoleDto } from './dto/update-job-role.dto';
 import { Prisma } from '../generated/prisma';
 import { validateUpload } from '../common/upload';
+import { roleTargetError } from '../taxonomy/taxonomy';
+
+/** Empty list = "rule not set" for these (an empty allow-list must never mean "nobody is allowed"). */
+const EMPTY_MEANS_UNSET = ['allowedBranches', 'passingYears'] as const;
+
+function normalizeRequirements(req: Record<string, any>): Record<string, any> {
+    const out = { ...req };
+    for (const key of EMPTY_MEANS_UNSET) {
+        if (Array.isArray(out[key]) && out[key].length === 0) out[key] = null;
+    }
+    return out;
+}
+
+function assertValidTarget(track: unknown, stacks: unknown) {
+    const error = roleTargetError(track, stacks);
+    if (error) throw new BadRequestException(error);
+}
 
 @Injectable()
 export class JobsService {
@@ -47,17 +64,27 @@ export class JobsService {
 
     async createRole(jobPostingId: string, companyId: string, dto: CreateJobRoleDto) {
         await this.assertOwnsPosting(jobPostingId, companyId);
+        assertValidTarget(dto.track, dto.stacks);
         const role = await this.prisma.jobRole.create({
             data: {
                 jobPostingId,
                 title: dto.title,
-                requirements: {
+                requirements: normalizeRequirements({
                     title: dto.title,
+                    summary: dto.summary ?? null,
                     requiredSkills: dto.requiredSkills,
                     preferredSkills: dto.preferredSkills ?? [],
                     minExperienceYears: dto.minExperienceYears ?? null,
                     qualifications: dto.qualifications ?? null,
-                } as Prisma.InputJsonValue,
+                    responsibilities: dto.responsibilities ?? [],
+                    level: dto.level ?? null,
+                    track: dto.track ?? null,
+                    stacks: dto.stacks ?? [], // [] = any stack of the track
+                    minCgpa: dto.minCgpa ?? null,
+                    allowedBranches: dto.allowedBranches ?? null,
+                    passingYears: dto.passingYears ?? null,
+                    maxBacklogs: dto.maxBacklogs ?? null,
+                }) as Prisma.InputJsonValue,
             },
         });
         await this.requestMatching(jobPostingId, companyId, role.id);
@@ -69,9 +96,13 @@ export class JobsService {
         if (!role) throw new NotFoundException('Role not found');
         await this.assertOwnsPosting(role.jobPostingId, companyId);
 
+        // keys that were not sent must not touch the stored value (class-transformer may leave them as undefined)
+        const changes = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
         const existing = (role.requirements as Record<string, any>) || {};
-        const merged = { ...existing, ...dto };
+        const merged = normalizeRequirements({ ...existing, ...changes });
         if (dto.title) merged.title = dto.title; // keep requirements.title in sync with the role title
+        // only when this request touches them: an old role with odd stored values can still be renamed
+        if ('track' in changes || 'stacks' in changes) assertValidTarget(merged.track, merged.stacks);
 
         const updated = await this.prisma.jobRole.update({
             where: { id: roleId },

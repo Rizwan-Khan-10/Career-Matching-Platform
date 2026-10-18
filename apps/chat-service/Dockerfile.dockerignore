@@ -1,0 +1,16 @@
+# Used because the build context is the repo root (BuildKit reads <Dockerfile>.dockerignore).
+**
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!package.json
+!apps/chat-service
+apps/chat-service/node_modules
+apps/chat-service/dist
+apps/chat-service/coverage
+apps/chat-service/src/generated
+apps/chat-service/.env
+apps/chat-service/.env.*
+apps/chat-service/test
+apps/chat-service/README.md
+**/.git
+**/.DS_Store

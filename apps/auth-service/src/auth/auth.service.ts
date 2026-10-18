@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomUUID } from 'crypto';
@@ -12,9 +12,11 @@ import { SessionStore } from '../sessions/session-store.service';
 import { LoginLockService } from './login-lock.service';
 import { assertSignupAllowed, resolveCompanyStatus } from './signup-policy';
 import axios from 'axios';
+import { currentRequestId } from '../common/request-context';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -118,7 +120,7 @@ export class AuthService {
     try {
       await this.mail.enqueuePasswordReset(user.email, resetToken);
     } catch (err) {
-      console.error('could not queue the password-reset e-mail:', (err as Error).message); // never log the token itself
+      this.logger.error(`could not queue the password-reset e-mail: ${(err as Error).message}`); // never log the token itself
     }
     return generic;
   }
@@ -158,10 +160,16 @@ export class AuthService {
       await axios.post(
         `${process.env.USER_SERVICE_URL}/internal/profiles`,
         { userId, role, email, companyStatus },
-        { headers: { 'x-internal-key': process.env.INTERNAL_API_KEY }, timeout: 5000 },
+        {
+          headers: {
+            'x-internal-key': process.env.INTERNAL_API_KEY,
+            ...(currentRequestId() ? { 'x-request-id': currentRequestId() } : {}),
+          },
+          timeout: 5000,
+        },
       );
     } catch (err: any) {
-      console.warn(`Failed to create profile in user-service for ${userId}:`, err?.message || err);
+      this.logger.warn(`Failed to create profile in user-service for ${userId}: ${err?.message || err}`);
     }
   }
 }

@@ -3,6 +3,7 @@ import { Redis } from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import { EventsGateway } from './events.gateway';
 import { EventData, GATEWAY_STREAMS, publicPayload, recipientOf } from './gateway-events';
+import { requestIdFrom, runWithRequestId } from '../common/request-context';
 
 export const GROUP = 'ws-gateway-group';
 const CONSUMER = 'consumer-1';
@@ -108,6 +109,11 @@ export class GatewayStreamConsumerService implements OnModuleInit, OnModuleDestr
      * A payload nobody can be addressed with (not JSON, or no applicantId/companyId/userId) is dead-lettered at once.
      */
     async handleMessage(stream: string, id: string, fields: string[]): Promise<void> {
+        const requestId = requestIdFrom(parse(dataField(fields))?.requestId);
+        return runWithRequestId(requestId, () => this.process(stream, id, fields));
+    }
+
+    private async process(stream: string, id: string, fields: string[]): Promise<void> {
         const raw = dataField(fields);
         const data = parse(raw);
         if (!data) return this.deadLetter(stream, id, raw ?? '', 'payload is not a JSON object');

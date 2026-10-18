@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { InternalModule } from './internal/internal.module';
 import { SeedModule } from './seed/seed.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -17,5 +18,6 @@ import { SeedModule } from './seed/seed.module';
     InternalModule,
     SeedModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

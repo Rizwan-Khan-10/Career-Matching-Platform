@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { currentRequestId } from '../common/request-context';
 
 export interface ProfilePayload {
   userId: string;
@@ -18,7 +19,11 @@ export interface AuditEntry {
   meta?: Record<string, unknown>;
 }
 
-const internalHeaders = () => ({ 'x-internal-key': process.env.INTERNAL_API_KEY });
+/** x-internal-key (contract §3.3) plus the current x-request-id so the same id shows up in user-service logs. */
+const internalHeaders = () => ({
+  'x-internal-key': process.env.INTERNAL_API_KEY,
+  ...(currentRequestId() ? { 'x-request-id': currentRequestId() } : {}),
+});
 
 @Injectable()
 export class UserServiceClient {

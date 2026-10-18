@@ -1,4 +1,5 @@
 import { Controller, Get, HttpException } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { RedisService } from '../redis/redis.service';
 
 const PING_TIMEOUT_MS = 2000;
@@ -21,6 +22,7 @@ async function alive(check: () => PromiseLike<unknown>): Promise<boolean> {
     }
 }
 
+@ApiTags('health')
 @Controller('health')
 export class HealthController {
     constructor(private redis: RedisService) { }

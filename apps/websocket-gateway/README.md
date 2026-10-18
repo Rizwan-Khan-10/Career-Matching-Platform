@@ -10,6 +10,7 @@
 |---|---|---|---|
 | WS | `/socket.io/` | any (JWT) | `io(URL, { path: '/socket.io', auth: { token } })`; `?token=` in the query string is accepted too. An invalid or missing token is disconnected at once |
 | GET | `/health` | none | `200 {status:"ok"}`, or `503 {status:"degraded"}` when Redis does not answer |
+| GET | `/docs` | none | Swagger (`/health` only), served only when `ENABLE_DOCS=true` |
 
 ## Events consumed
 Consumer group `ws-gateway-group` on every stream below. Each event is emitted to the browser under **the stream name**, with the payload as published, to the room of its recipient: `data.applicantId || data.companyId || data.userId` (contract section 6).
@@ -36,6 +37,9 @@ The gateway produces no events.
 ### CORS
 Only `WEB_URL` may open a socket from a browser (several origins: separate with commas). Requests without an `Origin` header (servers, scripts) are not affected. The HTTP side (`/health`) uses the same rule.
 
+## Logs
+One JSON line per message: `ts`, `level`, `service`, `requestId`, `msg`. While an event is handled, `requestId` is the one the event carries, so a request can be followed from the producing service to the push. `/health` is not logged.
+
 ## Database
 None.
 
@@ -46,6 +50,8 @@ None.
 | `REDIS_URL` | yes | `redis://localhost:6379` | Redis Streams |
 | `JWT_SECRET` | yes | `change-me` | same value in every service; sockets are verified with it |
 | `WEB_URL` | yes | `http://localhost:3000` | browser origin(s) allowed to connect (default `http://localhost:3000`) |
+| `ENABLE_DOCS` | no | `false` | `true` = Swagger at `/docs` |
+| `LOG_LEVEL` | no | `info` | `error`, `warn`, `info` or `debug`; JSON logs with `requestId` (taken from the event being handled) |
 
 ## Run locally
 ```bash

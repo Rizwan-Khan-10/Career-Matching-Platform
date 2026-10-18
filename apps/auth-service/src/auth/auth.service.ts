@@ -1,13 +1,15 @@
 import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { MailQueueService } from '../mail/mail-queue.service'
 import { SettingsService } from '../settings/settings.service';
+import { SessionStore } from '../sessions/session-store.service';
+import { LoginLockService } from './login-lock.service';
 import { assertSignupAllowed, resolveCompanyStatus } from './signup-policy';
 import axios from 'axios';
 
@@ -19,6 +21,8 @@ export class AuthService {
     private redis: RedisService,
     private mail: MailQueueService,
     private settings: SettingsService,
+    private sessions: SessionStore,
+    private loginLock: LoginLockService,
   ) { }
 
   async signup(dto: SignupDto) {
@@ -41,42 +45,45 @@ export class AuthService {
     return this.issueTokens(user.id, user.role);
   }
 
-  async login(dto: LoginDto) {
-    const attemptsKey = `login-attempts:${dto.email}`;
-    const attempts = await this.safeRedisGet(attemptsKey);
-    if (attempts && parseInt(attempts) >= 5) {
+  async login(dto: LoginDto, ip = 'unknown') {
+    // Accounts are stored lower-case; normalizing here also stops "A@x.com" from dodging the lock.
+    const email = dto.email.trim().toLowerCase();
+
+    if (await this.loginLock.isLocked(email, ip)) {
       throw new UnauthorizedException('Too many failed attempts. Try again in a few minutes.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      await this.recordFailedAttempt(attemptsKey);
+      await this.loginLock.recordFailure(email, ip);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
-      await this.recordFailedAttempt(attemptsKey);
+      await this.loginLock.recordFailure(email, ip);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Checked only after the password is right, so a stranger cannot find out which accounts are disabled.
     if (!user.isActive) throw new UnauthorizedException('Account disabled');
 
-    try { await this.redis.client.del(attemptsKey); } catch { }
+    await this.loginLock.clear(email, ip);
 
-    return this.issueTokens(user.id, user.role);
+    return this.issueTokens(user.id, user.role); // every login is a new session (device)
   }
 
   async refresh(refreshToken: string) {
-    let payload: { sub: string; role: string };
+    let payload: { sub: string; role: string; sid?: string };
     try {
       payload = this.jwt.verify(refreshToken, { secret: process.env.JWT_REFRESH_SECRET });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+    // Tokens issued before per-device sessions carry no session id: they must log in again once.
+    if (!payload.sid) throw new UnauthorizedException('Invalid or expired refresh token');
 
-    const stored = await this.safeRedisGet(`refresh:${payload.sub}`);
+    const stored = await this.sessions.get(payload.sub, payload.sid);
     if (stored !== refreshToken) {
       throw new UnauthorizedException('Refresh token no longer valid');
     }
@@ -88,11 +95,12 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Invalid or expired refresh token');
     if (!user.isActive) throw new UnauthorizedException('Account disabled');
 
-    return this.issueTokens(user.id, user.role);
+    return this.issueTokens(user.id, user.role, payload.sid); // same device, same session id
   }
 
-  async logout(userId: string) {
-    try { await this.redis.client.del(`refresh:${userId}`); } catch { }
+  /** Ends only the session this access token belongs to; other devices stay logged in. */
+  async logout(userId: string, sessionId?: string) {
+    if (sessionId) await this.sessions.revoke(userId, sessionId);
     return { message: 'Logged out' };
   }
 
@@ -121,32 +129,21 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
-    try {
-      await this.redis.client.del(`reset:${resetToken}`);
-      await this.redis.client.del(`refresh:${userId}`); // a reset must sign out every old session
-    } catch { }
+    try { await this.redis.client.del(`reset:${resetToken}`); } catch { }
+    await this.sessions.revokeAll(userId); // a reset must sign out every device
     return { message: 'Password updated successfully' };
-  }
-
-  private async recordFailedAttempt(key: string) {
-    try {
-      const count = await this.redis.client.incr(key);
-      if (count === 1) await this.redis.client.expire(key, 5 * 60); // 5 min window
-    } catch { }
   }
 
   private async safeRedisGet(key: string): Promise<string | null> {
     try { return await this.redis.client.get(key); } catch { return null; }
   }
 
-  private async issueTokens(userId: string, role: string) {
-    const payload = { sub: userId, role };
+  private async issueTokens(userId: string, role: string, sessionId: string = randomUUID()) {
+    const payload = { sub: userId, role, sid: sessionId };
     const accessToken = this.jwt.sign(payload, { secret: process.env.JWT_SECRET, expiresIn: '15m' });
     const refreshToken = this.jwt.sign(payload, { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '7d' });
 
-    try {
-      await this.redis.client.set(`refresh:${userId}`, refreshToken, 'EX', 7 * 24 * 60 * 60);
-    } catch { }
+    await this.sessions.save(userId, sessionId, refreshToken);
 
     return { accessToken, refreshToken, role };
   }

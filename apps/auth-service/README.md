@@ -16,6 +16,7 @@ Accounts, JWT access/refresh tokens, password reset, registration mode and admin
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | for seed | — | first admin; password at least 12 characters |
 | `SEED_ADMIN_ON_BOOT` | no | `false` | `true` = run the seed when the service starts |
 | `ALLOW_DB_RESET` | no | `false` | needed to run `db:reset` when `NODE_ENV=production` |
+| `TRUST_PROXY_HOPS` | no | `0` | number of reverse proxies in front (nginx = `1`); needed for the per-IP login lock |
 
 ## Run locally
 ```bash

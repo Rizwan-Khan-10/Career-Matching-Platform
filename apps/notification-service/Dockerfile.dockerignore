@@ -1,0 +1,16 @@
+# Used because the build context is the repo root (BuildKit reads <Dockerfile>.dockerignore).
+**
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!package.json
+!apps/notification-service
+apps/notification-service/node_modules
+apps/notification-service/dist
+apps/notification-service/coverage
+apps/notification-service/src/generated
+apps/notification-service/.env
+apps/notification-service/.env.*
+apps/notification-service/test
+apps/notification-service/README.md
+**/.git
+**/.DS_Store

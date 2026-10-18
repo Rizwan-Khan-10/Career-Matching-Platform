@@ -8,6 +8,7 @@ import { CreateJobRoleDto } from './dto/create-job-role.dto';
 import { UpdateJobRoleDto } from './dto/update-job-role.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { uploadOptions } from '../common/upload';
+import { CompanyApprovedGuard } from '../company-approval/company-approved.guard';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('COMPANY')
@@ -16,6 +17,7 @@ export class JobsController {
     constructor(private service: JobsService) { }
 
     @Post('upload')
+    @UseGuards(CompanyApprovedGuard) // 403 before the file is read when the company is not approved
     @UseInterceptors(FileInterceptor('file', uploadOptions))
     upload(@Req() req: AuthenticatedRequest, @UploadedFile() file: Express.Multer.File) {
         return this.service.upload(req.user.userId, file);
@@ -44,6 +46,7 @@ export class JobsController {
     }
 
     @Post(':id/roles')
+    @UseGuards(CompanyApprovedGuard)
     addRole(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: CreateJobRoleDto) {
         return this.service.createRole(id, req.user.userId, dto);
     }

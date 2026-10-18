@@ -13,6 +13,8 @@ const paths = tsconfig?.compilerOptions?.paths ?? {};
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
+  // dist/ holds a copy of src/generated/prisma: jest-haste-map warns about the duplicate package name
+  modulePathIgnorePatterns: ['<rootDir>/dist/'],
   testRegex: '.*\\.spec\\.ts$',
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',

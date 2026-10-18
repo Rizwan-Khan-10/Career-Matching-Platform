@@ -1,5 +1,6 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { SettingsService } from '../settings/settings.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -10,7 +11,16 @@ import { AuthenticatedRequest } from './types/authenticated-request';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private settingsService: SettingsService,
+  ) {}
+
+  // Public: lets the signup page adapt to the current mode.
+  @Get('registration-mode')
+  registrationMode() {
+    return this.settingsService.getRegistrationMode();
+  }
 
   @Post('signup')
   signup(@Body() dto: SignupDto) {

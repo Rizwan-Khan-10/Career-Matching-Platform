@@ -7,6 +7,8 @@ import { RedisService } from '../redis/redis.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { MailQueueService } from '../mail/mail-queue.service'
+import { SettingsService } from '../settings/settings.service';
+import { assertSignupAllowed, resolveCompanyStatus } from './signup-policy';
 import axios from 'axios';
 
 @Injectable()
@@ -15,10 +17,15 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private redis: RedisService,
-    private mail: MailQueueService
+    private mail: MailQueueService,
+    private settings: SettingsService,
   ) { }
 
   async signup(dto: SignupDto) {
+    // Registration mode is enforced here on the server, before anything else happens.
+    const settings = await this.settings.getAll();
+    assertSignupAllowed(settings, dto.email);
+
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already registered');
 
@@ -27,7 +34,9 @@ export class AuthService {
       data: { email: dto.email, passwordHash, role: dto.role },
     });
 
-    this.createUserProfile(user.id, user.role, user.email);
+    // Awaited on purpose: the company status (pending/approved) must be stored before the
+    // web app asks for the profile. Failure is still best-effort (logged), as before.
+    await this.createUserProfile(user.id, user.role, user.email, resolveCompanyStatus(settings));
 
     return this.issueTokens(user.id, user.role);
   }
@@ -51,6 +60,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Checked only after the password is right, so a stranger cannot find out which accounts are disabled.
+    if (!user.isActive) throw new UnauthorizedException('Account disabled');
+
     try { await this.redis.client.del(attemptsKey); } catch { }
 
     return this.issueTokens(user.id, user.role);
@@ -69,7 +81,14 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token no longer valid');
     }
 
-    return this.issueTokens(payload.sub, payload.role);
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, role: true, isActive: true },
+    });
+    if (!user) throw new UnauthorizedException('Invalid or expired refresh token');
+    if (!user.isActive) throw new UnauthorizedException('Account disabled');
+
+    return this.issueTokens(user.id, user.role);
   }
 
   async logout(userId: string) {
@@ -132,13 +151,18 @@ export class AuthService {
     return { accessToken, refreshToken, role };
   }
 
-  private async createUserProfile(userId: string, role: string, email: string) {
+  private async createUserProfile(
+    userId: string,
+    role: string,
+    email: string,
+    companyStatus: 'pending' | 'approved',
+  ) {
     try {
-      await axios.post(`${process.env.USER_SERVICE_URL}/internal/profiles`, {
-        userId,
-        role,
-        email,
-      });
+      await axios.post(
+        `${process.env.USER_SERVICE_URL}/internal/profiles`,
+        { userId, role, email, companyStatus },
+        { headers: { 'x-internal-key': process.env.INTERNAL_API_KEY }, timeout: 5000 },
+      );
     } catch (err: any) {
       console.warn(`Failed to create profile in user-service for ${userId}:`, err?.message || err);
     }

@@ -46,6 +46,10 @@ jobs:
       - run: pip install -r requirements.txt
         if: steps.check.outputs.exists == 'true'
 
+      - name: Compile check (syntax errors)
+        if: steps.check.outputs.exists == 'true'
+        run: python -m compileall -q app
+
       - run: python -c "import app.main"
         if: steps.check.outputs.exists == 'true'
 

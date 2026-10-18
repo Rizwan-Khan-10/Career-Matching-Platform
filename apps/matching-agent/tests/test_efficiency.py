@@ -176,6 +176,7 @@ class RunStatsTest(unittest.TestCase):
             self.skipTest(f"fastapi test client unavailable: {exc}")
         from app.core import health_state
         health_state.set_startup("disabled")   # (the consumer now starts in the app lifespan, not on import)
+        from app.core import config; config.INTERNAL_API_KEY = ""   # tests must not depend on the developer's .env
         body = TestClient(main.app).get("/stats").json()
         self.assertEqual(set(body), {"since", "totals", "recent", "cache"})
         self.assertEqual(set(body["cache"]), {"resumeSide", "roleSide"})

@@ -11,6 +11,9 @@
 /.next/
 /out/
 
+# project uses pnpm only (pnpm-lock.yaml is the lockfile)
+package-lock.json
+
 # production
 /build
 

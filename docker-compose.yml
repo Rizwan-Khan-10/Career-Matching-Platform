@@ -258,7 +258,6 @@ services:
         # inlined into the browser bundle at build time: change PUBLIC_URL, then run `up --build` again
         NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-http://localhost}
         NEXT_PUBLIC_WS_URL: ${PUBLIC_URL:-http://localhost}
-        NEXT_PUBLIC_USE_MOCKS: "false"
     restart: unless-stopped
 
   nginx:

@@ -54,3 +54,14 @@ model CompanyProfile {
 
   @@schema("users_service")
 }
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  action    String
+  target    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@schema("users_service")
+}

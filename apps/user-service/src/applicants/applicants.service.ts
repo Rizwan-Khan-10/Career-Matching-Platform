@@ -44,10 +44,13 @@ export class ApplicantsService {
   }
 
   async updateAvatar(userId: string, file: Express.Multer.File) {
+    const previousUrl = (await this.createOrGet(userId)).avatarUrl;
     const avatarUrl = await this.storage.uploadAvatar(userId, file);
-    return this.prisma.applicantProfile.update({ where: { userId }, data: { avatarUrl } });
+    const updated = await this.prisma.applicantProfile.update({ where: { userId }, data: { avatarUrl } });
+    // Only after the new photo is saved, so a failure never leaves the user without one.
+    await this.storage.deleteAvatarByUrl(previousUrl, userId);
+    return updated;
   }
-
   async getSummaries(userIds: string[], companyUserId: string, role: string) {
     if (!userIds.length) return [];
 

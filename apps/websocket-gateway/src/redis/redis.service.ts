@@ -8,7 +8,9 @@ export class RedisService implements OnModuleDestroy {
     constructor() {
         this.client = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
             lazyConnect: true,
-            retryStrategy: () => null,
+            // Keeps reconnecting: the stream consumer must recover by itself after a Redis restart
+            // instead of leaving every browser without live events until someone restarts the gateway.
+            retryStrategy: (times) => Math.min(times * 200, 3000),
         });
         this.client.connect().catch(() => {
             console.warn('Redis not reachable yet.');

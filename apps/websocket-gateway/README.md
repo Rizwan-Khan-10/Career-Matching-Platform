@@ -1,114 +1,68 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# websocket-gateway  (port 3007)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**Purpose:** socket.io server that pushes live events to the browser. A client connects with its JWT, the gateway verifies it and puts the socket into the room `user:<id>` (several tabs of one user all join the same room). Redis Streams events are delivered to the room of their recipient; pages react by refetching their data, and the notification bell shows `notification.created` live.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Port
+`3007` (`PORT`). nginx forwards `/socket.io/` here (with the WebSocket upgrade).
 
-## Description
+## Routes
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| WS | `/socket.io/` | any (JWT) | `io(URL, { path: '/socket.io', auth: { token } })`; `?token=` in the query string is accepted too. An invalid or missing token is disconnected at once |
+| GET | `/health` | none | `200 {status:"ok"}`, or `503 {status:"degraded"}` when Redis does not answer |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Events consumed
+Consumer group `ws-gateway-group` on every stream below. Each event is emitted to the browser under **the stream name**, with the payload as published, to the room of its recipient: `data.applicantId || data.companyId || data.userId` (contract section 6).
 
-## Project setup
+| Stream | Recipient | Payload the browser gets |
+|---|---|---|
+| `resume.parsed`, `match.computed`, `feedback.ready` | applicant (`applicantId`) | as published |
+| `jd.extracted`, `candidate.ready` | company (`companyId`) | as published |
+| `candidate.shortlisted`, `prep.ready`, `rejection-feedback.ready` | applicant (`applicantId`) | as published |
+| `candidate.rejected` | applicant (`applicantId`) | as published **without `reasonCategory`**: the applicant must never see the internal reason (contract 5.6) |
+| `company.status.changed`, `job.approval.changed` | company (`companyId`) | as published |
+| `notification.created` | `data.userId` | `{ userId, notification }`; the notification is `{ id, type, title, body, data, readAt, createdAt }` |
 
+The gateway produces no events.
+
+### Reliability
+- Streams are read with **one** blocking `XREADGROUP` over all streams on its own Redis connection.
+- A failed push is retried 3 times, then written to `<stream>.dead` (`MAXLEN ~ 10000`) and acknowledged. A payload that is not a JSON object, or has no `applicantId`/`companyId`/`userId`, goes to `<stream>.dead` at once.
+- Messages delivered but never acknowledged (crash, restart) are reclaimed with `XAUTOCLAIM` (idle > 60 s, checked every 30 s); one delivered more than 5 times is dead-lettered.
+- A new group starts at `$`: only events from now on (a live push of old history is useless). The Redis connection reconnects by itself after a Redis restart.
+- Events for a user who is not connected are simply dropped: the web refetches on every (re)connect.
+- **One gateway instance only.** All instances would share one consumer group, so each event would reach just one of them.
+
+### CORS
+Only `WEB_URL` may open a socket from a browser (several origins: separate with commas). Requests without an `Origin` header (servers, scripts) are not affected. The HTTP side (`/health`) uses the same rule.
+
+## Database
+None.
+
+## Environment variables
+| Name | Required | Example | Meaning |
+|---|---|---|---|
+| `PORT` | no | `3007` | HTTP / socket port |
+| `REDIS_URL` | yes | `redis://localhost:6379` | Redis Streams |
+| `JWT_SECRET` | yes | `change-me` | same value in every service; sockets are verified with it |
+| `WEB_URL` | yes | `http://localhost:3000` | browser origin(s) allowed to connect (default `http://localhost:3000`) |
+
+## Run locally
 ```bash
-$ pnpm install
+cp .env.example .env
+pnpm --filter websocket-gateway start:dev
 ```
+Client: `io(process.env.NEXT_PUBLIC_WS_URL, { auth: { token } })`, path `/socket.io/`.
 
-## Compile and run the project
-
+## Test
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm --filter websocket-gateway test      # unit tests (no Redis needed), incl. "notification.created reaches the right user"
 ```
-
-## Run tests
-
+Real-socket check against a running gateway and Redis (two users, real `socket.io-client`, events published with `XADD`):
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+JWT_SECRET=<same value as the gateway> pnpm --filter websocket-gateway smoke
 ```
+It checks that `notification.created` reaches every tab of the owner and nobody else, that shortlist / approval events go to the right role, that `reasonCategory` is removed, and that a token signed with another secret is disconnected.
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Depends on
+Redis, and the producers of the events above (notification-service for `notification.created`). Every token is issued by auth-service.

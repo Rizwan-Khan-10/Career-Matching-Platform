@@ -3,13 +3,15 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginLockService } from './login-lock.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { SettingsModule } from '../settings/settings.module';
 import { MailModule } from '../mail/mail.module';
+import { SessionModule } from '../sessions/session.module';
 
 @Module({
-  imports: [PassportModule, JwtModule.register({}), SettingsModule, MailModule],
+  imports: [PassportModule, JwtModule.register({}), SettingsModule, MailModule, SessionModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, LoginLockService],
 })
 export class AuthModule { }

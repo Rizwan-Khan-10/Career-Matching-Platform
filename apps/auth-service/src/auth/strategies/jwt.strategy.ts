@@ -16,7 +16,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; role: string }) {
-    return { userId: payload.sub, role: payload.role };
+  // `sid` identifies the device session; tokens issued before sessions existed have none.
+  async validate(payload: { sub: string; role: string; sid?: string }) {
+    return { userId: payload.sub, role: payload.role, sessionId: payload.sid };
   }
 }

@@ -1,35 +1,48 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
+import { FakeRedis } from '../../test/fake-redis';
 import { AuthService } from './auth.service';
+import { LoginLockService } from './login-lock.service';
+import { SessionStore } from '../sessions/session-store.service';
 import { DEFAULT_SETTINGS, SystemSettings } from '../settings/settings';
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 
 const PASSWORD = 'Password123';
 const HASH = bcrypt.hashSync(PASSWORD, 4);
+const activeUser = (over: Record<string, unknown> = {}) => ({
+  id: 'u1', email: 'a@b.com', role: 'APPLICANT', passwordHash: HASH, isActive: true, ...over,
+});
 
 function build(settings: Partial<SystemSettings> = {}, existingUser: any = null) {
+  const fake = new FakeRedis();
+  const redis = { client: fake };
   const prisma = {
     user: {
       findUnique: vi.fn().mockResolvedValue(existingUser),
       create: vi.fn().mockImplementation(async ({ data }: any) => ({ id: 'u1', ...data })),
+      update: vi.fn().mockResolvedValue({}),
     },
   };
-  const jwt = { sign: vi.fn().mockReturnValue('tok'), verify: vi.fn() };
-  const redis = {
-    client: { get: vi.fn().mockResolvedValue(null), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn() },
-  };
+  const jwt = new JwtService({});
   const mail = { enqueuePasswordReset: vi.fn() };
   const settingsService = { getAll: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }) };
-  const service = new AuthService(prisma as any, jwt as any, redis as any, mail as any, settingsService as any);
-  return { service, prisma, jwt, redis };
+  const service = new AuthService(
+    prisma as any, jwt, redis as any, mail as any, settingsService as any,
+    new SessionStore(redis as any), new LoginLockService(redis as any),
+  );
+  const sid = (token: string) => (jwt.decode(token) as { sid: string }).sid;
+  return { service, prisma, fake, jwt, sid };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.USER_SERVICE_URL = 'http://user-service';
   process.env.INTERNAL_API_KEY = 'internal-key';
+  process.env.JWT_SECRET = 'test-access-secret';
+  process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 });
 
 describe('AuthService.signup', () => {
@@ -81,41 +94,135 @@ describe('AuthService.signup', () => {
 });
 
 describe('AuthService.login / refresh with a disabled account', () => {
-  const user = (isActive: boolean) => ({ id: 'u1', email: 'a@b.com', role: 'APPLICANT', passwordHash: HASH, isActive });
-
   it('logs an active user in', async () => {
-    const { service } = build({}, user(true));
+    const { service } = build({}, activeUser());
     const result = await service.login({ email: 'a@b.com', password: PASSWORD });
-    expect(result.accessToken).toBe('tok');
+    expect(result.accessToken).toEqual(expect.any(String));
   });
 
   it('returns 401 "Account disabled" when the password is right but the account is disabled', async () => {
-    const { service } = build({}, user(false));
+    const { service } = build({}, activeUser({ isActive: false }));
     const err = await service.login({ email: 'a@b.com', password: PASSWORD }).catch((e) => e);
     expect(err).toBeInstanceOf(UnauthorizedException);
     expect(err.message).toBe('Account disabled');
   });
 
   it('does not reveal a disabled account when the password is wrong', async () => {
-    const { service } = build({}, user(false));
+    const { service } = build({}, activeUser({ isActive: false }));
     const err = await service.login({ email: 'a@b.com', password: 'wrong-password' }).catch((e) => e);
     expect(err.message).toBe('Invalid credentials');
   });
 
-  it('refuses to refresh tokens for a disabled account', async () => {
-    const { service, jwt, redis } = build({}, { id: 'u1', role: 'APPLICANT', isActive: false });
-    jwt.verify.mockReturnValue({ sub: 'u1', role: 'APPLICANT' });
-    redis.client.get.mockResolvedValue('rt');
-    const err = await service.refresh('rt').catch((e) => e);
+  it('refuses to refresh tokens once the account is disabled', async () => {
+    const { service, prisma } = build({}, activeUser());
+    const { refreshToken } = await service.login({ email: 'a@b.com', password: PASSWORD });
+
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', role: 'APPLICANT', isActive: false });
+    const err = await service.refresh(refreshToken).catch((e) => e);
+
     expect(err).toBeInstanceOf(UnauthorizedException);
     expect(err.message).toBe('Account disabled');
   });
 
   it('refreshes tokens for an active account', async () => {
-    const { service, jwt, redis } = build({}, { id: 'u1', role: 'APPLICANT', isActive: true });
-    jwt.verify.mockReturnValue({ sub: 'u1', role: 'APPLICANT' });
-    redis.client.get.mockResolvedValue('rt');
-    const result = await service.refresh('rt');
+    const { service } = build({}, activeUser());
+    const { refreshToken } = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const result = await service.refresh(refreshToken);
     expect(result.role).toBe('APPLICANT');
+  });
+});
+
+describe('AuthService per-device sessions', () => {
+  it('gives every login its own session id and stores one key per session', async () => {
+    const { service, fake, sid } = build({}, activeUser());
+    const a = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const b = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+
+    expect(sid(a.accessToken)).not.toBe(sid(b.accessToken));
+    expect(fake.store.has(`refresh:u1:${sid(a.accessToken)}`)).toBe(true);
+    expect(fake.store.has(`refresh:u1:${sid(b.accessToken)}`)).toBe(true);
+  });
+
+  it('logout on one device does not log out the other device', async () => {
+    const { service, sid } = build({}, activeUser());
+    const phone = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const laptop = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+
+    await service.logout('u1', sid(phone.accessToken));
+
+    await expect(service.refresh(phone.refreshToken)).rejects.toThrow('Refresh token no longer valid');
+    await expect(service.refresh(laptop.refreshToken)).resolves.toMatchObject({ role: 'APPLICANT' });
+  });
+
+  it('logout without a session id (old access token) is a harmless no-op', async () => {
+    const { service } = build({}, activeUser());
+    const a = await service.login({ email: 'a@b.com', password: PASSWORD });
+    await expect(service.logout('u1')).resolves.toEqual({ message: 'Logged out' });
+    await expect(service.refresh(a.refreshToken)).resolves.toBeDefined();
+  });
+
+  it('refresh keeps the same session id', async () => {
+    const { service, sid } = build({}, activeUser());
+    const first = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const second = await service.refresh(first.refreshToken);
+    expect(sid(second.accessToken)).toBe(sid(first.accessToken));
+  });
+
+  it('rejects a refresh token that has no session id (issued before this change)', async () => {
+    const { service, jwt } = build({}, activeUser());
+    const legacy = jwt.sign({ sub: 'u1', role: 'APPLICANT' }, { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '7d' });
+    await expect(service.refresh(legacy)).rejects.toThrow('Invalid or expired refresh token');
+  });
+
+  it('a password reset signs out every device of that user only', async () => {
+    const { service, fake } = build({}, activeUser());
+    const a = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const b = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+    fake.store.set('refresh:u2:other-device', 'x');
+    fake.store.set('reset:tok', 'u1');
+
+    await service.resetPassword('tok', 'a-new-password-1');
+
+    await expect(service.refresh(a.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.refresh(b.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(fake.store.has('refresh:u2:other-device')).toBe(true);
+    expect(fake.store.has('reset:tok')).toBe(false);
+  });
+});
+
+describe('AuthService login lock', () => {
+  const wrong = { email: 'a@b.com', password: 'wrong-password' };
+  const right = { email: 'a@b.com', password: PASSWORD };
+
+  it('locks only the IP that failed 5 times, even for the right password', async () => {
+    const { service } = build({}, activeUser());
+    for (let i = 0; i < 5; i++) await expect(service.login(wrong, '1.1.1.1')).rejects.toThrow('Invalid credentials');
+
+    await expect(service.login(right, '1.1.1.1')).rejects.toThrow('Too many failed attempts');
+    await expect(service.login(right, '2.2.2.2')).resolves.toMatchObject({ role: 'APPLICANT' });
+  });
+
+  it('blocks every IP after 20 failures for one email', async () => {
+    const { service } = build({}, activeUser());
+    for (let i = 0; i < 20; i++) await expect(service.login(wrong, `10.0.0.${i}`)).rejects.toThrow('Invalid credentials');
+
+    await expect(service.login(right, '9.9.9.9')).rejects.toThrow('Too many failed attempts');
+  });
+
+  it('treats the email case-insensitively, so changing the case does not dodge the lock', async () => {
+    const { service, prisma } = build({}, activeUser());
+    for (let i = 0; i < 5; i++) await service.login({ ...wrong, email: 'A@B.com' }, '1.1.1.1').catch(() => undefined);
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'a@b.com' } });
+    await expect(service.login(right, '1.1.1.1')).rejects.toThrow('Too many failed attempts');
+  });
+
+  it('a successful login clears the failures of that email on that IP', async () => {
+    const { service, fake } = build({}, activeUser());
+    for (let i = 0; i < 4; i++) await service.login(wrong, '1.1.1.1').catch(() => undefined);
+
+    await service.login(right, '1.1.1.1');
+
+    expect(fake.store.has('login-attempts:ip:a@b.com:1.1.1.1')).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -10,6 +11,8 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { uploadOptions } from '../common/upload';
 import { CompanyApprovedGuard } from '../company-approval/company-approved.guard';
 
+@ApiTags('jobs')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('COMPANY')
 @Controller('jobs')

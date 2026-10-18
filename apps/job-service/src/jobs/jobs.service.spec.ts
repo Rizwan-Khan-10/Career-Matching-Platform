@@ -7,7 +7,7 @@ jest.mock('../redis/redis.service', () => ({ RedisService: class {} }));
 jest.mock('../storage/storage.service', () => ({ StorageService: class {} }));
 jest.mock('../generated/prisma', () => ({ Prisma: {} }));
 
-const POSTING = { id: 'p1', companyId: 'c1' };
+const POSTING = { id: 'p1', companyId: 'c1', approvalStatus: 'approved' };
 
 function setup(existingRequirements: Record<string, unknown> = {}) {
     const prisma = {
@@ -19,7 +19,7 @@ function setup(existingRequirements: Record<string, unknown> = {}) {
         },
     };
     const redis = { client: { xadd: jest.fn().mockResolvedValue('1-0') } };
-    const service = new JobsService(prisma as any, redis as any, {} as any);
+    const service = new JobsService(prisma as any, redis as any, {} as any, {} as any);
     return { service, prisma, redis };
 }
 

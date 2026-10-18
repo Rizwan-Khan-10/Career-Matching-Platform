@@ -15,6 +15,8 @@ model JobPosting {
   status       String    @default("pending") // pending | extracted | failed
   errorMessage String?
   stoppedAt    DateTime? // set = company stopped this job: no scanning of the document, no matching
+  approvalStatus String  @default("approved") // approved | pending | rejected (pending/rejected: not scanned, not matched). Old rows stay approved
+  approvalNote   String?  // the admin's note on the decision
   createdAt    DateTime  @default(now())
   roles        JobRole[]
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
+import { internalHeaders, requestHeaders } from '../common/outgoing-headers';
 
 interface MatchSummary {
     jobRoleId: string;
@@ -19,7 +20,7 @@ export class ConversationsService {
         let matches: MatchSummary[] = [];
         try {
             const res = await axios.get(`${process.env.MATCHING_SERVICE_URL}/matches/mine`, {
-                headers: { Authorization: authHeader },
+                headers: { Authorization: authHeader, ...requestHeaders() },
                 timeout: 10_000,
             });
             matches = Array.isArray(res.data) ? res.data : [];
@@ -47,7 +48,7 @@ export class ConversationsService {
     private async buildDefaultName(m: MatchSummary): Promise<string> {
         if (m.roleTitle) return `${m.roleTitle} — ${m.companyName || 'Company'}`;
         try {
-            const { data: role } = await axios.get(`${process.env.JOB_SERVICE_URL}/internal/roles/${m.jobRoleId}`, { timeout: 5_000 });
+            const { data: role } = await axios.get(`${process.env.JOB_SERVICE_URL}/internal/roles/${m.jobRoleId}`, { headers: internalHeaders(), timeout: 5_000 });
             return role?.title ? String(role.title) : 'Chat';
         } catch {
             return 'Chat';

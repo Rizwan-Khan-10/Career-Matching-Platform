@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
+import { requestHeaders } from '../common/outgoing-headers';
 
 const MAX_HISTORY = 20;          // turns sent to the model (the agent caps again)
 const AGENT_TIMEOUT_MS = 60_000; // Groq may retry with back-off; never hang the request forever
@@ -14,7 +15,7 @@ export class ChatService {
     /** One place that talks to chatbot-agent. Any failure / empty answer -> 503 with a friendly message (never a raw 500). */
     private async askAgent(body: Record<string, unknown>): Promise<string> {
         try {
-            const res = await axios.post(`${process.env.CHATBOT_AGENT_URL}/chat`, body, { timeout: AGENT_TIMEOUT_MS });
+            const res = await axios.post(`${process.env.CHATBOT_AGENT_URL}/chat`, body, { headers: requestHeaders(), timeout: AGENT_TIMEOUT_MS });
             const reply = res.data?.reply;
             if (typeof reply !== 'string' || !reply.trim()) throw new Error('empty reply from chatbot-agent');
             return reply.trim();

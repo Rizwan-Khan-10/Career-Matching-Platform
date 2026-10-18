@@ -1,114 +1,72 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# notification-service  (port 3006, schema `notifications_service`)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**Purpose:** turns events into in-app notifications and e-mails. It is the single place that decides *in-app vs e-mail* (contract §7).
+It writes a `Notification` row, queues the e-mail the policy asks for, and publishes `notification.created` so the websocket-gateway pushes it live.
+It also exposes the notification bell API and deletes expired rows every day.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Routes (nginx `/notifications/` -> `:3006`)
+Any role (JWT), own rows only.
 
-## Description
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/notifications?limit=20&cursor=<id>&unread=1` | `{ items, nextCursor }`, newest first. `limit` 1-50 (default 20); `cursor` = `nextCursor` of the previous page |
+| GET | `/notifications/unread-count` | `{ count }` |
+| PATCH | `/notifications/:id/read` | the notification; 404 if it is not yours; reading twice keeps the first `readAt` |
+| PATCH | `/notifications/read-all` | `{ updated }` |
+| GET | `/health` | `200 {status:"ok"}` or `503 {status:"degraded"}` (database / Redis down) |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+`Notification` = `{ id, type, title, body, data, readAt, createdAt }`. Expired rows are never returned.
 
-## Project setup
+## E-mails (BullMQ queue `email-queue`)
+Exactly four types are sent; every other job name is logged and dropped.
 
+| Job | Producer | Recipient | Mail |
+|---|---|---|---|
+| `password-reset` | auth-service | `email` in the job | reset link (15 min); with `invite: true` an "set your password" mail (7 days) |
+| `eligibility-result` | this service | applicant | eligible for `roleTitle` |
+| `candidate-ready` | this service | company | applicant name, role, score |
+| `shortlisted` | this service | applicant | company, role and the shortlist fields exactly as the company typed them (HTML-escaped) |
+
+Recipients of the last three are resolved with `GET auth-service /internal/users/:id/email` (header `x-internal-key`).
+A user that no longer exists (404) is not retried; other errors are retried 5 times with back-off.
+
+## Events
+- **Consumes** (consumer group `notification-group`, retry, `XAUTOCLAIM`, dead-letter `<stream>.dead`): `resume.parsed`, `jd.extracted`, `match.computed`, `feedback.ready`, `candidate.ready`, `candidate.shortlisted`, `prep.ready`, `candidate.rejected`, `rejection-feedback.ready`, `company.status.changed`, `job.approval.changed`.
+- **Produces:** `notification.created` `{ userId, notification, requestId }`.
+
+## Database
+Schema `notifications_service`, table `Notification` (`userId + dedupeKey` unique, `expiresAt` = created + 90 days).
+Daily job (`CLEANUP_*`) deletes rows whose `expiresAt` has passed, in batches, under a Redis lock so several instances do not clash.
+
+## Environment variables
+| Name | Required | Example | Meaning |
+|---|---|---|---|
+| `PORT` | no | `3006` | HTTP port |
+| `DATABASE_URL` | yes | `postgresql://user:password@localhost:5432/career_matching` | PostgreSQL |
+| `REDIS_URL` | yes | `redis://localhost:6379` | Streams + BullMQ |
+| `JWT_SECRET` | yes | `change-me` | same value in every service |
+| `INTERNAL_API_KEY` | no (yes in prod) | `change-me` | sent as `x-internal-key` to auth-service |
+| `AUTH_SERVICE_URL` | yes | `http://localhost:3001` | e-mail lookup |
+| `WEB_URL` | yes | `http://localhost:3000` | base of the links inside e-mails |
+| `EMAIL_PROVIDER` | yes | `gmail` or `resend` | transport |
+| `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `GMAIL_FROM_NAME` | gmail only | | Gmail SMTP |
+| `RESEND_API_KEY`, `EMAIL_FROM` | resend only | | Resend |
+| `EMAIL_DEV_REDIRECT_TO` | no | `you@example.com` | send ALL mail to one inbox |
+| `CLEANUP_ENABLED` / `CLEANUP_INTERVAL_HOURS` / `CLEANUP_BATCH_SIZE` | no | `true` / `24` / `1000` | daily clean-up |
+| `ENABLE_DOCS` | no | `false` | Swagger at `/docs` |
+| `LOG_LEVEL` | no | `info` | JSON logs (`requestId` included) |
+
+## Run locally
 ```bash
-$ pnpm install
+cp .env.example .env
+pnpm --filter notification-service exec prisma generate
+pnpm --filter notification-service db:push
+pnpm --filter notification-service start:dev
 ```
+Reset the schema: `pnpm --filter notification-service db:reset`.
 
-## Compile and run the project
+## Test
+`pnpm --filter notification-service test` (unit + HTTP API tests, no database or Redis needed).
 
-```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Depends on
+PostgreSQL, Redis, auth-service (e-mail lookup). Producers of the events above must be running for notifications to appear.

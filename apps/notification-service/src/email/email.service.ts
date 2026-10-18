@@ -1,21 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { createMailTransport, MailPayload, MailTransport } from './mail-transport';
+import { createMailTransport, MailTransport } from './mail-transport';
+import { candidateReadyEmail, eligibleEmail, passwordResetEmail, RenderedEmail, shortlistedEmail } from './templates';
 
 // Read lazily: ConfigModule loads .env AFTER this file has been imported, so top-level consts would miss .env values.
 const cfg = () => ({
   from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-  dashboardUrl: process.env.WEB_URL || 'http://localhost:3001',
+  webUrl: process.env.WEB_URL || 'http://localhost:3000',
 });
 
-/** Names / titles / LLM text end up inside HTML e-mails: never trust them. */
-function esc(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
+/** The four e-mails this platform sends (contract §7): password reset / invite, eligible, candidate ready, shortlisted. */
 @Injectable()
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
@@ -33,65 +26,24 @@ export class EmailService implements OnModuleInit {
     }
   }
 
-  private send(payload: MailPayload) {
-    return this.transport.send(payload);
+  private send(to: string, mail: RenderedEmail) {
+    return this.transport.send({ from: cfg().from, to, ...mail });
   }
 
-  async sendEligibilityResult(to: string, eligible: boolean) {
-    const { from, dashboardUrl } = cfg();
-    await this.send({
-      from,
-      to,
-      subject: eligible ? 'You are eligible for a role!' : 'Application update',
-      html: eligible
-        ? `<p>Great news — you matched a role's requirements.</p>
-           <p>Open your dashboard to see which company it is. Your resume is only sent to them
-           <b>after you approve</b>: <a href="${esc(dashboardUrl)}/applicant/matches">review the match</a>.</p>`
-        : `<p>You weren't a match this time. Check your dashboard for a personalized improvement guide.</p>`,
-    });
+  /** `invite: true` = an admin imported this user: the mail says "set your password", the link lives 7 days. */
+  sendPasswordReset(to: string, resetToken: string, invite = false) {
+    return this.send(to, passwordResetEmail({ webUrl: cfg().webUrl, resetToken, invite }));
   }
 
-  async sendFeedbackGuide(to: string, feedback: string, roleTitle?: string | null) {
-    const role = roleTitle ? roleTitle.replace(/\s+/g, ' ').slice(0, 80) : null;
-    await this.send({
-      from: cfg().from,
-      to,
-      subject: role ? `How to improve your match for ${role}` : 'Your personalized improvement guide',
-      html: `${role ? `<p><b>${esc(role)}</b></p>` : ''}<p>${esc(feedback).replace(/\n/g, '<br/>')}</p>`,
-    });
+  sendEligible(to: string, roleTitle?: string | null) {
+    return this.send(to, eligibleEmail({ webUrl: cfg().webUrl, roleTitle }));
   }
 
-  async sendPasswordReset(to: string, resetToken: string) {
-    const { from, dashboardUrl } = cfg();
-    const link = `${dashboardUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
-    await this.send({
-      from,
-      to,
-      subject: 'Reset your password',
-      html: `<p>We got a request to reset your password.</p>
-             <p><a href="${esc(link)}">Choose a new password</a> (valid for 15 minutes).</p>
-             <p>If this wasn't you, ignore this e-mail: your password stays the same.</p>`,
-    });
+  sendCandidateReady(to: string, d: { applicantName?: string | null; roleTitle?: string | null; score?: number | null; jobRoleId?: string | null }) {
+    return this.send(to, candidateReadyEmail({ webUrl: cfg().webUrl, ...d }));
   }
 
-  /**
-   * The applicant approved sharing -> the company is only INFORMED. The resume itself is NOT e-mailed:
-   * the company logs in, opens the candidate list and views/downloads the PDF there (access is checked server-side).
-   */
-  async sendCandidateReady(
-    to: string,
-    d: { applicantName?: string | null; roleTitle?: string | null; score: number; jobRoleId: string },
-  ) {
-    const { from, dashboardUrl } = cfg();
-    const who = d.applicantName || 'A candidate';
-    const role = d.roleTitle || 'one of your open roles';
-    await this.send({
-      from,
-      to,
-      subject: `New candidate ready for ${role.replace(/\s+/g, ' ').slice(0, 80)}`,
-      html: `<p><b>${esc(who)}</b> matched <b>${esc(role)}</b> (${Math.round(d.score * 100)}% match) and
-             <b>approved sharing their resume</b> with you.</p>
-             <p><a href="${esc(dashboardUrl)}/company/roles/${encodeURIComponent(d.jobRoleId)}/applicants">Log in to view the candidate and download the resume</a>.</p>`,
-    });
+  sendShortlisted(to: string, d: { companyName?: string | null; roleTitle?: string | null; shortlist?: unknown }) {
+    return this.send(to, shortlistedEmail({ webUrl: cfg().webUrl, ...d }));
   }
 }

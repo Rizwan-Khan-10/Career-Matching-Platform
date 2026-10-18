@@ -35,6 +35,10 @@ describe('notification policy (contract §7)', () => {
       });
     });
 
+    it('passes roleTitle to the e-mail job (so the mail can name the role)', () => {
+      expect(run('match.computed', { ...base, eligible: true })!.email!.data).toMatchObject({ roleTitle: 'Backend Dev' });
+    });
+
     it('eligible=false -> nothing at all', () => {
       expect(run('match.computed', { ...base, eligible: false })).toBeNull();
       expect(run('match.computed', { ...base })).toBeNull();

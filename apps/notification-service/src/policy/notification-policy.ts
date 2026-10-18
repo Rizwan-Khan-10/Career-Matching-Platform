@@ -83,7 +83,7 @@ const matchComputed: Rule = (d) => {
     dedupeKey: matchKey(applicantId, jobRoleId), // first time only (contract §7)
     email: {
       name: 'eligibility-result',
-      data: { applicantId, jobRoleId, eligible: true },
+      data: { applicantId, jobRoleId, eligible: true, roleTitle: roleTitle ?? null },
       jobId: `eligibility-${applicantId}-${jobRoleId}`,
     },
   };

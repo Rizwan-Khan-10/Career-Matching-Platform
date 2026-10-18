@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { newRequestId, runWithRequestId } from '../common/request-context';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventData, POLICY, str } from '../policy/notification-policy';
 
@@ -10,19 +11,23 @@ export class NotificationEventsService {
 
   /** One event in, at most one notification out. Throws only when saving fails (so the consumer retries). */
   async process(stream: string, data: EventData, streamId: string): Promise<void> {
-    const rule = POLICY.get(stream);
-    if (!rule) {
-      this.logger.warn(`${stream} ${streamId}: no policy for this stream`);
-      return;
-    }
+    // contract §3.1: keep the requestId of the incoming event (or create one) so logs and notification.created carry it
+    const requestId = str(data.requestId) ?? newRequestId();
+    return runWithRequestId(requestId, async () => {
+      const rule = POLICY.get(stream);
+      if (!rule) {
+        this.logger.warn(`${stream} ${streamId}: no policy for this stream`);
+        return;
+      }
 
-    const plan = rule(data, { stream, streamId });
-    if (!plan) {
-      this.logger.log(`${stream} ${streamId}: nothing to notify`);
-      return;
-    }
+      const plan = rule(data, { stream, streamId });
+      if (!plan) {
+        this.logger.log(`${stream} ${streamId}: nothing to notify`);
+        return;
+      }
 
-    const result = await this.notifications.deliver(plan, str(data.requestId));
-    this.logger.log(`${stream} ${streamId}: ${plan.type} ${result}`);
+      const result = await this.notifications.deliver(plan, requestId);
+      this.logger.log(`${stream} ${streamId}: ${plan.type} ${result}`);
+    });
   }
 }

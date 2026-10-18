@@ -17,12 +17,13 @@
     ],
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false
   },
- "watchOptions": {
+  "watchOptions": {
     "excludeDirectories": [
       "node_modules",
       "dist"

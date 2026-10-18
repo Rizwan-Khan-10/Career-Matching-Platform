@@ -12,7 +12,7 @@ const paths = tsconfig?.compilerOptions?.paths ?? {};
 
 import { createRequire } from 'node:module';
 
-const req = createRequire(__filename);
+const req = createRequire(`${process.cwd()}/package.json`);
 
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],

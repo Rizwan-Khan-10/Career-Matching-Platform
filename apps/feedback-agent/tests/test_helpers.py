@@ -2,7 +2,7 @@
 import unittest
 
 from app.services.academics import effective_academics
-from app.services.safety import invented_details
+from app.services.safety import invented_details, mentions_other_applicants, promises_outcome
 
 
 class EffectiveAcademicsTest(unittest.TestCase):
@@ -61,6 +61,26 @@ class InventedDetailsTest(unittest.TestCase):
 
     def test_returns_each_problem_once(self):
         self.assertEqual(invented_details("Monday, again Monday.", ""), ["Monday"])
+
+
+class PolicyGuardsTest(unittest.TestCase):
+    def test_flags_talk_about_other_applicants(self):
+        for text in ("Other candidates had stronger projects.", "Selected applicants usually know Spring.", "Compared to others you lack Docker.",
+                     "The successful profiles list Kubernetes.", "Your competitors know more SQL."):
+            self.assertNotEqual(mentions_other_applicants(text), [], text)
+
+    def test_allows_normal_technical_advice(self):
+        for text in ("Study ranking algorithms for the search role.", "Read other people's code on GitHub.", "Roles like this usually expect Docker and CI.",
+                     "Build a project with Spring Boot and PostgreSQL."):
+            self.assertEqual(mentions_other_applicants(text), [], text)
+            self.assertEqual(promises_outcome(text), [], text)
+
+    def test_flags_promises(self):
+        for text in ("This guarantees an interview.", "You will definitely get the job.", "You will be selected if you do this.", "It will land you the role."):
+            self.assertNotEqual(promises_outcome(text), [], text)
+
+    def test_does_not_flag_hopeful_but_honest_wording(self):
+        self.assertEqual(promises_outcome("This can make your resume stronger and may help in future applications."), [])
 
 
 if __name__ == "__main__":

@@ -183,13 +183,12 @@ class PrepGuideWorkerTest(unittest.TestCase):
 
 
 class ConsumerRegistrationTest(unittest.TestCase):
-    def test_both_streams_get_their_own_consumer(self):
-        self.addCleanup(sc.consumer_threads.clear)
+    def test_every_stream_gets_its_own_consumer_thread(self):
         started = []
         with mock.patch.object(sc.threading, "Thread", side_effect=lambda **kw: mock.Mock(start=lambda: started.append(kw["args"][0]))):
             sc.run()
 
-        self.assertEqual(started, ["match.computed", "candidate.shortlisted"])
+        self.assertEqual(started, ["match.computed", "candidate.shortlisted", "candidate.rejected"])
 
 
 if __name__ == "__main__":

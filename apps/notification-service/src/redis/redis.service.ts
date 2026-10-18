@@ -1,8 +1,9 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Redis } from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
+  private readonly logger = new Logger(RedisService.name);
   public client: Redis;
 
   constructor() {
@@ -13,7 +14,7 @@ export class RedisService implements OnModuleDestroy {
       retryStrategy: (times) => Math.min(times * 200, 3000),
     });
     this.client.connect().catch(() => {
-      console.warn('Redis not reachable yet.');
+      this.logger.warn('Redis not reachable yet.');
     });
   }
 

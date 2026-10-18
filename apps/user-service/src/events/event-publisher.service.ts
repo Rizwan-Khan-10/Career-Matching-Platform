@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { RedisService } from '../redis/redis.service';
+import { currentRequestId } from '../common/request-context';
 
 /** Publishes one event: a single field `data` holding JSON, stream trimmed to ~10000 (contract §3.1, §3.2). */
 @Injectable()
@@ -10,7 +11,7 @@ export class EventPublisher {
   constructor(private redis: RedisService) { }
 
   async publish(stream: string, payload: Record<string, unknown>): Promise<void> {
-    const data = { ...payload, requestId: payload.requestId ?? randomUUID() };
+    const data = { ...payload, requestId: payload.requestId ?? currentRequestId() ?? randomUUID() };
     try {
       await this.redis.client.xadd(stream, 'MAXLEN', '~', 10000, '*', 'data', JSON.stringify(data));
     } catch (err) {

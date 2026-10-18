@@ -5,6 +5,7 @@ import { AdminModule } from './admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { InternalModule } from './internal/internal.module';
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { InternalModule } from './internal/internal.module';
     AuthModule,
     AdminModule,
     InternalModule,
+    SeedModule,
   ],
 })
 export class AppModule {}

@@ -43,7 +43,7 @@ class _MiniLMBackend:
         from sentence_transformers import SentenceTransformer
         self._m = SentenceTransformer(EMBEDDING_MODEL_NAME)
         self.name = EMBEDDING_MODEL_NAME
-        dim = self._m.get_sentence_embedding_dimension()
+        dim = self._m.get_embedding_dimension()
         if dim != DIM:
             raise RuntimeError(f"{EMBEDDING_MODEL_NAME} outputs {dim}-dim vectors but the pgvector columns are vector({DIM}); use a {DIM}-dim model")
 

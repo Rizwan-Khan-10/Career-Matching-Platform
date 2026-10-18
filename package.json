@@ -2,7 +2,7 @@
   "name": "career-matching-platform",
   "private": true,
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22.12"
   },
   "scripts": {
     "db:reset:services": "pnpm -r --workspace-concurrency=1 --if-present run db:reset",

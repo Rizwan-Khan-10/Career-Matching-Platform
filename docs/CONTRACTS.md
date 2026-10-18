@@ -1,48 +1,40 @@
-# Team Plan & Contracts (READ FIRST — shared, read-only)
+# Contracts
 
-Project: Career Matching Platform. Full design: `PROJECT_SPEC.md` (sections referenced as "Spec §N").
-This file = **who owns what** + the **contracts** (API shapes, event payloads, DB columns) between owners.
-Because contracts are fixed here, all four people work in parallel and never edit the same file.
-This is the final, merged version: it already contains every agreed rule (older drafts and addenda are obsolete — discard them).
-
-Scope: one institution per deployment (no multi-college), **tech jobs only** for now, Docker is the **last** phase (section 10).
+Data, HTTP and event contracts between the services. Full design: `PROJECT_SPEC.md` (same folder). A contract changes in this file first, then in the code of every service that uses it.
+Scope: one institution per deployment, tech jobs only.
 
 ---
 
-## 1. The one rule
+## 1. Principles
 
-**You only change files inside the paths you own (table below). Never edit another owner's path, not even a one-line fix.**
-If you need something from another owner, either (a) it is already in the contracts below — just use it, or (b) message the owner / lead (Dev 4) and wait.
-A contract changes only through Dev 4, who updates this file and tells everyone.
+- Every service owns its own database schema and changes only its own `prisma/schema.prisma` (or SQL for agents). Other services read its tables by the column names in section 4; columns are not renamed.
+- Services talk to each other through Redis Streams (events, section 6) and the HTTP contracts in section 5. Agents never call the database of another service for writes.
+- Python agents keep their dependencies in their own `requirements.txt`.
 
-## 2. Ownership map (every path has exactly one owner)
+## 2. Services and schemas
 
-| Owner | Paths |
-|---|---|
-| **Dev 1 — Identity, Admin & Notifications** | `apps/auth-service`, `apps/user-service`, `apps/notification-service`, `apps/websocket-gateway`, `infra/nginx` |
-| **Dev 2 — Matching & ML** | `apps/matching-agent`, `apps/jd-extractor-agent`, `apps/resume-parser-agent`, `apps/resume-service` |
-| **Dev 3 — Decisions & AI guidance** | `apps/matching-results-service`, `apps/job-service`, `apps/feedback-agent`, `apps/chatbot-agent`, `apps/chat-service`, `docs/consent-flow.md` |
-| **Dev 4 — Web & project docs (lead)** | `apps/web`, `e2e/`, `.github/`, root `README.md`, `PROJECT_SPEC.md`, root `package.json`, `pnpm-workspace.yaml`, `docker-compose.yml`, `.env.compose.example`, `.gitignore`, `.gitleaks.toml`, this contracts file |
+| Service | Schema / storage | Purpose |
+|---|---|---|
+| auth-service | `auth_service` | accounts, JWT, registration mode, admin settings |
+| user-service | `users_service` | profiles, company status, audit |
+| resume-service | `resumes_service` | resumes, target roles, storage cleanup |
+| job-service | `jobs_service` | postings, roles, posting approval |
+| matching-results-service | `matches_service` | matches, consent, decisions, stats |
+| notification-service | `notifications_service` | notifications, emails |
+| chat-service | `chat_service` | chat storage, rate limits |
+| matching-agent | `resume_embeddings`, `job_role_embeddings` (pgvector) | eligibility scoring |
+| websocket-gateway, other agents | none | live events, AI guidance |
 
-Each owner also writes, inside their own folders, a `README.md` and `.env.example` for every app they own (template: Spec §13).
-
-### Git rules
-- Branch per person: `dev1/...`, `dev2/...`, `dev3/...`, `dev4/...`. PR into `main`. A PR may only contain files from the author's paths.
-- `pnpm-lock.yaml` is the only file anyone may touch by side effect (adding a dependency). On a lock conflict **never hand-merge**: take `main`'s lock, run `pnpm install`, commit.
-- Database: every service owns its own schema. Change only your own `prisma/schema.prisma` (or SQL for agents). Other services read your tables by the column names in §4 — do not rename them.
-- Python agents: dependencies only in your own `requirements.txt`.
-- Merge order for integration (coding is parallel): **Dev 1's schema changes first** (columns/tables other services read), then Dev 2 and Dev 3 in any order, then Dev 4 swaps mocks for real APIs. Notification-service is fully testable only after the producers have merged.
-
-## 3. Cross-cutting rules (everyone applies them inside their own apps)
+## 3. Cross-cutting rules (every app applies them)
 
 1. **Event envelope.** Streams carry one field `data` = JSON. Every payload gets an optional `requestId` (uuid). If you receive an event with `requestId`, copy it into events you publish because of it; otherwise create one.
 2. **Stream trimming.** Every `XADD` uses `MAXLEN ~ 10000`.
 3. **Internal endpoints.** Every `/internal/*` handler requires header `x-internal-key: $INTERNAL_API_KEY` (skip the check when the env var is unset, for local dev). Every caller sends the header. Nginx keeps blocking `/internal/` from outside.
-4. **Node stream consumers** you own reclaim idle pending messages (`XAUTOCLAIM`), retry, then dead-letter to `<stream>.dead`.
+4. **Node stream consumers** reclaim idle pending messages (`XAUTOCLAIM`), retry, then dead-letter to `<stream>.dead`.
 5. **Agent `/health`** returns 503 `{"status":"degraded"}` when a consumer thread has died (pattern: `matching-agent/app/main.py`).
 6. **Roles** in JWT: `APPLICANT | COMPANY | ADMIN`.
 7. Errors: Nest default error JSON (`{statusCode, message, error}`). Web shows `message`.
-8. **Ops basics in every app you own:** `GET /health`; JSON-structured logs that include `requestId`; Swagger (`@nestjs/swagger`) at `/docs` only when `ENABLE_DOCS=true` (FastAPI `/docs` disabled with `ENABLE_DOCS=false`); `.env.example` with placeholders only.
+8. **Ops basics in every app:** `GET /health`; JSON-structured logs that include `requestId`; Swagger (`@nestjs/swagger`) at `/docs` only when `ENABLE_DOCS=true` (FastAPI `/docs` disabled with `ENABLE_DOCS=false`); `.env.example` with placeholders only.
 9. **Reset scripts.** Every Nest app with Prisma has `db:reset` in `package.json` (drop and recreate its own schema using the method it already uses). Agents create their own helper tables at start-up (`ensure_*`).
 
 ## 4. Data contracts
@@ -130,7 +122,7 @@ Language tracks (`frontend, backend, fullstack`) share language stack ids; other
 }
 ```
 Stack ids are lower-case ids; labels for the UI are produced by the API (`java → Java`, `javascript → JavaScript / TypeScript (Node, React…)`, `dotnet → .NET / C#`, …).
-`resume-service` owns the file `apps/resume-service/src/taxonomy/tech-roles.json` and serves it; `jd-extractor-agent` and `matching-agent` keep an identical copy (`app/taxonomy/tech_roles.json`); Dev 2 adds a check script that fails when the three differ.
+`resume-service` owns the file `apps/resume-service/src/taxonomy/tech-roles.json` and serves it; `jd-extractor-agent` and `matching-agent` keep an identical copy (`app/taxonomy/tech_roles.json`); `python -m scripts.check_taxonomy` (matching-agent, also run by CI) fails when the three differ.
 
 ### 4.11 Compatibility (target role gate) — used by matching-agent in SQL/code
 ```
@@ -152,7 +144,7 @@ matching-agent reads the stored `RoleScan.inputHash` for `(jobRoleId, resumeId)`
 
 ## 5. HTTP contracts (nginx paths)
 
-### 5.1 auth-service (Dev 1)
+### 5.1 auth-service
 | Method path | Who | Body → response |
 |---|---|---|
 | `GET /auth/registration-mode` | public | → `{ mode, allowedDomains }` |
@@ -167,7 +159,7 @@ matching-agent reads the stored `RoleScan.inputHash` for `(jobRoleId, resumeId)`
 Imported users get a random password and an email job `password-reset` with `invite: true`.
 `POST /internal/profiles` (user-service) receives `{ userId, role, email, name?, companyStatus: "pending"|"approved", academic?: {cgpa, branch, passingYear, backlogs}, academicVerified?: boolean }`.
 
-### 5.2 user-service (Dev 1)
+### 5.2 user-service
 | Method path | Who | Notes |
 |---|---|---|
 | `GET /applicants/me` | APPLICANT | adds `cgpa, branch, passingYear, backlogs, academicVerified`; creates the profile row if missing |
@@ -183,11 +175,11 @@ Imported users get a random password and an email job `password-reset` with `inv
 
 Avatars: when a new avatar replaces an old one, the old Cloudinary file is deleted.
 
-### 5.3 notification-service (Dev 1) — nginx adds `/notifications/` → `:3006`
+### 5.3 notification-service — nginx adds `/notifications/` → `:3006`
 `GET /notifications?limit=20&cursor=<id>&unread=1` → `{ items, nextCursor }` · `GET /notifications/unread-count` → `{ count }` · `PATCH /notifications/:id/read` · `PATCH /notifications/read-all`.
 `Notification` = `{ id, type, title, body, data, readAt, createdAt }`; any role; own rows only.
 
-### 5.4 resume-service (Dev 2) — nginx `/resumes/`
+### 5.4 resume-service — nginx `/resumes/`
 | Method path | Who | Behaviour |
 |---|---|---|
 | `GET /resumes/target-roles` | any authenticated role | → `{ "tracks": [ { "id", "label", "stacks": [ { "id", "label" } ] } ] }`: the taxonomy of §4.10 with a label for every stack (also used by the company role form). Track `other` has `stacks: []` |
@@ -204,13 +196,13 @@ Avatars: when a new avatar replaces an old one, the old Cloudinary file is delet
 - *Delete endpoint* uses the same removal routine. Cloudinary calls use the correct `resource_type` (raw/image) and `invalidate: true`.
 - "Approved match uses it" = `matches_service.Match` with that `resumeId` and `applicantStatus = 'approved'` (read-only SQL).
 
-### 5.5 job-service (Dev 3)
+### 5.5 job-service
 - `POST /jobs/upload`, `POST /jobs/:id/roles`: **403** `{message: "Company is not approved yet"}` unless `GET user-service /internal/companies/:id/status` says `approved` (cache 60 s; fail closed with a clear 503).
 - Role DTOs accept every requirement key of §4.1 (including `track`, `stacks` validated against the taxonomy ids).
 - `GET /jobs/mine` items add `approvalStatus`.
 - If `jobApprovalRequired` (from `GET auth-service /internal/settings`, cache 60 s) is true a new posting is `pending` and `jd.uploaded` is not published until approved. `GET /jobs/admin/pending` (ADMIN), `PATCH /jobs/admin/:id/approval` (ADMIN) `{ approved, note? }` → on approve publishes `jd.uploaded`; always publishes `job.approval.changed`.
 
-### 5.6 matching-results-service (Dev 3)
+### 5.6 matching-results-service
 `PATCH /matches/:id/decision` (COMPANY; approved candidates of own roles only):
 ```json
 { "decision": "shortlisted",
@@ -231,7 +223,7 @@ Avatars: when a new avatar replaces an old one, the old Cloudinary file is delet
 3. else keep the existing row.
 On `resume.superseded` / `resume.deleted`: delete the **non-approved** `Match` rows and **all** `RoleScan` rows of that `resumeId`.
 
-### 5.7 chatbot-agent (Dev 3) — internal `POST /chat`; applicant context uses the **match's resume** (`Match.resumeId`), company context per Spec §9.7.
+### 5.7 chatbot-agent — internal `POST /chat`; applicant context uses the **match's resume** (`Match.resumeId`), company context per Spec §9.7.
 
 ## 6. Event contracts
 
@@ -256,7 +248,7 @@ On `resume.superseded` / `resume.deleted`: delete the **non-approved** `Match` r
 
 Unchanged streams are in Spec §7. matching-agent consumes `resume.confirmed, resume.updated, profile.updated, jd.extracted, job.role.deleted, resume.deleted` (**not** `resume.parsed`). The websocket gateway routes by `data.applicantId \|\| data.companyId \|\| data.userId`.
 
-## 7. Notification policy (implemented by notification-service, Dev 1)
+## 7. Notification policy (implemented by notification-service)
 
 | Event | Recipient | In-app type | Email |
 |---|---|---|---|
@@ -279,14 +271,14 @@ matching-results-service enqueues **no** emails. The only producer of `email-que
 ## 8. Efficient matching — rules every matching change must respect
 1. **Gate first.** Candidate selection filters by compatibility (§4.11) and by active resumes / non-stopped roles **in SQL, before** vector search, so top-K is chosen among compatible items only.
 2. **Best first, stop early.** Vector search (pgvector, HNSW index) returns candidates ordered by similarity; score them in batches (default 25); stop when two consecutive batches yield no eligible candidate, or when `MAX_ELIGIBLE_PER_ROLE` (default 200) eligible were found, or at `TOP_K_*`.
-3. **Cheap prefilter before expensive scoring:** skip a pair only if exact (alias-normalised) required-skill coverage is 0 **and** profile cosine similarity is below `PREFILTER_MIN_COSINE`; Dev 2 must prove on the gold set that recall does not drop (> 1 point) before enabling it.
+3. **Cheap prefilter before expensive scoring:** skip a pair only if exact (alias-normalised) required-skill coverage is 0 **and** profile cosine similarity is below `PREFILTER_MIN_COSINE`; enable it only after the gold-set evaluation shows that recall does not drop (> 1 point).
 4. **Skip unchanged pairs** with `inputHash` (§4.12).
 5. **Cache** the embedded "resume side" per `(resumeId, content hash)` and the "role side" per `(roleId, content hash)` in an in-process LRU (default 2000 entries).
 6. **Best resume per (applicant, role)**: within one run, publish only the best-scoring resume per applicant and role; results-service applies the replacement rule (§5.6).
 7. Log per run: retrieved, gated out, prefiltered, skipped by hash, scored, eligible, milliseconds; expose them in `GET /stats` of matching-agent.
 Trigger rules: `resume.confirmed/updated` → that resume vs compatible roles; `jd.extracted` → compatible active resumes vs the new/edited role; `profile.updated` → that applicant's active resumes vs roles with academic rules; `resume.deleted` → the applicant's remaining active resumes vs the roles the deleted resume had been scanned against.
 
-## 9. Integration checkpoints (Dev 4 runs them when branches are merged; automated in `e2e/`)
+## 9. Integration checkpoints (automated in `e2e/`)
 1. Open mode, `companyApprovalRequired = true`: company signs up → pending → cannot upload → admin approves → can upload. Switch the setting off → a new company is active immediately.
 2. College mode (`invite_only`): signup returns 403; admin imports a CSV → user sets a password → logs in; academic fields locked; imported company active at once.
 3. Upload a resume with a target role → parsed, **no match yet** → confirm → matches appear. Role with `minCgpa` and unknown CGPA → eligible with an "unverified" flag.
@@ -300,20 +292,3 @@ Trigger rules: `resume.confirmed/updated` → that resume vs compatible roles; `
 11. Re-sending the same event or touching an unchanged resume does not re-score pairs (check matching-agent `/stats`: skipped-by-hash > 0).
 12. Admin health page shows stream lengths and dead-letter counts; audit log shows approvals.
 13. Fresh database: `pnpm db:reset:all` then `pnpm seed` → admin can log in with the env credentials.
-
-## 10. Docker — LAST PHASE (start only after everything above is merged and the checkpoints pass)
-Goal: the whole stack starts with one command locally and in CI. (Hosting/deployment is not part of this phase.)
-- **Every owner** adds inside their own app folders: `Dockerfile` and `.dockerignore`.
-  - NestJS apps: multi-stage build with pnpm (`pnpm install --frozen-lockfile`, `prisma generate`, `nest build`), run `node dist/main`, non-root user, `HEALTHCHECK` on `GET /health`, entrypoint applies the app's schema (same method as local) before start.
-  - Python agents: slim image, `pip install -r requirements.txt`, `uvicorn app.main:app --host 0.0.0.0 --port 8000`, `HEALTHCHECK` on `/health`. `resume-parser-agent` and `jd-extractor-agent` install Tesseract; the parser also LibreOffice. `matching-agent` downloads the embedding model at build time and mounts `app/artifacts/` read-only.
-  - `apps/web`: multi-stage `next build`, `next start`.
-- **Dev 1 (`infra/nginx`):** `nginx.docker.conf` with compose service names (e.g. `proxy_pass http://auth-service:3001;`), `/internal/` → 404, `/socket.io/` upgrade, `/notifications/`, and `/` → `web:3000` so the browser has one origin.
-- **Dev 4:** `docker-compose.yml` + `.env.compose.example`: `postgres` (pgvector image), `redis`, 8 Nest apps, 5 agents, `web`, `nginx`; one internal network, **only nginx publishes a port (80)**; `depends_on` with health conditions; shared `JWT_SECRET`, `INTERNAL_API_KEY`, `DATABASE_URL`, `REDIS_URL`; `CHATBOT_AGENT_URL=http://chatbot-agent:8000`; `SEED_ADMIN_ON_BOOT=true`; Gmail transport with `EMAIL_DEV_REDIRECT_TO` for local; profile `e2e` runs `e2e/` in CI; README "Run with Docker".
-- Acceptance: `docker compose up --build` on a clean machine → admin logs in, an applicant registers, uploads, confirms and gets a match; the e2e suite passes inside compose.
-
-## 11. Ops checklist (not code; one person ticks it before real users)
-- Resend: verify your own sending domain (SPF/DKIM) and set `EMAIL_FROM`; the test sender works only for testing.
-- Postgres/Supabase: `CREATE EXTENSION vector`; all schemas present.
-- Cloudinary folders and private delivery settings; Groq key and plan limits (many students uploading at once will hit free-tier limits — decide when deployment is planned).
-- Secrets only in env files; `secret-scan` workflow stays green.
-- Admin credentials come from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (seed script); change the password after first login.

@@ -11,7 +11,6 @@ Copy `.env.example` to `.env.local`.
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | yes | `http://localhost` | nginx base URL for all REST calls |
 | `NEXT_PUBLIC_WS_URL` | yes | `http://localhost:3007` | socket.io server (gateway directly, or the nginx URL) |
-| `NEXT_PUBLIC_USE_MOCKS` | no | `false` | `true` = fake responses for endpoints whose backend is not merged yet |
 
 ## Run
 
@@ -44,21 +43,3 @@ pnpm --filter web lint
 | `types/` | shared TypeScript types (match the contracts in `00_TEAM_PLAN_AND_CONTRACTS.md`) |
 
 Errors from the API are Nest JSON (`{ statusCode, message, error }`); the web shows `message` (`lib/errors.ts`).
-
-## Mocks (temporary)
-
-With `NEXT_PUBLIC_USE_MOCKS=true`, `lib/mocks` answers the endpoints whose backend is not merged yet; every other call goes to the real backend.
-The mocks are removed once all backends are merged (task 4.12).
-
-Switch scenarios in the browser console, then refresh:
-
-| Key (localStorage) | Values / use |
-|---|---|
-| `mock-reg-mode` | `open`, `invite_only`, `domain` |
-| `mock-company-status` | `pending`, `approved`, `rejected` |
-| `mock-job-approval` | `pending`, `approved`, `rejected` (newest job posting) |
-| `mock-health` | `ok`, `dead` (admin health page) |
-| `mock-admin-data` | `off` = admin pages use the real backend |
-| `mock-resumes`, `mock-matches`, `mock-candidates`, `mock-admin-users`, `mock-admin-settings`, `mock-imported-emails`, `mock-academic` | `localStorage.removeItem(...)` resets that fake data |
-
-`window.mockNotify('shortlisted')` fakes a live notification (also `prep_ready`, `rejected`, `match_eligible`, `candidate_ready`).

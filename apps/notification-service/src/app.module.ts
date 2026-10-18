@@ -7,6 +7,7 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queue/queue.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { QueueModule } from './queue/queue.module';
     NotificationsModule,
     QueueModule,
   ],
+  controllers: [HealthController],
   providers: [EmailService, EmailWorker],
 })
 export class AppModule {}

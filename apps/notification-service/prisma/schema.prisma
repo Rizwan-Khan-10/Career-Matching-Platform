@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["notifications_service"]
+}
+
+// Contract §4.8. Retention 90 days (expiresAt); the clean-up job comes in task 1.8.
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      Json      @default("{}")
+  dedupeKey String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+
+  // The same event twice = one row. Rows without a dedupeKey are never "duplicates" (NULLs are distinct).
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([expiresAt])
+  @@schema("notifications_service")
+}

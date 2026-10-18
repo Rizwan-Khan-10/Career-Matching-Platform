@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
+    "rootDir": "./",
     "isolatedModules": true,
     "declaration": true,
     "removeComments": true,
@@ -12,8 +13,7 @@
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
     "types": [
-      "node",
-      "jest"
+      "node"
     ],
     "sourceMap": true,
     "outDir": "./dist",

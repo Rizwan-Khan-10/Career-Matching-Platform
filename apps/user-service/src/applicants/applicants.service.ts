@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { EventPublisher } from '../events/event-publisher.service';
 import { UpdateApplicantDto } from './dto/update-applicant.dto';
+
+const ACADEMIC_FIELDS = ['cgpa', 'branch', 'passingYear', 'backlogs'] as const;
 
 @Injectable()
 export class ApplicantsService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private events: EventPublisher,
   ) { }
 
   async createOrGet(userId: string) {
@@ -18,14 +22,25 @@ export class ApplicantsService {
     });
   }
 
+  /** Lazy create: the profile row is made on first read if it is missing (contract §5.2). */
   async getByUserId(userId: string) {
-    const profile = await this.prisma.applicantProfile.findUnique({ where: { userId } });
-    if (!profile) throw new NotFoundException('Profile not found');
-    return profile;
+    return this.createOrGet(userId);
   }
 
   async update(userId: string, dto: UpdateApplicantDto) {
-    return this.prisma.applicantProfile.update({ where: { userId }, data: dto });
+    const profile = await this.createOrGet(userId);
+    const { cgpa, branch, passingYear, backlogs, ...general } = dto;
+    const academic = { cgpa, branch, passingYear, backlogs };
+
+    // Verified (admin CSV) academic data is locked: those fields are silently ignored.
+    const data = profile.academicVerified ? general : { ...general, ...academic };
+    const academicChanged =
+      !profile.academicVerified &&
+      ACADEMIC_FIELDS.some((f) => academic[f] !== undefined && academic[f] !== (profile[f] ?? null));
+
+    const updated = await this.prisma.applicantProfile.update({ where: { userId }, data });
+    if (academicChanged) await this.events.publish('profile.updated', { applicantId: userId });
+    return updated;
   }
 
   async updateAvatar(userId: string, file: Express.Multer.File) {

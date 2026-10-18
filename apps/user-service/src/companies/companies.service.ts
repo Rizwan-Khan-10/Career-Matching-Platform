@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
@@ -18,13 +18,13 @@ export class CompaniesService {
     });
   }
 
+  /** Lazy create on first read (contract §5.2). The response includes `status`. */
   async getByUserId(userId: string) {
-    const profile = await this.prisma.companyProfile.findUnique({ where: { userId } });
-    if (!profile) throw new NotFoundException('Profile not found');
-    return profile;
+    return this.createOrGet(userId);
   }
 
   async update(userId: string, dto: UpdateCompanyDto) {
+    await this.createOrGet(userId);
     return this.prisma.companyProfile.update({ where: { userId }, data: dto });
   }
 

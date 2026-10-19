@@ -190,6 +190,7 @@ services:
       <<: [*agent-env, *cloudinary]
       ENABLE_RESUME_PARSER_CONSUMER: "true"
       ENABLE_RESUME_PDF_CONSUMER: "true"
+      GROQ_API_KEY: ${RESUME_PARSER_GROQ_API_KEY:-${GROQ_API_KEY}}
     depends_on:
       postgres: *healthy
       redis: *healthy
@@ -201,6 +202,7 @@ services:
     environment:
       <<: *agent-env
       ENABLE_JD_EXTRACTOR_CONSUMER: "true"
+      GROQ_API_KEY: ${JD_EXTRACTOR_GROQ_API_KEY:-${GROQ_API_KEY}}
     depends_on:
       postgres: *healthy
       redis: *healthy
@@ -232,6 +234,7 @@ services:
     environment:
       <<: *agent-env
       ENABLE_FEEDBACK_CONSUMER: "true"
+      GROQ_API_KEY: ${FEEDBACK_GROQ_API_KEY:-${GROQ_API_KEY}}
     depends_on:
       postgres: *healthy
       redis: *healthy
@@ -242,6 +245,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *agent-env
+      GROQ_API_KEY: ${CHATBOT_GROQ_API_KEY:-${GROQ_API_KEY}}
     depends_on:
       postgres: *healthy
       redis: *healthy

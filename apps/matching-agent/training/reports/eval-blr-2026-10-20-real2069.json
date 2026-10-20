@@ -1,0 +1,270 @@
+{
+  "scorer": "blr-2026-10-20-real2069",
+  "embedder": "all-MiniLM-L6-v2",
+  "threshold": 0.4,
+  "beta": 0.5,
+  "date": "2026-10-20",
+  "test_frac": 0.2,
+  "seed": 7,
+  "config": {
+    "MIN_REQUIRED_SKILL_COVERAGE": 0.35,
+    "EXPERIENCE_GATE_RATIO": 0.5,
+    "EXPERIENCE_GATE_MIN_GAP_YEARS": 1.0,
+    "FRESHER_PROJECT_WEIGHT": 0.6,
+    "FRESHER_INTERNSHIP_WEIGHT": 0.3,
+    "ELIGIBILITY_THRESHOLD": 0.4,
+    "MIN_PUBLISH_SCORE": 0.2
+  },
+  "held_out": {
+    "n": 86,
+    "eligible": 36,
+    "roles": 22,
+    "methods": {
+      "A cosine-only": {
+        "n": 86,
+        "accuracy": 0.4651,
+        "precision": 0.4359,
+        "recall": 0.9444,
+        "f1": 0.5965,
+        "tp": 34,
+        "fp": 44,
+        "fn": 2,
+        "tn": 6,
+        "roc_auc": 0.5617,
+        "ranking": {
+          "k=3": {
+            "roles": 14,
+            "precision@3": 0.5952,
+            "ndcg@3": 0.7522,
+            "mrr": 0.8095
+          },
+          "k=5": {
+            "roles": 14,
+            "precision@5": 0.569,
+            "ndcg@5": 0.7729,
+            "mrr": 0.8095
+          }
+        }
+      },
+      "B keyword overlap": {
+        "n": 86,
+        "accuracy": 0.5,
+        "precision": 0.434,
+        "recall": 0.6389,
+        "f1": 0.5169,
+        "tp": 23,
+        "fp": 30,
+        "fn": 13,
+        "tn": 20,
+        "roc_auc": 0.5597,
+        "ranking": {
+          "k=3": {
+            "roles": 14,
+            "precision@3": 0.4762,
+            "ndcg@3": 0.5838,
+            "mrr": 0.7024
+          },
+          "k=5": {
+            "roles": 14,
+            "precision@5": 0.5405,
+            "ndcg@5": 0.6624,
+            "mrr": 0.7024
+          }
+        }
+      },
+      "ours: model": {
+        "n": 86,
+        "accuracy": 0.6395,
+        "precision": 0.5556,
+        "recall": 0.6944,
+        "f1": 0.6173,
+        "tp": 25,
+        "fp": 20,
+        "fn": 11,
+        "tn": 30,
+        "roc_auc": 0.6667,
+        "ranking": {
+          "k=3": {
+            "roles": 14,
+            "precision@3": 0.5714,
+            "ndcg@3": 0.7575,
+            "mrr": 0.8512
+          },
+          "k=5": {
+            "roles": 14,
+            "precision@5": 0.6262,
+            "ndcg@5": 0.8427,
+            "mrr": 0.8512
+          }
+        }
+      },
+      "ours: full pipeline": {
+        "n": 86,
+        "accuracy": 0.6163,
+        "precision": 0.5882,
+        "recall": 0.2778,
+        "f1": 0.3774,
+        "tp": 10,
+        "fp": 7,
+        "fn": 26,
+        "tn": 43,
+        "roc_auc": 0.6667,
+        "ranking": {
+          "k=3": {
+            "roles": 14,
+            "precision@3": 0.5714,
+            "ndcg@3": 0.7575,
+            "mrr": 0.8512
+          },
+          "k=5": {
+            "roles": 14,
+            "precision@5": 0.6262,
+            "ndcg@5": 0.8427,
+            "mrr": 0.8512
+          }
+        }
+      }
+    },
+    "ece": 0.0921,
+    "by_kind": {
+      "hf_fit": {
+        "n": 86,
+        "accuracy": 0.6163,
+        "predicted_eligible": 0.198,
+        "truly_eligible": 0.419
+      }
+    },
+    "gold_rows_dropped": 0
+  },
+  "gold": {
+    "n": 200,
+    "eligible": 55,
+    "roles": 20,
+    "methods": {
+      "A cosine-only": {
+        "n": 200,
+        "accuracy": 0.28,
+        "precision": 0.2764,
+        "recall": 1.0,
+        "f1": 0.4331,
+        "tp": 55,
+        "fp": 144,
+        "fn": 0,
+        "tn": 1,
+        "roc_auc": 0.9419,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.7667,
+            "ndcg@3": 0.9413,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.53,
+            "ndcg@5": 0.969,
+            "mrr": 1.0
+          }
+        }
+      },
+      "B keyword overlap": {
+        "n": 200,
+        "accuracy": 0.42,
+        "precision": 0.3216,
+        "recall": 1.0,
+        "f1": 0.4867,
+        "tp": 55,
+        "fp": 116,
+        "fn": 0,
+        "tn": 29,
+        "roc_auc": 0.9606,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.8333,
+            "ndcg@3": 0.9883,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.55,
+            "ndcg@5": 0.9965,
+            "mrr": 1.0
+          }
+        }
+      },
+      "ours: model": {
+        "n": 200,
+        "accuracy": 0.875,
+        "precision": 0.8125,
+        "recall": 0.7091,
+        "f1": 0.7573,
+        "tp": 39,
+        "fp": 9,
+        "fn": 16,
+        "tn": 136,
+        "roc_auc": 0.9011,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.6833,
+            "ndcg@3": 0.8522,
+            "mrr": 0.975
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.47,
+            "ndcg@5": 0.8839,
+            "mrr": 0.975
+          }
+        }
+      },
+      "ours: full pipeline": {
+        "n": 200,
+        "accuracy": 0.88,
+        "precision": 0.8298,
+        "recall": 0.7091,
+        "f1": 0.7647,
+        "tp": 39,
+        "fp": 8,
+        "fn": 16,
+        "tn": 137,
+        "roc_auc": 0.9011,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.6833,
+            "ndcg@3": 0.8522,
+            "mrr": 0.975
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.47,
+            "ndcg@5": 0.8839,
+            "mrr": 0.975
+          }
+        }
+      }
+    },
+    "ece": 0.198,
+    "by_kind": {
+      "gold-experienced": {
+        "n": 100,
+        "accuracy": 0.94,
+        "predicted_eligible": 0.21,
+        "truly_eligible": 0.23
+      },
+      "gold-fresher": {
+        "n": 100,
+        "accuracy": 0.82,
+        "predicted_eligible": 0.26,
+        "truly_eligible": 0.32
+      }
+    }
+  },
+  "baseline_source": "chosen on the train split",
+  "baseline_thresholds": {
+    "A": 0.4,
+    "B": 0.09
+  }
+}

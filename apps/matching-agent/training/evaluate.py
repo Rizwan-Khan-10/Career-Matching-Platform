@@ -22,6 +22,7 @@ import json
 import os
 import numpy as np
 
+from app.core import config
 from app.core.embeddings import model_name
 from app.services import scorer
 from app.services.features import FEATURE_NAMES
@@ -114,7 +115,11 @@ def main():
     assert_fair_features(FEATURE_NAMES)
     print(f"embedder={model_name()} scorer={scorer.model_version()} threshold={scorer.threshold()}")
     report = {"scorer": scorer.model_version(), "embedder": model_name(), "threshold": scorer.threshold(), "beta": a.beta,
-              "date": dt.date.today().isoformat(), "test_frac": a.test_frac, "seed": a.seed}
+              "date": dt.date.today().isoformat(), "test_frac": a.test_frac, "seed": a.seed,
+              # the serving settings this evaluation ran with (env vars count): training/model_info.py writes them into MODEL_INFO.md
+              "config": {n: getattr(config, n) for n in ("MIN_REQUIRED_SKILL_COVERAGE", "EXPERIENCE_GATE_RATIO", "EXPERIENCE_GATE_MIN_GAP_YEARS",
+                                                          "FRESHER_PROJECT_WEIGHT", "FRESHER_INTERNSHIP_WEIGHT", "ELIGIBILITY_THRESHOLD",
+                                                          "MIN_PUBLISH_SCORE")}}
 
     thr_a = thr_b = None
     held = None

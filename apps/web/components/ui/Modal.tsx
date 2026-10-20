@@ -50,7 +50,7 @@ export function Modal({
                         onClick={(e) => e.stopPropagation()}
                         className="bg-paper-raised border border-hairline rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto"
                     >
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-hairline sticky top-0 bg-paper-raised">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-hairline sticky top-0 bg-paper-raised z-999">
                             <h2 className="font-heading text-lg text-ink">{title}</h2>
                             <button
                                 type="button"

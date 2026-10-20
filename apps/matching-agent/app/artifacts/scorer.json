@@ -1,5 +1,5 @@
 {
-  "version": "lr-2026-10-07-n6000",
+  "version": "blr-2026-10-19-real710",
   "embedding_model": "all-MiniLM-L6-v2",
   "features": [
     "req_cov",
@@ -15,42 +15,67 @@
     "exp_score",
     "exp_over",
     "edu_score",
-    "has_req_skills"
+    "has_req_skills",
+    "is_fresher_role",
+    "project_evidence",
+    "has_internship"
   ],
   "weights": {
-    "req_cov": 6.03764,
-    "req_exact": -1.5862,
-    "req_sem_mean": 3.78005,
-    "req_sem_min": 0.93179,
-    "req_hi_frac": -1.18738,
-    "req_mid_frac": -0.0624,
-    "req_ev_mean": 0.86603,
-    "pref_cov": 0.13838,
-    "global_sim": -2.46915,
-    "title_sim": 0.20444,
-    "exp_score": 6.73404,
-    "exp_over": -0.25267,
-    "edu_score": 11.81729,
-    "has_req_skills": -10.20927
+    "req_cov": 0.10164,
+    "req_exact": 0.0,
+    "req_sem_mean": 0.0,
+    "req_sem_min": 0.0,
+    "req_hi_frac": 0.41438,
+    "req_mid_frac": 0.6562,
+    "req_ev_mean": 0.0,
+    "pref_cov": 0.0,
+    "global_sim": 0.39938,
+    "title_sim": 0.42347,
+    "exp_score": 0.0,
+    "exp_over": 1.02389,
+    "edu_score": 0.0,
+    "has_req_skills": 0.0,
+    "is_fresher_role": 0.2646,
+    "project_evidence": 1.90482,
+    "has_internship": 0.99692
   },
-  "bias": -10.94801,
-  "threshold": 0.5,
+  "bias": -1.88035,
+  "threshold": 0.41,
   "metrics": {
-    "held_out": {
-      "n": 1200,
-      "accuracy": 0.8575,
-      "precision": 0.8035,
-      "recall": 0.9106,
-      "f1": 0.8537,
-      "tp": 499,
-      "fp": 122,
-      "fn": 49,
-      "tn": 530,
-      "roc_auc": 0.9337
+    "held_out_real": {
+      "n": 32,
+      "accuracy": 0.5312,
+      "precision": 0.6667,
+      "recall": 0.5,
+      "f1": 0.5714,
+      "tp": 10,
+      "fp": 5,
+      "fn": 10,
+      "tn": 7,
+      "roc_auc": 0.5375,
+      "ece": 0.3123,
+      "ranking": {
+        "roles": 8,
+        "precision@5": 0.7688,
+        "ndcg@5": 0.8242,
+        "mrr": 0.7917
+      }
     },
-    "cv_f_beta": 0.8544,
-    "beta": 1.0,
-    "C": 30.0,
-    "n_train_pairs": 6000
+    "cv_f_beta": 0.5125,
+    "beta": 0.5,
+    "C": 0.3,
+    "n_real_pairs": 710,
+    "n_recruiter_pairs": 0,
+    "split": {
+      "mode": "role+resume disjoint",
+      "test_frac": 0.2,
+      "seed": 7,
+      "train": 460,
+      "held_out": 32,
+      "unused": 218
+    },
+    "gold_rows_dropped_from_training": 0,
+    "data_fingerprint": "c48f36a9bcb1",
+    "fairness": "no name/gender/photo/institution features; institution stripped from education"
   }
 }

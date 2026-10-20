@@ -1,0 +1,261 @@
+{
+  "scorer": "blr-2026-10-19-real710",
+  "embedder": "all-MiniLM-L6-v2",
+  "threshold": 0.41,
+  "beta": 0.5,
+  "date": "2026-10-19",
+  "test_frac": 0.2,
+  "seed": 7,
+  "held_out": {
+    "n": 32,
+    "eligible": 20,
+    "roles": 14,
+    "methods": {
+      "A cosine-only": {
+        "n": 32,
+        "accuracy": 0.625,
+        "precision": 0.6538,
+        "recall": 0.85,
+        "f1": 0.7391,
+        "tp": 17,
+        "fp": 9,
+        "fn": 3,
+        "tn": 3,
+        "roc_auc": 0.5792,
+        "ranking": {
+          "k=3": {
+            "roles": 8,
+            "precision@3": 0.75,
+            "ndcg@3": 0.8289,
+            "mrr": 0.875
+          },
+          "k=5": {
+            "roles": 8,
+            "precision@5": 0.7688,
+            "ndcg@5": 0.8668,
+            "mrr": 0.875
+          }
+        }
+      },
+      "B keyword overlap": {
+        "n": 32,
+        "accuracy": 0.5938,
+        "precision": 0.64,
+        "recall": 0.8,
+        "f1": 0.7111,
+        "tp": 16,
+        "fp": 9,
+        "fn": 4,
+        "tn": 3,
+        "roc_auc": 0.5521,
+        "ranking": {
+          "k=3": {
+            "roles": 8,
+            "precision@3": 0.75,
+            "ndcg@3": 0.7905,
+            "mrr": 0.8125
+          },
+          "k=5": {
+            "roles": 8,
+            "precision@5": 0.7688,
+            "ndcg@5": 0.8285,
+            "mrr": 0.8125
+          }
+        }
+      },
+      "ours: model": {
+        "n": 32,
+        "accuracy": 0.5938,
+        "precision": 0.6842,
+        "recall": 0.65,
+        "f1": 0.6667,
+        "tp": 13,
+        "fp": 6,
+        "fn": 7,
+        "tn": 6,
+        "roc_auc": 0.5458,
+        "ranking": {
+          "k=3": {
+            "roles": 8,
+            "precision@3": 0.75,
+            "ndcg@3": 0.7829,
+            "mrr": 0.7917
+          },
+          "k=5": {
+            "roles": 8,
+            "precision@5": 0.7688,
+            "ndcg@5": 0.8242,
+            "mrr": 0.7917
+          }
+        }
+      },
+      "ours: full pipeline": {
+        "n": 32,
+        "accuracy": 0.4688,
+        "precision": 0.6667,
+        "recall": 0.3,
+        "f1": 0.4138,
+        "tp": 6,
+        "fp": 3,
+        "fn": 14,
+        "tn": 9,
+        "roc_auc": 0.5458,
+        "ranking": {
+          "k=3": {
+            "roles": 8,
+            "precision@3": 0.75,
+            "ndcg@3": 0.7829,
+            "mrr": 0.7917
+          },
+          "k=5": {
+            "roles": 8,
+            "precision@5": 0.7688,
+            "ndcg@5": 0.8242,
+            "mrr": 0.7917
+          }
+        }
+      }
+    },
+    "ece": 0.2186,
+    "by_kind": {
+      "hf_fit": {
+        "n": 32,
+        "accuracy": 0.4688,
+        "predicted_eligible": 0.281,
+        "truly_eligible": 0.625
+      }
+    },
+    "gold_rows_dropped": 0
+  },
+  "gold": {
+    "n": 200,
+    "eligible": 55,
+    "roles": 20,
+    "methods": {
+      "A cosine-only": {
+        "n": 200,
+        "accuracy": 0.305,
+        "precision": 0.2835,
+        "recall": 1.0,
+        "f1": 0.4418,
+        "tp": 55,
+        "fp": 139,
+        "fn": 0,
+        "tn": 6,
+        "roc_auc": 0.9419,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.7667,
+            "ndcg@3": 0.9413,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.53,
+            "ndcg@5": 0.969,
+            "mrr": 1.0
+          }
+        }
+      },
+      "B keyword overlap": {
+        "n": 200,
+        "accuracy": 0.42,
+        "precision": 0.3216,
+        "recall": 1.0,
+        "f1": 0.4867,
+        "tp": 55,
+        "fp": 116,
+        "fn": 0,
+        "tn": 29,
+        "roc_auc": 0.9606,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.8333,
+            "ndcg@3": 0.9883,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.55,
+            "ndcg@5": 0.9965,
+            "mrr": 1.0
+          }
+        }
+      },
+      "ours: model": {
+        "n": 200,
+        "accuracy": 0.77,
+        "precision": 0.5455,
+        "recall": 0.9818,
+        "f1": 0.7013,
+        "tp": 54,
+        "fp": 45,
+        "fn": 1,
+        "tn": 100,
+        "roc_auc": 0.886,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.7,
+            "ndcg@3": 0.8807,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.49,
+            "ndcg@5": 0.9194,
+            "mrr": 1.0
+          }
+        }
+      },
+      "ours: full pipeline": {
+        "n": 200,
+        "accuracy": 0.865,
+        "precision": 0.675,
+        "recall": 0.9818,
+        "f1": 0.8,
+        "tp": 54,
+        "fp": 26,
+        "fn": 1,
+        "tn": 119,
+        "roc_auc": 0.886,
+        "ranking": {
+          "k=3": {
+            "roles": 20,
+            "precision@3": 0.7,
+            "ndcg@3": 0.8807,
+            "mrr": 1.0
+          },
+          "k=5": {
+            "roles": 20,
+            "precision@5": 0.49,
+            "ndcg@5": 0.9194,
+            "mrr": 1.0
+          }
+        }
+      }
+    },
+    "ece": 0.1914,
+    "by_kind": {
+      "gold-experienced": {
+        "n": 100,
+        "accuracy": 0.97,
+        "predicted_eligible": 0.26,
+        "truly_eligible": 0.23
+      },
+      "gold-fresher": {
+        "n": 100,
+        "accuracy": 0.76,
+        "predicted_eligible": 0.54,
+        "truly_eligible": 0.32
+      }
+    }
+  },
+  "baseline_source": "chosen on the train split",
+  "baseline_thresholds": {
+    "A": 0.44,
+    "B": 0.09
+  }
+}

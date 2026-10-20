@@ -30,6 +30,7 @@ Every retrain adds a row (`python -m training.update_model_card --note "..."` af
 | version | date | embedder | threshold | real pairs | held-out AUC / NDCG@5 | gold P / R / AUC | gold NDCG@3 / MRR | notes |
 |---|---|---|---|---|---|---|---|---|
 | lr-2026-10-07-n6000 | 2026-10-07 | all-MiniLM-L6-v2 | 0.5 | 0 | 0.9337 / - | - / - / - | - / - | retired bootstrap model: 6000 synthetic pairs, held-out numbers are on synthetic data and not comparable; had negative weights |
+| blr-2026-10-19-real710 | 2026-10-19 | all-MiniLM-L6-v2 | 0.41 | 710 | 0.5458 / 0.8242 | 0.675 / 0.9818 / 0.886 | 0.8807 / 1.0 | real-data v1 |
 <!-- versions:end -->
 
 ## Known weaknesses

@@ -6,11 +6,13 @@ resume-parser-agent / jd-extractor-agent produce in production (same prompts), s
 the live agent will see.
 
     pip install -r requirements-train.txt          # datasets + groq
-    set GROQ_API_KEY=...
+    set GROQ_API_KEYS=key1,key2,key3          # one or more keys, used in this order (PowerShell: $env:GROQ_API_KEYS="key1,key2")
     python -m training.build_real_dataset --out training/data/real_pairs.jsonl
     python -m training.build_real_dataset --max-resumes 300 --max-jds 300      # cheap first try
 
 Every unique resume / JD is parsed ONCE (cached in training/data/.parse_cache, safe to stop and resume).
+With several keys the run switches key by itself on rate limits (see training/llm_client.py); if every key is used up
+it stops cleanly - run the same command later, or add `--cached-only` to build real_pairs.jsonl from what is cached.
 Label mapping: Good Fit -> 1, No Fit -> 0, Potential Fit -> dropped (--potential neg|pos to keep it).
 Rows get `group` = the job (ranking is per job) and `split_group` = the resume (train/test never share a resume).
 
@@ -276,6 +278,7 @@ class DiskCache:
     """
     FAIL_LIMIT = 5          # this many errors in a row = a systematic problem (wrong model, bad key): stop instead of burning 600 calls
     _in_a_row = 0           # shared by the resume and the JD cache
+    cached_only = False     # --cached-only: never call the LLM, documents that are not cached yet are skipped
 
     def __init__(self, path):
         self.path, self.data, self.failed = path, {}, set()
@@ -291,7 +294,7 @@ class DiskCache:
     def get_or_compute(self, key, fn):
         if key in self.data:
             return self.data[key]
-        if key in self.failed:
+        if key in self.failed or DiskCache.cached_only:
             return None
         try:
             v = fn()
@@ -301,7 +304,7 @@ class DiskCache:
             print(f"  parse failed ({key}): {str(exc)[:200]}")
             if DiskCache._in_a_row >= self.FAIL_LIMIT:
                 raise SystemExit(f"\n{self.FAIL_LIMIT} parses failed in a row - stopping. Last error: {str(exc)[:300]}\n"
-                                 "Fix the cause (--model / GROQ_API_KEY / network) and run the same command again: "
+                                 "Fix the cause (--model / GROQ_API_KEYS / network) and run the same command again: "
                                  "everything parsed so far is cached.")
             return None
         DiskCache._in_a_row = 0
@@ -392,11 +395,14 @@ def main():
     ap.add_argument("--max-resumes", type=int)
     ap.add_argument("--max-jds", type=int)
     ap.add_argument("--keep-non-tech", action="store_true", help="do not drop non-technical resumes / jobs")
+    ap.add_argument("--cached-only", action="store_true",
+                    help="no API calls: build the file from already cached parses (uncached documents count as 'unparseable')")
     a = ap.parse_args()
     from training import llm_client     # imported here: needs the groq package, the rest of this module does not
     llm_client.set_model(a.model)
+    DiskCache.cached_only = a.cached_only
     a.cache_dir = a.cache_dir or os.path.join("training", "data", ".parse_cache", re.sub(r"[^A-Za-z0-9._-]+", "_", a.model))
-    print(f"parsing model: {a.model}  cache: {a.cache_dir}")
+    print(f"parsing model: {a.model}  cache: {a.cache_dir}" + ("  (cached only, no API calls)" if a.cached_only else ""))
     rows = convert(_load_hf(), llm_parse_resume, llm_parse_jd, a.cache_dir, a.potential, a.max_resumes, a.max_jds, tech_only=not a.keep_non_tech)
     with open(a.out, "w", encoding="utf-8") as f:
         for r in rows:

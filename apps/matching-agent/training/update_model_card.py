@@ -4,6 +4,8 @@
 
 Reads app/artifacts/scorer.json and training/reports/eval-<version>.json (run `python -m training.evaluate` first) and writes
 one row between the `versions:start/end` markers of the card. Same version twice = row replaced, so it is safe to re-run.
+It then also writes your own notebook training/data/MODEL_INFO.md (training/model_info.py: quality in plain words, data stats,
+weights, settings used); that file is git-ignored.
 """
 import argparse
 import json
@@ -65,6 +67,12 @@ def main():
     with open(CARD, "w", encoding="utf-8") as f:
         f.write(update(text, build_row(sc, report, a.note), sc["version"]))
     print(f"{CARD}: version {sc['version']} recorded")
+    try:
+        from training import model_info
+        out, _ = model_info.write(a.note, a.scorer, a.reports)
+        print(f"{out}: version {sc['version']} recorded")
+    except SystemExit as exc:        # the notebook is a bonus: never fail the card because of it
+        print(f"MODEL_INFO.md not written: {exc}")
 
 
 if __name__ == "__main__":

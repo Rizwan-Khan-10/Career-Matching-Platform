@@ -15,6 +15,8 @@ export const adminSettingsSchema = z
     allowedDomains: z.array(z.string()).max(50, 'Keep it under 50 domains'),
     companyApprovalRequired: z.boolean(),
     jobApprovalRequired: z.boolean(),
+    requireTwoFactorForAdmin: z.boolean(),
+    emailVerificationRequired: z.boolean(),
   })
   .superRefine((value, ctx) => {
     const invalid = value.allowedDomains.filter((d) => !DOMAIN.test(d));

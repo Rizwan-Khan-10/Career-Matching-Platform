@@ -6,6 +6,10 @@ export interface SystemSettings {
   allowedDomains: string[];
   companyApprovalRequired: boolean;
   jobApprovalRequired: boolean;
+  /** When on, an ADMIN must have 2FA: one without it is sent through setup at login. */
+  requireTwoFactorForAdmin: boolean;
+  /** When on, a self-signup must click the link in an e-mail before the first login. */
+  emailVerificationRequired: boolean;
 }
 
 export const DEFAULT_SETTINGS: SystemSettings = {
@@ -13,6 +17,8 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   allowedDomains: [],
   companyApprovalRequired: true,
   jobApprovalRequired: false,
+  requireTwoFactorForAdmin: false,
+  emailVerificationRequired: true,
 };
 
 /** "@College.edu " -> "college.edu" */
@@ -31,9 +37,9 @@ export function normalizeSettings(raw: Record<string, unknown>): SystemSettings 
       : DEFAULT_SETTINGS.registrationMode,
     allowedDomains: Array.isArray(domains)
       ? domains
-          .filter((d): d is string => typeof d === 'string')
-          .map(normalizeDomain)
-          .filter((d) => d.length > 0)
+        .filter((d): d is string => typeof d === 'string')
+        .map(normalizeDomain)
+        .filter((d) => d.length > 0)
       : [],
     companyApprovalRequired:
       typeof raw.companyApprovalRequired === 'boolean'
@@ -43,6 +49,14 @@ export function normalizeSettings(raw: Record<string, unknown>): SystemSettings 
       typeof raw.jobApprovalRequired === 'boolean'
         ? raw.jobApprovalRequired
         : DEFAULT_SETTINGS.jobApprovalRequired,
+    requireTwoFactorForAdmin:
+      typeof raw.requireTwoFactorForAdmin === 'boolean'
+        ? raw.requireTwoFactorForAdmin
+        : DEFAULT_SETTINGS.requireTwoFactorForAdmin,
+    emailVerificationRequired:
+      typeof raw.emailVerificationRequired === 'boolean'
+        ? raw.emailVerificationRequired
+        : DEFAULT_SETTINGS.emailVerificationRequired,
   };
 }
 

@@ -19,13 +19,16 @@ export interface Settings {
   allowedDomains: string[];
   companyApprovalRequired: boolean;
   jobApprovalRequired: boolean;
+  requireTwoFactorForAdmin: boolean;
+  emailVerificationRequired: boolean;
 }
 
-/** What every checkpoint except 1 and 2 expects: open signup, companies active at once, no job approval. */
+/** What every checkpoint except 1 and 2 expects: open signup, companies active at once, no job approval, no e-mail step. */
 export const TEST_DEFAULTS: Partial<Settings> = {
   registrationMode: 'open',
   companyApprovalRequired: false,
   jobApprovalRequired: false,
+  emailVerificationRequired: false,
 };
 
 export async function getSettings(): Promise<Settings> {

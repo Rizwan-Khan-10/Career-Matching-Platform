@@ -8,6 +8,8 @@ export interface AdminSettings {
   allowedDomains: string[];
   companyApprovalRequired: boolean;
   jobApprovalRequired: boolean;
+  requireTwoFactorForAdmin: boolean;
+  emailVerificationRequired: boolean;
 }
 
 // contract 5.1: one element of POST /auth/admin/users/import { users: [...] }

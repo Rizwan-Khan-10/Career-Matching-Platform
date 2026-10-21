@@ -48,4 +48,19 @@ describe('SettingsService.update', () => {
     await expect(service.update({ ...base, registrationMode: 'domain' })).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+    it('saves the newer flags only when they are sent', async () => {
+    const { service, upsert } = build();
+
+    await service.update(base);
+    expect(upsert.mock.calls.map(([a]: any) => a.where.key)).toEqual([
+      'registrationMode', 'allowedDomains', 'companyApprovalRequired', 'jobApprovalRequired',
+    ]);
+
+    upsert.mockClear();
+    await service.update({ ...base, requireTwoFactorForAdmin: true, emailVerificationRequired: false });
+    const keys = upsert.mock.calls.map(([a]: any) => a.where.key);
+    expect(keys).toContain('requireTwoFactorForAdmin');
+    expect(keys).toContain('emailVerificationRequired');
+  });
 });

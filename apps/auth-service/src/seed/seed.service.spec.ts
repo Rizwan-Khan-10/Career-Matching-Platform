@@ -62,10 +62,12 @@ describe('SeedService', () => {
 
     const args = prisma.systemSetting.createMany.mock.calls[0][0];
     expect(args.skipDuplicates).toBe(true);
-    expect(args.data).toHaveLength(4);
+    expect(args.data).toHaveLength(6);
     expect(args.data).toContainEqual({ key: 'registrationMode', value: DEFAULT_SETTINGS.registrationMode });
     expect(args.data).toContainEqual({ key: 'companyApprovalRequired', value: true });
     expect(args.data).toContainEqual({ key: 'jobApprovalRequired', value: false });
+    expect(args.data).toContainEqual({ key: 'requireTwoFactorForAdmin', value: false });
+    expect(args.data).toContainEqual({ key: 'emailVerificationRequired', value: true });
   });
 
   it('fails clearly when ADMIN_EMAIL / ADMIN_PASSWORD are missing and an admin must be created', async () => {

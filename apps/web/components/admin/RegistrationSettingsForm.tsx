@@ -72,8 +72,11 @@ export function RegistrationSettingsForm({
     const domains = useWatch({ control, name: 'allowedDomains' });
     const companyApproval = useWatch({ control, name: 'companyApprovalRequired' });
     const jobApproval = useWatch({ control, name: 'jobApprovalRequired' });
-    const flag = (name: 'companyApprovalRequired' | 'jobApprovalRequired') => (next: boolean) =>
-        setValue(name, next, { shouldDirty: true });
+    const adminTwoFactor = useWatch({ control, name: 'requireTwoFactorForAdmin' });
+    const emailVerification = useWatch({ control, name: 'emailVerificationRequired' });
+    const flag = (
+        name: 'companyApprovalRequired' | 'jobApprovalRequired' | 'requireTwoFactorForAdmin' | 'emailVerificationRequired',
+    ) => (next: boolean) => setValue(name, next, { shouldDirty: true });
 
     const submit = handleSubmit(async (values) => {
         setServerError(null);
@@ -148,6 +151,24 @@ export function RegistrationSettingsForm({
                     text="A new job posting waits for your approval before it is read and matched with applicants."
                     checked={jobApproval}
                     onChange={flag('jobApprovalRequired')}
+                />
+            </section>
+
+            <section className="bg-paper-raised border border-hairline rounded-xl px-4 divide-y divide-hairline">
+                <SwitchRow
+                    title="Require two-factor for admins"
+                    text="Admins without two-factor are asked to set it up before they can log in. Turn on two-factor for your own account first (Security in the top bar), or this cannot be saved."
+                    note="Other admins without two-factor are signed out and must set it up at their next login."
+                    checked={adminTwoFactor}
+                    onChange={flag('requireTwoFactorForAdmin')}
+                />
+                <SwitchRow
+                    title="Verify email on sign-up"
+                    text="People who sign up on their own must click the link we email them before their first login. Accounts you import are already verified."
+                    note={mode === 'invite_only' ? 'Not used in invite-only mode: nobody signs up on their own.' : undefined}
+                    checked={emailVerification}
+                    disabled={mode === 'invite_only'}
+                    onChange={flag('emailVerificationRequired')}
                 />
             </section>
 

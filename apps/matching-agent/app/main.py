@@ -65,7 +65,11 @@ def model_info():
     from app.services import scorer
     from app.core.embeddings import model_name
     m = scorer._load()
-    return {"scorer": m.get("version"), "threshold": scorer.threshold(), "embedder": model_name(), "metrics": m.get("metrics", {})}
+    return {"scorer": m.get("version"), "threshold": scorer.threshold(), "embedder": model_name(), "metrics": m.get("metrics", {}),
+            # serving bars per role level + the review band ("possible match": [reviewLower, threshold))
+            "thresholds": {"experienced": scorer.threshold("experienced"), "fresher": scorer.threshold("fresher")},
+            "reviewLower": {"experienced": scorer.review_lower("experienced"), "fresher": scorer.review_lower("fresher")},
+            "policy": scorer.policy_key()}
 
 
 @app.get("/stats")

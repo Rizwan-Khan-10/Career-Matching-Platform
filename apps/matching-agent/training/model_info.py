@@ -147,7 +147,8 @@ def _knobs(report):
     try:
         from app.core import config as c
         names = ("MIN_REQUIRED_SKILL_COVERAGE", "EXPERIENCE_GATE_RATIO", "EXPERIENCE_GATE_MIN_GAP_YEARS",
-                 "FRESHER_PROJECT_WEIGHT", "FRESHER_INTERNSHIP_WEIGHT", "ELIGIBILITY_THRESHOLD", "MIN_PUBLISH_SCORE")
+                 "FRESHER_PROJECT_WEIGHT", "FRESHER_INTERNSHIP_WEIGHT", "ELIGIBILITY_THRESHOLD",
+                 "FRESHER_ELIGIBILITY_THRESHOLD", "REVIEW_BAND_WIDTH", "OVERQUALIFIED_EXTRA_YEARS", "MIN_PUBLISH_SCORE")
         return {n: getattr(c, n) for n in names}, "read from this shell now (the report did not record them; re-run `training.evaluate` to record)"
     except Exception:       # noqa: BLE001 - info only
         return {}, "not available"

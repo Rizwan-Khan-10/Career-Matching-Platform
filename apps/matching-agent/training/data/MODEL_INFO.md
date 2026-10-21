@@ -6,8 +6,8 @@ How to read it: **gold** = 200 hand-labelled pairs the model never saw, this is 
 <!-- run:blr-2026-10-20-real2069 -->
 ## blr-2026-10-20-real2069
 
-- evaluated: 2026-10-20  |  embedder: `all-MiniLM-L6-v2`  |  threshold: **0.5**
-- note: real2069, serving threshold 0.40 (tuned on gold)
+- evaluated: 2026-10-21  |  embedder: `all-MiniLM-L6-v2`  |  threshold: **0.5**
+- note: real2069, threshold 0.40, review band 0.10, level-aware verdicts
 
 ### What the numbers say
 - On the gold set the full pipeline has precision 0.8298, recall 0.7091, F1 0.7647 (best baseline: B keyword overlap with F1 0.4867).
@@ -87,6 +87,9 @@ Full pipeline by candidate type:
 - FRESHER_PROJECT_WEIGHT = 0.6
 - FRESHER_INTERNSHIP_WEIGHT = 0.3
 - ELIGIBILITY_THRESHOLD = 0.4
+- FRESHER_ELIGIBILITY_THRESHOLD = None
+- REVIEW_BAND_WIDTH = 0.1
+- OVERQUALIFIED_EXTRA_YEARS = 5.0
 - MIN_PUBLISH_SCORE = 0.2
 
 ### Files

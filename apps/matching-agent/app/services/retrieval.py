@@ -47,12 +47,13 @@ def scan_best_first(fetch_page, process_batch, *, top_k: int, batch_size: int | 
 
 
 def best_per_applicant(scored: list) -> list:
-    """One entry per applicant: the best-scoring resume (eligible beats not eligible, then score, then resumeId for stability).
+    """One entry per applicant: the best-scoring resume (eligible beats review beats not eligible, then score, then resumeId for stability).
     Used for what is PUBLISHED as match.computed; every evaluated pair is still reported in match.scanned."""
     best: dict = {}
     for s in scored:
         key = s["cand"]["applicantId"]
-        rank = (bool(s["result"].eligible), float(s["result"].score), s["cand"]["resumeId"])
+        tier = {"eligible": 2, "review": 1}.get(getattr(s["result"], "verdict", None) or ("eligible" if s["result"].eligible else "not_eligible"), 0)
+        rank = (tier, float(s["result"].score), s["cand"]["resumeId"])
         if key not in best or rank > best[key][0]:
             best[key] = (rank, s)
     return [v[1] for v in sorted(best.values(), key=lambda v: v[0], reverse=True)]

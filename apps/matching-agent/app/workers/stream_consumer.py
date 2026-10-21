@@ -29,7 +29,7 @@ log = logging.getLogger("matching.worker")
 def _publish(applicant_id: str, role_id: str, role_title: str, resume_id: str, result):
     evt = MatchComputedEvent(
         applicantId=applicant_id, jobRoleId=role_id, roleTitle=role_title, resumeId=resume_id,
-        score=result.score, eligible=result.eligible, reason=result.reason,
+        score=result.score, eligible=result.eligible, verdict=result.verdict, reason=result.reason,
         matchedSkills=result.matchedSkills, partialSkills=result.partialSkills,
         missingSkills=result.missingSkills, breakdown=result.breakdown, modelVersion=result.modelVersion,
         unverifiedRules=result.unverifiedRules,
@@ -58,6 +58,7 @@ def _match_resume(resume: dict, trigger: str = "resume", force: bool = False, **
     run.add("gatedOut", total - compatible)
     stored = {} if force else load_scan_hashes_for_resume(resume_id)
     model_version = scorer.model_version()
+    policy = scorer.policy_key()
     role_ids = role_filters.get("role_ids") or []
     top_k = max(config.TOP_K_ROLES_PER_RESUME, len(role_ids))
     scored = []
@@ -76,7 +77,7 @@ def _match_resume(resume: dict, trigger: str = "resume", force: bool = False, **
             ruled = rules.has_academic_rules(req)
             acad = academic() if ruled else None
             h = compute_input_hash(resume_id, profile, title, req, model_version,
-                                   academic=rules.academic_hash_part(req, profile, acad))
+                                   academic=rules.academic_hash_part(req, profile, acad), policy=policy)
             prev = stored.get(role_id)
             if prev and prev[0] == h:                       # unchanged pair: no scoring, no event
                 run.add("skippedByHash")
@@ -107,7 +108,7 @@ def _match_resume(resume: dict, trigger: str = "resume", force: bool = False, **
         log.info("resume %s is no longer active, discarding results", resume_id)
     else:
         _publish_scans([scan_entry(s["role"]["jobRoleId"], applicant_id, resume_id, s["result"], s["hash"]) for s in scored])
-        for s in select_for_publish(scored, config.MAX_INELIGIBLE_PER_RESUME):
+        for s in select_for_publish(scored, config.MAX_INELIGIBLE_PER_RESUME, config.MAX_REVIEW_PER_RESUME):
             _publish(applicant_id, s["role"]["jobRoleId"], s["role"]["title"], resume_id, s["result"])
     run.finish()
 
@@ -167,6 +168,7 @@ def _match_role(role: dict):
     run.add("gatedOut", total - compatible)
     stored = load_scan_hashes_for_role(role_id)
     model_version = scorer.model_version()
+    policy = scorer.policy_key()
     scored = []
 
     ruled = rules.has_academic_rules(req)
@@ -178,7 +180,7 @@ def _match_role(role: dict):
         for cand in rows:
             acad = academics.get(cand["applicantId"])
             h = compute_input_hash(cand["resumeId"], cand["parsedData"], title, req, model_version,
-                                   academic=rules.academic_hash_part(req, cand["parsedData"], acad))
+                                   academic=rules.academic_hash_part(req, cand["parsedData"], acad), policy=policy)
             prev = stored.get(cand["resumeId"])
             if prev and prev[0] == h:                       # unchanged pair: no scoring, no event
                 run.add("skippedByHash")
@@ -210,7 +212,7 @@ def _match_role(role: dict):
     else:
         # every evaluated pair is reported; only the best resume per applicant is published as a match
         _publish_scans([scan_entry(role_id, s["cand"]["applicantId"], s["cand"]["resumeId"], s["result"], s["hash"]) for s in scored])
-        for s in select_for_publish(best_per_applicant(scored), config.MAX_INELIGIBLE_PER_ROLE):
+        for s in select_for_publish(best_per_applicant(scored), config.MAX_INELIGIBLE_PER_ROLE, config.MAX_REVIEW_PER_ROLE):
             _publish(s["cand"]["applicantId"], role_id, title, s["cand"]["resumeId"], s["result"])
     run.finish()
 

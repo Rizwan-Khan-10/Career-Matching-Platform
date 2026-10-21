@@ -129,7 +129,7 @@ Rules of the architecture
 ### 5.1 auth-service (:3001) — schema `auth_service`
 Owns identities and tokens.
 - Model `User { id, email (unique), passwordHash (bcrypt), role: ADMIN|COMPANY|APPLICANT }`.
-- Routes (public unless noted): `POST /auth/signup` (self-service roles: APPLICANT, COMPANY), `POST /auth/login`,
+- Routes (public unless noted): `POST /auth/signup` Per-IP limit (SIGNUP_RATE_MAX per hour, default 20) → 429. (self-service roles: APPLICANT, COMPANY), `POST /auth/login`,
   `POST /auth/refresh`, `POST /auth/logout` (JWT), `POST /auth/forgot-password`, `POST /auth/reset-password`.
 - Login protection: 5 failed attempts per email → 5-minute lock (Redis key `login-attempts:<email>`).
 - Refresh token stored in Redis (`refresh:<userId>`, 7 days); reset tokens `reset:<token>` (15 min). A password reset signs out all sessions.

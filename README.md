@@ -15,6 +15,11 @@ An AI-assisted hiring platform for tech roles (fresher and experienced). Applica
 - See only approved candidates, download the resume PDF, shortlist with a form or reject with a reason.
 - AI assistant that explains the dashboard.
 
+**Accounts and login**
+- Two-factor authentication with an authenticator app (Google Authenticator, Authy, Microsoft Authenticator) and one-time recovery codes; admins can reset it for a locked-out user.
+- Optional "Continue with Google" (open registration only: it is switched off automatically in college mode).
+- Login never says whether an email exists; failed logins and sign-ups are rate limited.
+
 **Admins**
 - Registration mode (`open`, `domain`, `invite_only`), company approval and job-posting approval switches.
 - CSV user import with invite emails, user and company management, audit log, system health (streams, dead letters).
@@ -125,7 +130,7 @@ Commit `app/artifacts/scorer.json` and the model card; `training/data/` stays gi
 | Web lint and build | `pnpm --filter web run lint` / `run build` | `ci-web.yml` |
 | Taxonomy copies identical | `python -m scripts.check_taxonomy --root ../..` (inside `apps/matching-agent`) | `ci-taxonomy.yml` |
 | Compose file and images | `docker compose config`, image builds | `ci-compose.yml` |
-| End-to-end (13 checkpoints) | `pnpm e2e` (needs the full stack) | `ci-e2e.yml` |
+| End-to-end (15 checkpoints) | `pnpm e2e` (needs the full stack) | `ci-e2e.yml` |
 | Secrets | gitleaks | `secret-scan.yml` |
 
 See `e2e/README.md` for what the end-to-end suite covers.
@@ -136,6 +141,8 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - Service-to-service calls carry `x-internal-key` (`INTERNAL_API_KEY`); Nginx returns 404 for `/internal/`.
 - Applicants never receive recruiter-only fields (`rejectReason`, `decidedBy`, scoring breakdown); companies only see candidates who approved sharing.
 - Never commit `.env` files; the `Secret Scan` workflow checks every push.
+- 2FA secrets are encrypted at rest (`TWO_FACTOR_ENCRYPTION_KEY`, 32 bytes hex). Back this key up like `JWT_SECRET`: if it is lost, every user with 2FA must be reset by an admin.
+- Google sign-in verifies the ID token on the server (`GOOGLE_CLIENT_ID`); it is available only while registration is `open`.
 
 ## Before going live
 
@@ -146,6 +153,18 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - [ ] Secrets only in env files; admin password changed after first login
 - [ ] Every app answers `GET /health`; `ENABLE_DOCS` is not `true`
 - [ ] Daily jobs run: resume cleanup, notification expiry
+- [ ] `TWO_FACTOR_ENCRYPTION_KEY` generated (`openssl rand -hex 32`) and backed up
+- [ ] Google sign-in (optional): OAuth client created, your real domain added under *Authorized JavaScript origins*, consent screen published (not "Testing"), `GOOGLE_CLIENT_ID` set; leave it empty to keep Google off
+
+## Google sign-in (optional)
+
+1. Google Cloud Console → new project → *OAuth consent screen* (External, app name, support email).
+2. *Credentials → Create credentials → OAuth client ID → Web application*.
+3. *Authorized JavaScript origins*: `http://localhost`, `http://localhost:3000` and your real domain. No redirect URI is needed.
+4. Put the Client ID in `GOOGLE_CLIENT_ID` (auth-service / `.env.compose`). It is not a secret and no client secret is used. The web app reads it from `GET /auth/registration-mode`, so no web rebuild is needed.
+5. While the consent screen is in *Testing*, only the test users you add can sign in. Publish it before launch.
+
+Google sign-in is shown only while the admin setting *Registration mode* is `open`. For a college (`invite_only` or `domain`) it is hidden in the web app and refused by the server, so accounts always come from the admin's import or the allowed domain.
 
 ## Documentation
 

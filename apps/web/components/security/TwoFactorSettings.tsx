@@ -355,6 +355,10 @@ function ConfirmStep({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
             />
+            <p className="text-xs text-ink-grey">
+                Signed up with Google and never set a password? Use &quot;Forgot password&quot; on the login page
+                first to set one.
+            </p>
             {mode === 'code' ? (
                 <Input
                     value={value}

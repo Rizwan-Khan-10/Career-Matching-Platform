@@ -7,23 +7,31 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
-import { useAuthStore } from '@/store/authStore';
 import { loginSchema, LoginFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
+import { TwoFactorStep } from '@/components/auth/TwoFactorStep';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { toast } from '@/lib/toast';
-import { decodeJwtPayload } from '@/lib/jwt';
-import { getErrorMessage } from '@/lib/errors';
+import { getErrorCode, getErrorMessage } from '@/lib/errors';
 import { suggestEmailFix } from '@/lib/emailTypo';
+import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
+import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
+import { isTwoFactorChallenge, LoginResponse } from '@/types/auth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const finishLogin = useFinishLogin();
   const [serverError, setServerError] = useState<string | null>(null);
   const [emailBlurred, setEmailBlurred] = useState(false);
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+
+  // null in college mode: the Google button is then not rendered at all
+  const { data: modeInfo } = useRegistrationMode();
+  const googleClientId = modeInfo?.googleEnabled ? modeInfo.googleClientId : null;
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -34,18 +42,19 @@ export default function LoginPage() {
   // shown only after the user leaves the field, so it does not flash while they are still typing
   const emailFix = emailBlurred ? suggestEmailFix(emailValue) : null;
 
+  // password login and Google login answer the same way: tokens, or a 2FA challenge
+  const handleLoginResponse = (data: LoginResponse) => {
+    setServerError(null);
+    if (isTwoFactorChallenge(data)) {
+      setChallengeId(data.challengeId); // second step: no tokens yet
+      return;
+    }
+    if (!finishLogin(data)) setServerError('Login failed, please try again');
+  };
+
   const mutation = useMutation({
-    mutationFn: (values: LoginFormValues) => apiClient.post('/auth/login', values),
-    onSuccess: (res) => {
-      const { accessToken, refreshToken, role } = res.data;
-      const payload = decodeJwtPayload(accessToken);
-      if (!payload) { setServerError('Login failed, please try again'); return; }
-      setAuth(accessToken, role, payload.sub, refreshToken);
-      setServerError(null);
-      if (role === 'APPLICANT') router.push('/applicant/dashboard');
-      else if (role === 'COMPANY') router.push('/company/dashboard');
-      else router.push('/admin/dashboard');
-    },
+    mutationFn: (values: LoginFormValues) => apiClient.post<LoginResponse>('/auth/login', values),
+    onSuccess: (res) => handleLoginResponse(res.data),
     onError: (err: unknown, values) => {
       const raw = getErrorMessage(err, 'Something went wrong');
       // Same server message for "no such email" and "wrong password" (on purpose). Showing the typed
@@ -57,6 +66,51 @@ export default function LoginPage() {
       toast.error(msg);
     },
   });
+
+  const googleMutation = useMutation({
+    mutationFn: (credential: string) =>
+      apiClient.post<LoginResponse>('/auth/google', { credential }).then((r) => r.data),
+    onSuccess: handleLoginResponse,
+    onError: (err: unknown) => {
+      if (getErrorCode(err) === 'ROLE_REQUIRED') {
+        // first time with this Google account: the server needs to know Applicant or Company
+        toast.info('No account for this Google email yet. Choose Applicant or Company, then continue with Google.');
+        router.push('/signup');
+        return;
+      }
+      const msg = getErrorMessage(err, 'Google sign-in failed, please try again');
+      setServerError(msg);
+      toast.error(msg);
+    },
+  });
+
+  if (challengeId) {
+    return (
+      <Stagger className="w-full max-w-sm">
+        <StaggerItem>
+          <h1 className="font-heading text-2xl text-ink mb-1">Two-step verification</h1>
+          <p className="text-sm text-ink-grey mb-8">One more step to finish logging in.</p>
+        </StaggerItem>
+        <StaggerItem>
+          <TwoFactorStep
+            challengeId={challengeId}
+            onSuccess={(tokens) => {
+              if (!finishLogin(tokens)) {
+                setChallengeId(null);
+                setServerError('Login failed, please try again');
+              }
+            }}
+            onBack={(message) => {
+              setChallengeId(null);
+              setServerError(message ?? null);
+            }}
+          />
+        </StaggerItem>
+      </Stagger>
+    );
+  }
+
+  const busy = mutation.isPending || googleMutation.isPending;
 
   return (
     <Stagger className="w-full max-w-sm">
@@ -106,11 +160,27 @@ export default function LoginPage() {
         )}
 
         <StaggerItem>
-          <Button type="submit" disabled={mutation.isPending} className="w-full">
+          <Button type="submit" disabled={busy} className="w-full">
             {mutation.isPending ? 'Logging in...' : 'Log in'}
           </Button>
         </StaggerItem>
       </form>
+
+      {googleClientId && (
+        <StaggerItem>
+          <div className="flex items-center gap-3 my-5">
+            <div className="h-px flex-1 bg-hairline" />
+            <span className="text-xs text-ink-grey">or</span>
+            <div className="h-px flex-1 bg-hairline" />
+          </div>
+          <GoogleSignInButton
+            clientId={googleClientId}
+            text="signin_with"
+            disabled={busy}
+            onCredential={(credential) => googleMutation.mutate(credential)}
+          />
+        </StaggerItem>
+      )}
 
       <StaggerItem>
         <p className="text-sm text-ink-grey mt-6">

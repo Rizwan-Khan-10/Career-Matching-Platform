@@ -21,7 +21,7 @@ pnpm e2e:typecheck
 Before the run the suite waits for the stack, remembers the admin settings and sets "open signup, no approvals";
 afterwards it puts them back.
 
-## Fresh database (checkpoint 13)
+## Fresh database (checkpoint 15)
 
 ```bash
 # stop all services first (consumers crash on dropped schemas), then:
@@ -40,6 +40,9 @@ pnpm e2e -t "checkpoint 13"
 | `E2E_MATCHING_AGENT_URL`, `E2E_INTERNAL_API_KEY` | `http://localhost:8003`, empty | checkpoint 11 (skipped without the key) |
 | `E2E_WAIT_MS` | `120000` | how long to wait for parsing, matching, notifications |
 | `E2E_QUIET_MS` | `10000` | how long to wait before asserting that something did NOT happen |
+
+Checkpoint 14 (two-factor) needs `TWO_FACTOR_ENCRYPTION_KEY` set on auth-service and waits up to ~30 s for the next authenticator time step.
+Checkpoint 15 (Google) does not need a real Google token; without `GOOGLE_CLIENT_ID` its last test accepts 503 instead of 401.
 
 Inside docker compose (task 4.13) use `E2E_BASE_URL=http://nginx`, `E2E_REDIS_URL=redis://redis:6379`,
 `E2E_MATCHING_AGENT_URL=http://matching-agent:8000`.

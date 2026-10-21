@@ -86,6 +86,9 @@ CGPA scale is 10; a value > 10 is treated as a percentage and divided by 10.
 - `allowedDomains`: string[]
 - `companyApprovalRequired`: bool (default `true`) — only matters when `registrationMode != invite_only`
 - `jobApprovalRequired`: bool (default `false`)
+- `User.googleId String? @unique` (Google account id; set when the user signs in with Google). `passwordHash` is never null: a Google-only account stores a bcrypt hash of random bytes.
+- `User.twoFactorEnabled Boolean @default(false)`, `User.twoFactorSecret String?` (AES-256-GCM, key `TWO_FACTOR_ENCRYPTION_KEY`), table `RecoveryCode { id, userId, codeHash (bcrypt), usedAt }`.
+- **Google sign-in works only while `registrationMode == open`.** In college mode (`invite_only` or `domain`) `POST /auth/google` answers 403 and `googleEnabled` is false.
 
 ### 4.6 Jobs (`jobs_service.JobPosting`)
 `approvalStatus String @default("approved")` (`approved | pending | rejected`), `approvalNote String?`.
@@ -147,14 +150,16 @@ matching-agent reads the stored `RoleScan.inputHash` for `(jobRoleId, resumeId)`
 ### 5.1 auth-service
 | Method path | Who | Body → response |
 |---|---|---|
-| `GET /auth/registration-mode` | public | → `{ mode, allowedDomains }` |
-| `POST /auth/signup` | public | as today; **403** `{message}` when mode is `invite_only`, or `domain` and the email domain is not allowed. Company profile status: `pending` only if `registrationMode != invite_only` **and** `companyApprovalRequired`; otherwise `approved` |
-| `GET /auth/admin/settings` | ADMIN | → `{ registrationMode, allowedDomains, companyApprovalRequired, jobApprovalRequired }` |
-| `PUT /auth/admin/settings` | ADMIN | same body → same |
-| `POST /auth/admin/users/import` | ADMIN | `{ users: [{ email, role: "APPLICANT"\|"COMPANY", name?, cgpa?, branch?, passingYear?, backlogs? }] }` → `{ created: [{email, id}], skipped: [{email, reason}] }` (web parses the CSV; max 500 rows; imported companies are `approved`) |
-| `PATCH /auth/admin/users/:id/active` | ADMIN | `{ active }` → `{ id, isActive }` (deactivating deletes refresh tokens; login → 401 "Account disabled") |
-| `DELETE /auth/admin/users/:id` | ADMIN | → `{ deleted: true }` |
-| `GET /internal/settings` | internal | → `{ registrationMode, allowedDomains, companyApprovalRequired, jobApprovalRequired }` |
+| `GET /auth/registration-mode` | public | → `{ mode, allowedDomains, googleEnabled, googleClientId }` (`googleEnabled` only when `mode == open` and `GOOGLE_CLIENT_ID` is set; otherwise `false` and `googleClientId: null`) |
+| `POST /auth/login` | public | `{ email, password }` → `{ accessToken, refreshToken, role }`, **or** `{ twoFactorRequired: true, challengeId }` (no tokens) when the user has 2FA. Unknown email and wrong password give the same 401 `Invalid credentials` |
+| `POST /auth/google` | public | `{ credential, role? }` (`credential` = Google ID token; `role` = `APPLICANT\|COMPANY`, used only for a brand-new user) → same as login. **403** when mode != `open`; **401** bad token / unverified email / ADMIN; **409** `{ code: "ROLE_REQUIRED" }` new user without role; **409** `{ code: "GOOGLE_LINK_BLOCKED" }` existing password account with 2FA. First link of an existing e-mail replaces its password and ends all sessions |
+| `POST /auth/2fa/verify` | public | `{ challengeId, code }` or `{ challengeId, recoveryCode }` → tokens (`recoveryCodesLeft` added when a recovery code was used). Challenge lives 5 min in Redis, works once; 5 wrong codes lock the user's 2FA step for 5 min |
+| `GET /auth/2fa/status` | logged in | → `{ enabled, recoveryCodesLeft }` |
+| `POST /auth/2fa/setup` | logged in | → `{ otpauthUrl, secret }` (stored encrypted, not enabled yet) |
+| `POST /auth/2fa/enable` | logged in | `{ code }` → `{ recoveryCodes: string[10] }` (shown once) |
+| `POST /auth/2fa/disable` | logged in | `{ password, code \| recoveryCode }` → `{ enabled: false }` |
+| `POST /auth/2fa/recovery-codes` | logged in | `{ password, code \| recoveryCode }` → `{ recoveryCodes }` (old ones stop working) |
+| `POST /auth/admin/users/:id/2fa/reset` | ADMIN | → `{ id, twoFactorEnabled: false }`; 400 if the user has no 2FA; signs the user out everywhere; audit `user.2fa_reset` |
 
 Imported users get a random password and an email job `password-reset` with `invite: true`.
 `POST /internal/profiles` (user-service) receives `{ userId, role, email, name?, companyStatus: "pending"|"approved", academic?: {cgpa, branch, passingYear, backlogs}, academicVerified?: boolean }`.
@@ -292,3 +297,5 @@ Trigger rules: `resume.confirmed/updated` → that resume vs compatible roles; `
 11. Re-sending the same event or touching an unchanged resume does not re-score pairs (check matching-agent `/stats`: skipped-by-hash > 0).
 12. Admin health page shows stream lengths and dead-letter counts; audit log shows approvals.
 13. Fresh database: `pnpm db:reset:all` then `pnpm seed` → admin can log in with the env credentials.
+14. Two-factor: enable → login needs a code → recovery code works once → disable; an admin can reset 2FA for a user who has it.
+15. Google sign-in follows the registration mode: closed (403, `googleEnabled: false`) in `invite_only` and `domain`; in `open` a fake token is refused.

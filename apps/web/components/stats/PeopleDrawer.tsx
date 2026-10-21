@@ -48,34 +48,31 @@ function csvFor(rows: PersonRowData[], viewer: PeopleViewer) {
 
 /** The real people behind one dashboard number: search, pages, per-person details and the resume. */
 export function PeopleDrawer({ drill, viewer, onClose }: { drill: Drill | null; viewer: PeopleViewer; onClose: () => void }) {
+    if (!drill) return null;
+    // a different number was clicked = a different key = fresh state (page 1, empty search), no effect needed
+    return <PeopleDrawerBody key={`${drill.title}|${JSON.stringify(drill.filters)}`} drill={drill} viewer={viewer} onClose={onClose} />;
+}
+
+function PeopleDrawerBody({ drill, viewer, onClose }: { drill: Drill; viewer: PeopleViewer; onClose: () => void }) {
     const [search, setSearch] = useState('');
     const [q, setQ] = useState('');
     const [page, setPage] = useState(1);
-    const [sort, setSort] = useState<'score' | 'name' | 'date'>('score');
+    const [sort, setSort] = useState<'score' | 'name' | 'date'>(drill.filters.stage === 'parsed' ? 'date' : 'score');
     const [exporting, setExporting] = useState(false);
-
-    // a different number was clicked: start from page 1 with an empty search
-    useEffect(() => {
-        setSearch('');
-        setQ('');
-        setPage(1);
-        setSort(drill?.filters.stage === 'parsed' ? 'date' : 'score');
-    }, [drill]);
 
     useEffect(() => {
         const t = setTimeout(() => { setQ(search.trim()); setPage(1); }, 300);
         return () => clearTimeout(t);
     }, [search]);
 
-    const params = drill ? { ...drill.filters, q: q || undefined, page, limit: PAGE, sort } : null;
+    const params = { ...drill.filters, q: q || undefined, page, limit: PAGE, sort };
     const { data, isLoading, isError, isFetching, refetch } = useStagePeople(viewer, params);
     const total = data?.total ?? 0;
     const from = total === 0 ? 0 : (page - 1) * PAGE + 1;
     const to = Math.min(page * PAGE, total);
-    const showRole = !drill?.filters.jobRoleId && drill?.filters.stage !== 'parsed';
+    const showRole = !drill.filters.jobRoleId && drill.filters.stage !== 'parsed';
 
     const exportCsv = async () => {
-        if (!drill) return;
         setExporting(true);
         try {
             const all: PersonRowData[] = [];
@@ -98,9 +95,9 @@ export function PeopleDrawer({ drill, viewer, onClose }: { drill: Drill | null; 
 
     return (
         <DrawerShell
-            isOpen={!!drill}
+            isOpen
             onClose={onClose}
-            title={`${drill?.title ?? ''}${data ? ` (${total})` : ''}`}
+            title={`${drill.title}${data ? ` (${total})` : ''}`}
             actions={
                 <button
                     type="button"

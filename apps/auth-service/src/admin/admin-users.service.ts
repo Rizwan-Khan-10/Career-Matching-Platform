@@ -43,4 +43,19 @@ export class AdminUsersService {
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
+
+    /** For a user who lost their phone AND their recovery codes. Signs them out everywhere. */
+  async resetTwoFactor(actorId: string, userId: string) {
+    if (actorId === userId) throw new ForbiddenException('Use your own security settings to change two-factor');
+    const user = await this.requireUser(userId);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { twoFactorEnabled: false, twoFactorSecret: null } }),
+      this.prisma.recoveryCode.deleteMany({ where: { userId } }),
+    ]);
+    await this.sessions.revokeAll(userId);
+
+    await this.userService.audit({ actorId, action: 'user.2fa_reset', target: userId, meta: { role: user.role } });
+    return { id: userId, twoFactorEnabled: false };
+  }
 }

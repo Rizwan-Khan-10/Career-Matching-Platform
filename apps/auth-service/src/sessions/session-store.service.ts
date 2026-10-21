@@ -8,7 +8,7 @@ export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 export class SessionStore {
   private readonly logger = new Logger(SessionStore.name);
 
-  constructor(private redis: RedisService) {}
+  constructor(private redis: RedisService) { }
 
   private key(userId: string, sessionId: string) {
     return `refresh:${userId}:${sessionId}`;
@@ -39,14 +39,16 @@ export class SessionStore {
     }
   }
 
-  /** Password reset / deactivate / delete: sign the user out everywhere. */
-  async revokeAll(userId: string): Promise<void> {
+  /** Password reset / deactivate / delete: sign the user out everywhere. 2FA on/off keeps the current device. */
+  async revokeAll(userId: string, exceptSessionId?: string): Promise<void> {
+    const keep = exceptSessionId ? this.key(userId, exceptSessionId) : null;
     try {
       let cursor = '0';
       do {
         const [next, keys] = await this.redis.client.scan(cursor, 'MATCH', `refresh:${userId}:*`, 'COUNT', 200);
         cursor = next;
-        if (keys.length > 0) await this.redis.client.del(...keys);
+        const doomed = keys.filter((k) => k !== keep);
+        if (doomed.length > 0) await this.redis.client.del(...doomed);
       } while (cursor !== '0');
     } catch (err) {
       this.logger.warn(`could not delete all sessions of ${userId}: ${(err as Error).message}`);

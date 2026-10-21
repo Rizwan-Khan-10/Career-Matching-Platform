@@ -9,10 +9,11 @@ import { SettingsModule } from '../settings/settings.module';
 import { MailModule } from '../mail/mail.module';
 import { SessionModule } from '../sessions/session.module';
 import { RateLimitService } from './rate-limit.service';
+import { TwoFactorService } from './two-factor/two-factor.service';
 
 @Module({
   imports: [PassportModule, JwtModule.register({}), SettingsModule, MailModule, SessionModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, LoginLockService, RateLimitService],
+  providers: [AuthService, JwtStrategy, LoginLockService, RateLimitService, TwoFactorService],
 })
 export class AuthModule { }

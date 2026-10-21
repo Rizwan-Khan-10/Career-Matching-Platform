@@ -34,12 +34,27 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
   const jwt = new JwtService({});
   const mail = { enqueuePasswordReset: vi.fn() };
   const settingsService = { getAll: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }) };
+  const twoFactor = {
+    createChallenge: vi.fn().mockResolvedValue('chal-1'),
+    verifyChallenge: vi.fn(),
+    recoveryCodesLeft: vi.fn().mockResolvedValue(7),
+  };
   const service = new AuthService(
     prisma as any, jwt, redis as any, mail as any, settingsService as any,
-    new SessionStore(redis as any), new LoginLockService(redis as any),
+    new SessionStore(redis as any), new LoginLockService(redis as any), twoFactor as any,
   );
   const sid = (token: string) => (jwt.decode(token) as { sid: string }).sid;
-  return { service, prisma, fake, jwt, sid };
+  return { service, prisma, fake, jwt, sid, twoFactor };
+}
+
+/**
+ * login() can answer with a 2FA challenge instead of tokens. The tests below are about users without 2FA,
+ * so this returns the tokens (typed) and fails loudly if a challenge comes back.
+ */
+async function loginTokens(service: AuthService, creds: { email: string; password: string }, ip?: string) {
+  const result = await service.login(creds, ip);
+  if ('twoFactorRequired' in result) throw new Error('expected tokens but got a two-factor challenge');
+  return result;
 }
 
 beforeEach(() => {
@@ -101,7 +116,7 @@ describe('AuthService.signup', () => {
 describe('AuthService.login / refresh with a disabled account', () => {
   it('logs an active user in', async () => {
     const { service } = build({}, activeUser());
-    const result = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const result = await loginTokens(service, { email: 'a@b.com', password: PASSWORD });
     expect(result.accessToken).toEqual(expect.any(String));
   });
 
@@ -120,7 +135,7 @@ describe('AuthService.login / refresh with a disabled account', () => {
 
   it('refuses to refresh tokens once the account is disabled', async () => {
     const { service, prisma } = build({}, activeUser());
-    const { refreshToken } = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const { refreshToken } = await loginTokens(service, { email: 'a@b.com', password: PASSWORD });
 
     prisma.user.findUnique.mockResolvedValue({ id: 'u1', role: 'APPLICANT', isActive: false });
     const err = await service.refresh(refreshToken).catch((e) => e);
@@ -131,7 +146,7 @@ describe('AuthService.login / refresh with a disabled account', () => {
 
   it('refreshes tokens for an active account', async () => {
     const { service } = build({}, activeUser());
-    const { refreshToken } = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const { refreshToken } = await loginTokens(service, { email: 'a@b.com', password: PASSWORD });
     const result = await service.refresh(refreshToken);
     expect(result.role).toBe('APPLICANT');
   });
@@ -140,8 +155,8 @@ describe('AuthService.login / refresh with a disabled account', () => {
 describe('AuthService per-device sessions', () => {
   it('gives every login its own session id and stores one key per session', async () => {
     const { service, fake, sid } = build({}, activeUser());
-    const a = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
-    const b = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+    const a = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const b = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
 
     expect(sid(a.accessToken)).not.toBe(sid(b.accessToken));
     expect(fake.store.has(`refresh:u1:${sid(a.accessToken)}`)).toBe(true);
@@ -150,8 +165,8 @@ describe('AuthService per-device sessions', () => {
 
   it('logout on one device does not log out the other device', async () => {
     const { service, sid } = build({}, activeUser());
-    const phone = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
-    const laptop = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+    const phone = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const laptop = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
 
     await service.logout('u1', sid(phone.accessToken));
 
@@ -161,14 +176,14 @@ describe('AuthService per-device sessions', () => {
 
   it('logout without a session id (old access token) is a harmless no-op', async () => {
     const { service } = build({}, activeUser());
-    const a = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const a = await loginTokens(service, { email: 'a@b.com', password: PASSWORD });
     await expect(service.logout('u1')).resolves.toEqual({ message: 'Logged out' });
     await expect(service.refresh(a.refreshToken)).resolves.toBeDefined();
   });
 
   it('refresh keeps the same session id', async () => {
     const { service, sid } = build({}, activeUser());
-    const first = await service.login({ email: 'a@b.com', password: PASSWORD });
+    const first = await loginTokens(service, { email: 'a@b.com', password: PASSWORD });
     const second = await service.refresh(first.refreshToken);
     expect(sid(second.accessToken)).toBe(sid(first.accessToken));
   });
@@ -181,8 +196,8 @@ describe('AuthService per-device sessions', () => {
 
   it('a password reset signs out every device of that user only', async () => {
     const { service, fake } = build({}, activeUser());
-    const a = await service.login({ email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
-    const b = await service.login({ email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
+    const a = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '1.1.1.1');
+    const b = await loginTokens(service, { email: 'a@b.com', password: PASSWORD }, '2.2.2.2');
     fake.store.set('refresh:u2:other-device', 'x');
     fake.store.set('reset:tok', 'u1');
 
@@ -250,13 +265,64 @@ describe('AuthService.login: no user enumeration', () => {
 
   it('runs bcrypt.compare even when the email does not exist', async () => {
     (bcrypt.compare as any).mockClear();
-    await build({}, null).service.login({ email: 'nobody@b.com', password: 'whatever123' }).catch(() => {});
+    await build({}, null).service.login({ email: 'nobody@b.com', password: 'whatever123' }).catch(() => { });
     expect(bcrypt.compare).toHaveBeenCalledTimes(1);
   });
 
   it('still counts the failure for an unknown email (lock applies to it too)', async () => {
     const { service, fake } = build({}, null);
-    await service.login({ email: 'nobody@b.com', password: 'x' }, '9.9.9.9').catch(() => {});
+    await service.login({ email: 'nobody@b.com', password: 'x' }, '9.9.9.9').catch(() => { });
     expect(fake.store.get('login-attempts:ip:nobody@b.com:9.9.9.9')).toBe('1');
+  });
+});
+
+describe('AuthService two-factor login', () => {
+  const creds = { email: 'a@b.com', password: PASSWORD };
+
+  it('returns a challenge and NO tokens when 2FA is on', async () => {
+    const { service, fake } = build({}, activeUser({ twoFactorEnabled: true }));
+    const result: any = await service.login(creds);
+
+    expect(result).toEqual({ twoFactorRequired: true, challengeId: 'chal-1' });
+    expect(result.accessToken).toBeUndefined();
+    expect([...fake.store.keys()].some((k) => k.startsWith('refresh:'))).toBe(false);
+  });
+
+  it('a wrong password never reaches the challenge step', async () => {
+    const { service, twoFactor } = build({}, activeUser({ twoFactorEnabled: true }));
+    await service.login({ ...creds, password: 'wrong-password' }).catch(() => {});
+    expect(twoFactor.createChallenge).not.toHaveBeenCalled();
+  });
+
+  it('users without 2FA log in exactly as before', async () => {
+    const { service, twoFactor } = build({}, activeUser());
+    const result: any = await service.login(creds);
+    expect(result.accessToken).toBeDefined();
+    expect(twoFactor.createChallenge).not.toHaveBeenCalled();
+  });
+
+  it('issues tokens after a good second factor', async () => {
+    const { service, twoFactor } = build();
+    twoFactor.verifyChallenge.mockResolvedValue({ user: { id: 'u1', role: 'APPLICANT' }, method: 'totp' });
+    const result: any = await service.verifyTwoFactor({ challengeId: 'chal-1', code: '123456' });
+    expect(result.accessToken).toBeDefined();
+    expect(result.recoveryCodesLeft).toBeUndefined();
+  });
+
+  it('tells how many recovery codes are left when one was used', async () => {
+    const { service, twoFactor } = build();
+    twoFactor.verifyChallenge.mockResolvedValue({ user: { id: 'u1', role: 'APPLICANT' }, method: 'recovery' });
+    const result: any = await service.verifyTwoFactor({ challengeId: 'chal-1', recoveryCode: 'abcde-fghjk' });
+    expect(result.recoveryCodesLeft).toBe(7);
+  });
+
+  it('a password reset does not turn 2FA off', async () => {
+    const { service, prisma, fake } = build();
+    fake.store.set('reset:tok', 'u1');
+    await service.resetPassword('tok', 'a-new-password-1');
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { passwordHash: expect.any(String) },
+    });
   });
 });

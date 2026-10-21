@@ -17,6 +17,8 @@ import { TwoFactorService } from './two-factor/two-factor.service';
 import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
 import { GoogleTokenVerifier } from './google-token-verifier';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { FinishSetupLoginDto } from './dto/finish-setup-login.dto';
+import { SetupTokenDto } from './dto/setup-token.dto';
 
 // Used when the email does not exist, so that request still pays for one bcrypt compare
 // and cannot be told apart from a wrong password by its response time.
@@ -84,6 +86,11 @@ export class AuthService {
       return { twoFactorRequired: true as const, challengeId: await this.twoFactor.createChallenge(user.id) };
     }
 
+    // An admin without 2FA while the setting requires it: no tokens until the setup is done.
+    if (user.role === 'ADMIN' && (await this.settings.getAll()).requireTwoFactorForAdmin) {
+      return { twoFactorSetupRequired: true as const, setupToken: await this.twoFactor.createSetupChallenge(user.id) };
+    }
+
     return this.issueTokens(user.id, user.role); // every login is a new session (device)
   }
 
@@ -95,6 +102,17 @@ export class AuthService {
       return { ...tokens, recoveryCodesLeft: await this.twoFactor.recoveryCodesLeft(user.id) };
     }
     return tokens;
+  }
+
+  startTwoFactorSetupLogin(dto: SetupTokenDto, ip = 'unknown') {
+    return this.twoFactor.startSetupLogin(dto.setupToken, ip);
+  }
+
+  /** The admin proved the new authenticator works: tokens + the recovery codes (shown once). */
+  async finishTwoFactorSetupLogin(dto: FinishSetupLoginDto, ip = 'unknown') {
+    const { user, recoveryCodes } = await this.twoFactor.finishSetupLogin(dto.setupToken, dto.code, ip);
+    const tokens = await this.issueTokens(user.id, user.role);
+    return { ...tokens, recoveryCodes };
   }
 
   /**

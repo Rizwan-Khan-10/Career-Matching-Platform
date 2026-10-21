@@ -1,6 +1,7 @@
 import {
     BadRequestException,
     ConflictException,
+    ForbiddenException,
     Injectable,
     ServiceUnavailableException,
     UnauthorizedException,
@@ -13,10 +14,12 @@ import { SessionStore } from '../../sessions/session-store.service';
 import { RateLimitService } from '../rate-limit.service';
 import { buildOtpauthUrl, generateTotpSecret, verifyTotp } from './totp';
 import { decryptSecret, encryptSecret, isEncryptionConfigured } from './secret-crypto';
+import { SettingsService } from '../../settings/settings.service';
 
 export const CHALLENGE_TTL_SECONDS = 5 * 60;
 export const MAX_WRONG_CODES = 5;
 export const LOCK_SECONDS = 5 * 60;
+export const SETUP_TTL_SECONDS = 15 * 60;
 
 const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o/1/i/l, easy to read out loud
@@ -35,6 +38,7 @@ export class TwoFactorService {
         private redis: RedisService,
         private sessions: SessionStore,
         private rateLimit: RateLimitService,
+        private settings: SettingsService,
     ) { }
 
     // ---------- settings screen (user is logged in) ----------
@@ -89,6 +93,11 @@ export class TwoFactorService {
     }
 
     async disable(userId: string, sessionId: string | undefined, input: SecondFactorInput & { password: string }) {
+        const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+        if (me?.role === 'ADMIN' && (await this.settings.getAll()).requireTwoFactorForAdmin) {
+            throw new ForbiddenException('Two-factor is required for admin accounts');
+        }
+
         await this.requireStrongProof(userId, input);
         await this.prisma.$transaction([
             this.prisma.user.update({ where: { id: userId }, data: { twoFactorEnabled: false, twoFactorSecret: null } }),
@@ -115,6 +124,53 @@ export class TwoFactorService {
         const id = randomBytes(24).toString('base64url');
         await this.redis.client.set(`2fa:chal:${id}`, userId, 'EX', CHALLENGE_TTL_SECONDS);
         return id;
+    }
+
+    // ---------- admin without 2FA while it is required: "setup only" login ----------
+
+    /** Same idea as the login challenge: an opaque random id in Redis, never a JWT. */
+    async createSetupChallenge(userId: string): Promise<string> {
+        const id = randomBytes(24).toString('base64url');
+        await this.redis.client.set(`2fa:setup:${id}`, userId, 'EX', SETUP_TTL_SECONDS);
+        return id;
+    }
+
+    /** Public step 1: makes the secret for the QR code. */
+    async startSetupLogin(setupToken: string, ip: string) {
+        const userId = await this.userIdForSetupToken(setupToken, ip);
+        await this.loadSetupUser(userId, setupToken);
+        return this.setup(userId);
+    }
+
+    /** Public step 2: a good code turns 2FA on. The caller then issues the tokens. */
+    async finishSetupLogin(setupToken: string, code: string, ip: string) {
+        const userId = await this.userIdForSetupToken(setupToken, ip);
+        const user = await this.loadSetupUser(userId, setupToken);
+
+        // a wrong code throws 400 here and the setup token stays usable (enable() counts attempts per user)
+        const { recoveryCodes } = await this.enable(userId, undefined, code);
+        await this.redis.client.del(`2fa:setup:${setupToken}`);
+        return { user, recoveryCodes };
+    }
+
+    private async userIdForSetupToken(setupToken: string, ip: string): Promise<string> {
+        this.requireConfigured();
+        await this.rateLimit.assert('2fa-setup-ip', ip, 30, 5 * 60, 'Too many attempts. Try again in a few minutes.');
+        const userId = await this.redis.client.get(`2fa:setup:${setupToken}`);
+        if (!userId) throw new UnauthorizedException('Login session expired. Please sign in again.');
+        return userId;
+    }
+
+    private async loadSetupUser(userId: string, setupToken: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, role: true, isActive: true, twoFactorEnabled: true },
+        });
+        if (!user || !user.isActive || user.twoFactorEnabled) {
+            await this.redis.client.del(`2fa:setup:${setupToken}`);
+            throw new UnauthorizedException('Login session expired. Please sign in again.');
+        }
+        return user;
     }
 
     async verifyChallenge(challengeId: string, input: SecondFactorInput, ip: string) {

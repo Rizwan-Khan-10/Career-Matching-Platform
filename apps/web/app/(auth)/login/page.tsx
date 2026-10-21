@@ -20,7 +20,8 @@ import { getErrorCode, getErrorMessage } from '@/lib/errors';
 import { suggestEmailFix } from '@/lib/emailTypo';
 import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
 import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
-import { isTwoFactorChallenge, LoginResponse } from '@/types/auth';
+import { isTwoFactorChallenge, isTwoFactorSetupRequired, LoginResponse } from '@/types/auth';
+import { AdminTwoFactorSetup } from '@/components/auth/AdminTwoFactorSetup';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [emailBlurred, setEmailBlurred] = useState(false);
   const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [setupToken, setSetupToken] = useState<string | null>(null);
 
   // null in college mode: the Google button is then not rendered at all
   const { data: modeInfo } = useRegistrationMode();
@@ -47,6 +49,10 @@ export default function LoginPage() {
     setServerError(null);
     if (isTwoFactorChallenge(data)) {
       setChallengeId(data.challengeId); // second step: no tokens yet
+      return;
+    }
+    if (isTwoFactorSetupRequired(data)) {
+      setSetupToken(data.setupToken); // an admin who must set up two-factor first
       return;
     }
     if (!finishLogin(data)) setServerError('Login failed, please try again');
@@ -102,6 +108,32 @@ export default function LoginPage() {
             }}
             onBack={(message) => {
               setChallengeId(null);
+              setServerError(message ?? null);
+            }}
+          />
+        </StaggerItem>
+      </Stagger>
+    );
+  }
+
+  if (setupToken) {
+    return (
+      <Stagger className="w-full max-w-sm">
+        <StaggerItem>
+          <h1 className="font-heading text-2xl text-ink mb-1">Set up two-factor</h1>
+          <p className="text-sm text-ink-grey mb-8">Required for admin accounts.</p>
+        </StaggerItem>
+        <StaggerItem>
+          <AdminTwoFactorSetup
+            setupToken={setupToken}
+            onSuccess={(tokens) => {
+              if (!finishLogin(tokens)) {
+                setSetupToken(null);
+                setServerError('Login failed, please try again');
+              }
+            }}
+            onBack={(message) => {
+              setSetupToken(null);
               setServerError(message ?? null);
             }}
           />

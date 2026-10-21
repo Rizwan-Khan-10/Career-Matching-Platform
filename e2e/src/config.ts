@@ -4,6 +4,7 @@ export const config = {
   baseUrl: env('E2E_BASE_URL', 'http://localhost').replace(/\/$/, ''),
   adminEmail: env('ADMIN_EMAIL', ''),
   adminPassword: env('ADMIN_PASSWORD', ''),
+  adminTotpSecret: env('E2E_ADMIN_TOTP_SECRET', ''), // only needed when the admin account has two-factor on
   redisUrl: env('E2E_REDIS_URL', env('REDIS_URL', 'redis://localhost:6379')),
   matchingAgentUrl: env('E2E_MATCHING_AGENT_URL', 'http://localhost:8003').replace(/\/$/, ''),
   internalApiKey: env('E2E_INTERNAL_API_KEY', env('INTERNAL_API_KEY', '')),

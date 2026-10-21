@@ -46,6 +46,9 @@ export function TwoFactorSettings({ onLockClose }: { onLockClose?: (locked: bool
         return (
             <SetupStep
                 setup={view.setup}
+                onConfirm={(code) =>
+                    apiClient.post<{ recoveryCodes: string[] }>('/auth/2fa/enable', { code }).then((r) => r.data.recoveryCodes)
+                }
                 onCancel={toOverview}
                 onEnabled={(codes) => {
                     setView({ name: 'codes', codes });
@@ -146,12 +149,15 @@ function Overview({
     );
 }
 
-function SetupStep({
+export function SetupStep({
     setup,
+    onConfirm,
     onCancel,
     onEnabled,
 }: {
     setup: TwoFactorSetup;
+    /** sends the code to the server and returns the recovery codes */
+    onConfirm: (code: string) => Promise<string[]>;
     onCancel: () => void;
     onEnabled: (codes: string[]) => void;
 }) {
@@ -176,9 +182,8 @@ function SetupStep({
     }, [setup.otpauthUrl]);
 
     const enable = useMutation({
-        mutationFn: (value: string) =>
-            apiClient.post<{ recoveryCodes: string[] }>('/auth/2fa/enable', { code: value }).then((r) => r.data),
-        onSuccess: (data) => onEnabled(data.recoveryCodes),
+        mutationFn: onConfirm,
+        onSuccess: (codes) => onEnabled(codes),
         onError: (err: unknown) => {
             setError(getErrorMessage(err, 'Something went wrong, try again'));
             setCode('');
@@ -250,7 +255,7 @@ function SetupStep({
     );
 }
 
-function RecoveryCodesStep({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+export function RecoveryCodesStep({ codes, onDone }: { codes: string[]; onDone: () => void }) {
     const [saved, setSaved] = useState(false);
     const text = codes.join('\n');
 

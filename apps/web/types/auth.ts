@@ -24,10 +24,22 @@ export interface TwoFactorChallenge {
   challengeId: string;
 }
 
-export type LoginResponse = TokenResponse | TwoFactorChallenge;
+/** An admin without 2FA while the setting requires it: no tokens yet, only a setup token. */
+export interface TwoFactorSetupRequired {
+  twoFactorSetupRequired: true;
+  setupToken: string;
+}
+
+export type LoginResponse = TokenResponse | TwoFactorChallenge | TwoFactorSetupRequired;
+/** Google sign-in never answers with the admin setup step (admins cannot use Google). */
+export type GoogleLoginResponse = TokenResponse | TwoFactorChallenge;
 
 export function isTwoFactorChallenge(res: LoginResponse): res is TwoFactorChallenge {
   return 'twoFactorRequired' in res;
+}
+
+export function isTwoFactorSetupRequired(res: LoginResponse): res is TwoFactorSetupRequired {
+  return 'twoFactorSetupRequired' in res;
 }
 
 export interface TwoFactorStatus {

@@ -14,7 +14,7 @@ const optionalNumber = (v: unknown): number | undefined => (typeof v === 'number
 /** Contract §3.3: every caller of an /internal/* endpoint sends x-internal-key (left out when the env var is unset, local dev). */
 const internalHeaders = (): Record<string, string> => (process.env.INTERNAL_API_KEY ? { 'x-internal-key': process.env.INTERNAL_API_KEY } : {});
 
-/** The only four e-mail jobs there are. Anything else (e.g. an old `feedback-guide` job still in Redis) is dropped. */
+/** The only five e-mail jobs there are. Anything else (e.g. an old `feedback-guide` job still in Redis) is dropped. */
 @Injectable()
 export class EmailWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EmailWorker.name);
@@ -41,6 +41,13 @@ export class EmailWorker implements OnModuleInit, OnModuleDestroy {
         const resetToken = optionalString(d.resetToken);
         if (!email || !resetToken) throw new UnrecoverableError('password-reset job without email or resetToken');
         await this.emailService.sendPasswordReset(email, resetToken, d.invite === true);
+        return;
+      }
+      case 'email-verification': {
+        const email = optionalString(d.email);
+        const verifyToken = optionalString(d.verifyToken);
+        if (!email || !verifyToken) throw new UnrecoverableError('email-verification job without email or verifyToken');
+        await this.emailService.sendEmailVerification(email, verifyToken);
         return;
       }
       case 'eligibility-result': {

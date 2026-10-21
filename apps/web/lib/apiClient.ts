@@ -14,6 +14,8 @@ const AUTH_PATHS = [
   '/auth/reset-password',
   '/auth/2fa/verify',
   '/auth/2fa/setup-login',
+  '/auth/verify-email',
+  '/auth/resend-verification',
 ];
 
 let refreshing: Promise<string | null> | null = null;

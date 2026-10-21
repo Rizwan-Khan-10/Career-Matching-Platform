@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createMailTransport, MailTransport } from './mail-transport';
-import { candidateReadyEmail, eligibleEmail, passwordResetEmail, RenderedEmail, shortlistedEmail } from './templates';
+import { candidateReadyEmail, eligibleEmail, passwordResetEmail, RenderedEmail, shortlistedEmail, emailVerificationEmail } from './templates';
 
 // Read lazily: ConfigModule loads .env AFTER this file has been imported, so top-level consts would miss .env values.
 const cfg = () => ({
@@ -8,7 +8,7 @@ const cfg = () => ({
   webUrl: process.env.WEB_URL || 'http://localhost:3000',
 });
 
-/** The four e-mails this platform sends (contract §7): password reset / invite, eligible, candidate ready, shortlisted. */
+/** The five e-mails this platform sends (contract §7): password reset / invite, eligible, candidate ready, shortlisted. */
 @Injectable()
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
@@ -33,6 +33,11 @@ export class EmailService implements OnModuleInit {
   /** `invite: true` = an admin imported this user: the mail says "set your password", the link lives 7 days. */
   sendPasswordReset(to: string, resetToken: string, invite = false) {
     return this.send(to, passwordResetEmail({ webUrl: cfg().webUrl, resetToken, invite }));
+  }
+
+  /** Self-signup: the link in this mail turns the account on (valid 24 h). */
+  sendEmailVerification(to: string, verifyToken: string) {
+    return this.send(to, emailVerificationEmail({ webUrl: cfg().webUrl, verifyToken }));
   }
 
   sendEligible(to: string, roleTitle?: string | null) {

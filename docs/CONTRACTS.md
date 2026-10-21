@@ -89,6 +89,8 @@ CGPA scale is 10; a value > 10 is treated as a percentage and divided by 10.
 - `User.googleId String? @unique` (Google account id; set when the user signs in with Google). `passwordHash` is never null: a Google-only account stores a bcrypt hash of random bytes.
 - `User.twoFactorEnabled Boolean @default(false)`, `User.twoFactorSecret String?` (AES-256-GCM, key `TWO_FACTOR_ENCRYPTION_KEY`), table `RecoveryCode { id, userId, codeHash (bcrypt), usedAt }`.
 - **Google sign-in works only while `registrationMode == open`.** In college mode (`invite_only` or `domain`) `POST /auth/google` answers 403 and `googleEnabled` is false.
+- `User.emailVerified Boolean @default(true)`: false only for a self-signup that still has to click the e-mail link (settings `emailVerificationRequired`). Existing, imported, Google-linked and admin accounts are true. The user-service profile of a self-signup is created **at verification**, not at signup.
+- Settings: `requireTwoFactorForAdmin` (default false) and `emailVerificationRequired` (default true) join the four existing keys in `GET / PUT /auth/admin/settings`. Both are optional in PUT (omitted = unchanged). Saving `requireTwoFactorForAdmin: true` needs the saving admin to have 2FA (400 otherwise) and signs out admins who have none.
 
 ### 4.6 Jobs (`jobs_service.JobPosting`)
 `approvalStatus String @default("approved")` (`approved | pending | rejected`), `approvalNote String?`.
@@ -160,6 +162,10 @@ matching-agent reads the stored `RoleScan.inputHash` for `(jobRoleId, resumeId)`
 | `POST /auth/2fa/disable` | logged in | `{ password, code \| recoveryCode }` → `{ enabled: false }` |
 | `POST /auth/2fa/recovery-codes` | logged in | `{ password, code \| recoveryCode }` → `{ recoveryCodes }` (old ones stop working) |
 | `POST /auth/admin/users/:id/2fa/reset` | ADMIN | → `{ id, twoFactorEnabled: false }`; 400 if the user has no 2FA; signs the user out everywhere; audit `user.2fa_reset` |
+| `POST /auth/verify-email` | public | `{ token }` → tokens (user signed in). Token is single use, valid 24 h; 400 when invalid/expired/used. Creates the profile |
+| `POST /auth/resend-verification` | public | `{ email }` → always `{ message }` (same for unknown / verified addresses). Limits: 10/h per IP, 3 per 15 min per address |
+| `POST /auth/2fa/setup-login/start` | public | `{ setupToken }` → `{ otpauthUrl, secret }` (admin who must set up 2FA) |
+| `POST /auth/2fa/setup-login/finish` | public | `{ setupToken, code }` → tokens + `recoveryCodes` (shown once) |
 
 Imported users get a random password and an email job `password-reset` with `invite: true`.
 `POST /internal/profiles` (user-service) receives `{ userId, role, email, name?, companyStatus: "pending"|"approved", academic?: {cgpa, branch, passingYear, backlogs}, academicVerified?: boolean }`.
@@ -270,8 +276,9 @@ Unchanged streams are in Spec §7. matching-agent consumes `resume.confirmed, re
 | `company.status.changed` | company | `company_status` | no |
 | `job.approval.changed` | company | `job_approval` | no |
 | password reset / invite | user | — | **yes** (`password-reset` job; `invite: true` for imports) |
+| self-signup with e-mail verification | user | — | **yes** (`email-verification` job `{ email, verifyToken }`, link valid 24 h) |
 
-matching-results-service enqueues **no** emails. The only producer of `email-queue` is auth-service; notification-service enqueues its own email jobs after writing a notification.
+matching-results-service enqueues **no** emails. The queue now carries five job types: password-reset, email-verification, eligibility-result, candidate-ready, shortlisted. The only producer of `email-queue` is auth-service; notification-service enqueues its own email jobs after writing a notification.
 
 ## 8. Efficient matching — rules every matching change must respect
 1. **Gate first.** Candidate selection filters by compatibility (§4.11) and by active resumes / non-stopped roles **in SQL, before** vector search, so top-K is chosen among compatible items only.
@@ -299,3 +306,4 @@ Trigger rules: `resume.confirmed/updated` → that resume vs compatible roles; `
 13. Fresh database: `pnpm db:reset:all` then `pnpm seed` → admin can log in with the env credentials.
 14. Two-factor: enable → login needs a code → recovery code works once → disable; an admin can reset 2FA for a user who has it.
 15. Google sign-in follows the registration mode: closed (403, `googleEnabled: false`) in `invite_only` and `domain`; in `open` a fake token is refused.
+16. E-mail verification: sign-up gives no tokens, login answers 403 `EMAIL_NOT_VERIFIED`, the mailed link signs the user in once, a new sign-up takes over an unverified address, resend invalidates the old link.

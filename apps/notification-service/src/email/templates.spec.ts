@@ -1,4 +1,4 @@
-import { candidateReadyEmail, eligibleEmail, esc, passwordResetEmail, shortlistedEmail } from './templates';
+import { candidateReadyEmail, eligibleEmail, esc, passwordResetEmail, shortlistedEmail, emailVerificationEmail } from './templates';
 
 const webUrl = 'http://web.test/';
 
@@ -16,6 +16,15 @@ describe('passwordResetEmail', () => {
     expect(mail.html).toContain('Set your password');
     expect(mail.html).toContain('7 days');
     expect(mail.html).not.toContain('15 minutes');
+  });
+});
+
+describe('emailVerificationEmail', () => {
+  it('links to /verify-email with the encoded token and says 24 hours', () => {
+    const mail = emailVerificationEmail({ webUrl, verifyToken: 'a b&c' });
+    expect(mail.subject).toBe('Confirm your email address');
+    expect(mail.html).toContain('http://web.test/verify-email?token=a%20b%26c');
+    expect(mail.html).toContain('24 hours');
   });
 });
 

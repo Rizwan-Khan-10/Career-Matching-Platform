@@ -7,13 +7,14 @@ jest.mock('bullmq', () => {
   return { UnrecoverableError, Worker: jest.fn() };
 });
 jest.mock('axios', () => ({ __esModule: true, default: { get: jest.fn(), isAxiosError: (e: any) => !!e?.isAxiosError } }));
-jest.mock('../email/email.service', () => ({ EmailService: class {} }));
+jest.mock('../email/email.service', () => ({ EmailService: class { } }));
 
 const get = axios.get as jest.Mock;
 
 function build() {
   const mail = {
     sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+    sendEmailVerification: jest.fn().mockResolvedValue(undefined),
     sendEligible: jest.fn().mockResolvedValue(undefined),
     sendCandidateReady: jest.fn().mockResolvedValue(undefined),
     sendShortlisted: jest.fn().mockResolvedValue(undefined),
@@ -37,6 +38,20 @@ describe('EmailWorker', () => {
     expect(mail.sendPasswordReset).toHaveBeenNthCalledWith(1, 'a@x.test', 't1', false);
     expect(mail.sendPasswordReset).toHaveBeenNthCalledWith(2, 'b@x.test', 't2', true);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('email-verification goes straight to the address in the job', async () => {
+    const { mail, worker } = build();
+    await worker.process({ name: 'email-verification', data: { email: 'a@x.test', verifyToken: 'v1' } });
+    expect(mail.sendEmailVerification).toHaveBeenCalledWith('a@x.test', 'v1');
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('email-verification without a token is dropped, not retried', async () => {
+    const { worker } = build();
+    await expect(worker.process({ name: 'email-verification', data: { email: 'a@x.test' } })).rejects.toBeInstanceOf(
+      UnrecoverableError,
+    );
   });
 
   it('eligibility-result looks the applicant up WITH x-internal-key and passes roleTitle on', async () => {

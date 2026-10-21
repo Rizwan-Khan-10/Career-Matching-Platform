@@ -18,12 +18,14 @@ import { toast } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors';
 import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
 import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
-import { isTwoFactorChallenge, GoogleLoginResponse, TokenResponse } from '@/types/auth';
+import { isTwoFactorChallenge, isVerificationRequired, GoogleLoginResponse, SignupResponse } from '@/types/auth';
+import { ResendVerification } from '@/components/auth/ResendVerification';
 
 export default function SignupPage() {
     const router = useRouter();
     const finishLogin = useFinishLogin();
     const [serverError, setServerError] = useState<string | null>(null);
+    const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
     const { data: modeInfo, isLoading: isModeLoading } = useRegistrationMode();
     const isClosed = modeInfo?.mode === 'invite_only';
@@ -39,8 +41,12 @@ export default function SignupPage() {
     const role = useWatch({ control, name: 'role' });
 
     const mutation = useMutation({
-        mutationFn: (values: SignupFormValues) => apiClient.post<TokenResponse>('/auth/signup', values),
+        mutationFn: (values: SignupFormValues) => apiClient.post<SignupResponse>('/auth/signup', values),
         onSuccess: (res) => {
+            if (isVerificationRequired(res.data)) {
+                setPendingEmail(res.data.email); // no tokens yet: the user must click the link we mailed
+                return;
+            }
             if (!finishLogin(res.data)) setServerError('Login failed, please try again');
         },
         onError: (err: unknown) => {
@@ -92,6 +98,38 @@ export default function SignupPage() {
                 </StaggerItem>
                 <StaggerItem>
                     <Link href="/login" className="text-sm text-ink font-medium underline underline-offset-2">
+                        Go to log in
+                    </Link>
+                </StaggerItem>
+            </Stagger>
+        );
+    }
+
+    if (pendingEmail) {
+        return (
+            <Stagger className="w-full max-w-sm">
+                <StaggerItem>
+                    <h1 className="font-heading text-2xl text-ink mb-1">Check your inbox</h1>
+                    <p className="text-sm text-ink-grey mb-6">
+                        We sent a confirmation link to <span className="text-ink font-medium">{pendingEmail}</span>. Click it
+                        to finish creating your account. The link is valid for 24 hours.
+                    </p>
+                </StaggerItem>
+                <StaggerItem>
+                    <ResendVerification email={pendingEmail} startCooldown={30} />
+                </StaggerItem>
+                <StaggerItem>
+                    <p className="text-sm text-ink-grey mt-6">
+                        Wrong address?{' '}
+                        <button
+                            type="button"
+                            onClick={() => setPendingEmail(null)}
+                            className="text-ink font-medium underline underline-offset-2"
+                        >
+                            Sign up again
+                        </button>
+                    </p>
+                    <Link href="/login" className="text-sm text-ink-grey underline underline-offset-2 mt-2 inline-block">
                         Go to log in
                     </Link>
                 </StaggerItem>

@@ -18,6 +18,9 @@ model User {
   updatedAt    DateTime @updatedAt
 
   googleId     String?  @unique
+  // true for every account made before this existed (column default), and for imports / Google / admin.
+  // Only a self-signup that must click the e-mail link starts as false.
+  emailVerified Boolean @default(true)
   twoFactorEnabled Boolean        @default(false)
   twoFactorSecret  String? // AES-256-GCM encrypted, never plain text
   recoveryCodes    RecoveryCode[]

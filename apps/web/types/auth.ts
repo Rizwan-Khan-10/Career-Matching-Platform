@@ -51,3 +51,15 @@ export interface TwoFactorSetup {
   otpauthUrl: string;
   secret: string;
 }
+
+/** Sign-up with e-mail verification on: no tokens, the user must click the link we mailed. */
+export interface VerificationRequired {
+  verificationRequired: true;
+  email: string;
+}
+
+export type SignupResponse = TokenResponse | VerificationRequired;
+
+export function isVerificationRequired(res: SignupResponse): res is VerificationRequired {
+  return 'verificationRequired' in res;
+}

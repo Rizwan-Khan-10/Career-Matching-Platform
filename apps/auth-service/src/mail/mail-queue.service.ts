@@ -16,4 +16,9 @@ export class MailQueueService {
   async enqueueInvite(email: string, resetToken: string) {
     await this.queue.add('password-reset', { email, resetToken, invite: true });
   }
+
+  /** "Confirm your e-mail" for a self-signup. Link lives 24 h (see AuthService). */
+  async enqueueEmailVerification(email: string, verifyToken: string) {
+    await this.queue.add('email-verification', { email, verifyToken });
+  }
 }

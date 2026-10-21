@@ -22,6 +22,7 @@ import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
 import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
 import { isTwoFactorChallenge, isTwoFactorSetupRequired, LoginResponse } from '@/types/auth';
 import { AdminTwoFactorSetup } from '@/components/auth/AdminTwoFactorSetup';
+import { ResendVerification } from '@/components/auth/ResendVerification';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function LoginPage() {
   const [emailBlurred, setEmailBlurred] = useState(false);
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [setupToken, setSetupToken] = useState<string | null>(null);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   // null in college mode: the Google button is then not rendered at all
   const { data: modeInfo } = useRegistrationMode();
@@ -62,6 +64,12 @@ export default function LoginPage() {
     mutationFn: (values: LoginFormValues) => apiClient.post<LoginResponse>('/auth/login', values),
     onSuccess: (res) => handleLoginResponse(res.data),
     onError: (err: unknown, values) => {
+      if (getErrorCode(err) === 'EMAIL_NOT_VERIFIED') {
+        // password was right, the address was never confirmed: offer to send the link again
+        setUnverifiedEmail(values.email);
+        setServerError(getErrorMessage(err, 'Please verify your email first.'));
+        return;
+      }
       const raw = getErrorMessage(err, 'Something went wrong');
       // Same server message for "no such email" and "wrong password" (on purpose). Showing the typed
       // email lets the user spot a typo without the server leaking which emails have accounts.
@@ -151,7 +159,7 @@ export default function LoginPage() {
         <p className="text-sm text-ink-grey mb-8">Log in to continue.</p>
       </StaggerItem>
 
-      <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit((v) => { setUnverifiedEmail(null); mutation.mutate(v); })} className="flex flex-col gap-4">
         <StaggerItem>
           <Input
             type="email"
@@ -188,6 +196,12 @@ export default function LoginPage() {
                 Your account has been deactivated. Please contact your administrator.
               </p>
             )}
+          </StaggerItem>
+        )}
+
+        {unverifiedEmail && (
+          <StaggerItem>
+            <ResendVerification email={unverifiedEmail} />
           </StaggerItem>
         )}
 

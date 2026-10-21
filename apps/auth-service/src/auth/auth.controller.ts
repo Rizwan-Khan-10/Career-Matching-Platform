@@ -8,13 +8,20 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedRequest } from './types/authenticated-request';
+import { RateLimitService } from './rate-limit.service';
+
+const SIGNUP_LIMIT = {
+  max: Number(process.env.SIGNUP_RATE_MAX || 20),
+  windowSeconds: 60 * 60,
+} as const;
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private settingsService: SettingsService,
-  ) {}
+    private rateLimit: RateLimitService,
+  ) { }
 
   // Public: lets the signup page adapt to the current mode.
   @Get('registration-mode')
@@ -23,7 +30,14 @@ export class AuthController {
   }
 
   @Post('signup')
-  signup(@Body() dto: SignupDto) {
+  async signup(@Body() dto: SignupDto, @Ip() ip: string) {
+    await this.rateLimit.assert(
+      'signup',
+      ip,
+      SIGNUP_LIMIT.max,
+      SIGNUP_LIMIT.windowSeconds,
+      'Too many sign-up attempts from this network. Please try again later.',
+    );
     return this.authService.signup(dto);
   }
 

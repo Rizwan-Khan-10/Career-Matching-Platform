@@ -93,6 +93,7 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env.compose}
       TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:?set TWO_FACTOR_ENCRYPTION_KEY in .env.compose (openssl rand -hex 32)}
       TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-CareerMatch}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       USER_SERVICE_URL: http://user-service:3002
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env.compose}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.compose}

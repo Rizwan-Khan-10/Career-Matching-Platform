@@ -17,6 +17,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  googleId     String?  @unique
   twoFactorEnabled Boolean        @default(false)
   twoFactorSecret  String? // AES-256-GCM encrypted, never plain text
   recoveryCodes    RecoveryCode[]

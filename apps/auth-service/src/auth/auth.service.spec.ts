@@ -1,4 +1,4 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
@@ -39,12 +39,13 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
     verifyChallenge: vi.fn(),
     recoveryCodesLeft: vi.fn().mockResolvedValue(7),
   };
+  const google = { verify: vi.fn() };
   const service = new AuthService(
     prisma as any, jwt, redis as any, mail as any, settingsService as any,
-    new SessionStore(redis as any), new LoginLockService(redis as any), twoFactor as any,
+    new SessionStore(redis as any), new LoginLockService(redis as any), twoFactor as any, google as any,
   );
   const sid = (token: string) => (jwt.decode(token) as { sid: string }).sid;
-  return { service, prisma, fake, jwt, sid, twoFactor };
+  return { service, prisma, fake, jwt, sid, twoFactor, google };
 }
 
 /**
@@ -290,7 +291,7 @@ describe('AuthService two-factor login', () => {
 
   it('a wrong password never reaches the challenge step', async () => {
     const { service, twoFactor } = build({}, activeUser({ twoFactorEnabled: true }));
-    await service.login({ ...creds, password: 'wrong-password' }).catch(() => {});
+    await service.login({ ...creds, password: 'wrong-password' }).catch(() => { });
     expect(twoFactor.createChallenge).not.toHaveBeenCalled();
   });
 
@@ -323,6 +324,142 @@ describe('AuthService two-factor login', () => {
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: { passwordHash: expect.any(String) },
+    });
+  });
+});
+
+describe('AuthService.googleLogin', () => {
+  const profile = { sub: 'g-123', email: 'Ravi@Gmail.com', emailVerified: true };
+
+  /** findUnique answers by the field it is asked about, like the real table would. */
+  function setup(settings: Partial<SystemSettings>, rows: { byGoogle?: any; byEmail?: any } = {}) {
+    const ctx = build({ registrationMode: 'open', ...settings });
+    ctx.google.verify.mockResolvedValue(profile);
+    ctx.prisma.user.findUnique.mockImplementation(async ({ where }: any) => {
+      if (where.googleId) return rows.byGoogle ?? null;
+      if (where.email) return rows.byEmail ?? null;
+      return null;
+    });
+    return ctx;
+  }
+  const dto = { credential: 'google-id-token' };
+
+  describe('college mode', () => {
+    it.each(['invite_only', 'domain'] as const)('is closed in %s mode and never asks Google', async (mode) => {
+      const { service, google, prisma } = setup({ registrationMode: mode, allowedDomains: ['college.edu'] });
+      await expect(service.googleLogin(dto)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(google.verify).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('also refuses a user who linked Google earlier, once the mode is closed', async () => {
+      const { service } = setup({ registrationMode: 'invite_only' }, { byGoogle: activeUser({ googleId: 'g-123' }) });
+      await expect(service.googleLogin(dto)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('token checks', () => {
+    it('refuses a bad token and creates nothing', async () => {
+      const { service, google, prisma } = setup({});
+      google.verify.mockRejectedValue(new UnauthorizedException('Invalid Google sign-in'));
+      await expect(service.googleLogin({ ...dto, role: 'APPLICANT' })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an e-mail Google has not verified', async () => {
+      const { service, google, prisma } = setup({});
+      google.verify.mockResolvedValue({ ...profile, emailVerified: false });
+      await expect(service.googleLogin({ ...dto, role: 'APPLICANT' })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('looks the e-mail up in lower case', async () => {
+      const { service, prisma } = setup({}, { byEmail: activeUser({ googleId: null, twoFactorEnabled: false }) });
+      await service.googleLogin(dto);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'ravi@gmail.com' } });
+    });
+  });
+
+  describe('new user', () => {
+    it('gets ROLE_REQUIRED when no role was sent, and nothing is created', async () => {
+      const { service, prisma } = setup({});
+      const err: any = await service.googleLogin(dto).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse()).toMatchObject({ code: 'ROLE_REQUIRED' });
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('is created like a normal signup: company starts as pending when approval is required', async () => {
+      const { service, prisma } = setup({ companyApprovalRequired: true });
+      const result: any = await service.googleLogin({ ...dto, role: 'COMPANY' });
+
+      expect(prisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ email: 'ravi@gmail.com', googleId: 'g-123', role: 'COMPANY' }),
+      });
+      expect(axios.post).toHaveBeenCalledWith(
+        'http://user-service/internal/profiles',
+        expect.objectContaining({ role: 'COMPANY', companyStatus: 'pending' }),
+        expect.anything(),
+      );
+      expect(result.accessToken).toBeDefined();
+    });
+  });
+
+  describe('existing e-mail', () => {
+    it('links the account, replaces the password and ends every session', async () => {
+      const { service, prisma, fake } = setup({}, { byEmail: activeUser({ googleId: null, twoFactorEnabled: false }) });
+      fake.store.set('refresh:u1:old-device', 'old-token');
+
+      const result: any = await service.googleLogin(dto);
+
+      const data = prisma.user.update.mock.calls[0][0].data;
+      expect(data.googleId).toBe('g-123');
+      expect(await bcrypt.compare(PASSWORD, data.passwordHash)).toBe(false); // the old password is dead
+      expect(fake.store.has('refresh:u1:old-device')).toBe(false);
+      expect(result.accessToken).toBeDefined();
+    });
+
+    it('refuses to link an account that has 2FA (it could have been set up by a pre-registerer)', async () => {
+      const { service, prisma } = setup({}, { byEmail: activeUser({ googleId: null, twoFactorEnabled: true }) });
+      const err: any = await service.googleLogin(dto).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getResponse()).toMatchObject({ code: 'GOOGLE_LINK_BLOCKED' });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an account already tied to a different Google account', async () => {
+      const { service, prisma } = setup({}, { byEmail: activeUser({ googleId: 'someone-else', twoFactorEnabled: false }) });
+      await expect(service.googleLogin(dto)).rejects.toThrow('Invalid credentials');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses ADMIN accounts with the generic message and changes nothing', async () => {
+      const { service, prisma } = setup({}, { byEmail: activeUser({ role: 'ADMIN', googleId: null }) });
+      await expect(service.googleLogin(dto)).rejects.toThrow('Invalid credentials');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a disabled account and does not link it', async () => {
+      const { service, prisma } = setup({}, { byEmail: activeUser({ isActive: false, googleId: null }) });
+      await expect(service.googleLogin(dto)).rejects.toThrow('Account disabled');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('already linked', () => {
+    it('signs in without touching the account', async () => {
+      const { service, prisma } = setup({}, { byGoogle: activeUser({ googleId: 'g-123', twoFactorEnabled: false }) });
+      const result: any = await service.googleLogin(dto);
+      expect(result.accessToken).toBeDefined();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('still asks for the 2FA code when the user turned it on', async () => {
+      const { service, fake } = setup({}, { byGoogle: activeUser({ googleId: 'g-123', twoFactorEnabled: true }) });
+      const result: any = await service.googleLogin(dto);
+      expect(result).toEqual({ twoFactorRequired: true, challengeId: 'chal-1' });
+      expect(result.accessToken).toBeUndefined();
+      expect([...fake.store.keys()].some((k) => k.startsWith('refresh:'))).toBe(false);
     });
   });
 });

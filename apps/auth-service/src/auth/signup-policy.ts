@@ -25,3 +25,19 @@ export function resolveCompanyStatus(settings: SystemSettings): 'pending' | 'app
     ? 'pending'
     : 'approved';
 }
+
+/**
+ * Google sign-in only works while sign-up is open.
+ * College use (invite_only, or domain-limited) is password-only on purpose: institution e-mail
+ * addresses are often not Google accounts, or their admin blocks third-party sign-in.
+ * To allow Google in domain mode later, change only this function.
+ */
+export function isGoogleSignInAllowed(settings: Pick<SystemSettings, 'registrationMode'>): boolean {
+  return settings.registrationMode === 'open';
+}
+
+export function assertGoogleAllowed(settings: Pick<SystemSettings, 'registrationMode'>): void {
+  if (!isGoogleSignInAllowed(settings)) {
+    throw new ForbiddenException('Google sign-in is not available. Please log in with your email and password.');
+  }
+}

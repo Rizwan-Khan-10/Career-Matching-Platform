@@ -13,6 +13,9 @@ import { TwoFactorService } from './two-factor/two-factor.service';
 import { EnableTwoFactorDto } from './dto/enable-two-factor.dto';
 import { TwoFactorConfirmDto } from './dto/two-factor-confirm.dto';
 import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { getGoogleClientId } from './google-token-verifier';
+import { isGoogleSignInAllowed } from './signup-policy';
 
 const SIGNUP_LIMIT = {
   max: Number(process.env.SIGNUP_RATE_MAX || 20),
@@ -28,10 +31,14 @@ export class AuthController {
     private twoFactor: TwoFactorService,
   ) { }
 
-  // Public: lets the signup page adapt to the current mode.
+  // Public: lets the login/signup pages adapt to the current mode.
+  // googleEnabled is false in college mode (invite_only / domain), so the web app hides the button.
   @Get('registration-mode')
-  registrationMode() {
-    return this.settingsService.getRegistrationMode();
+  async registrationMode() {
+    const info = await this.settingsService.getRegistrationMode();
+    const clientId = getGoogleClientId();
+    const googleEnabled = !!clientId && isGoogleSignInAllowed({ registrationMode: info.mode });
+    return { ...info, googleEnabled, googleClientId: googleEnabled ? clientId : null };
   }
 
   @Post('signup')
@@ -44,6 +51,12 @@ export class AuthController {
       'Too many sign-up attempts from this network. Please try again later.',
     );
     return this.authService.signup(dto);
+  }
+
+  @Post('google')
+  async google(@Body() dto: GoogleLoginDto, @Ip() ip: string) {
+    await this.rateLimit.assert('google', ip, 30, 10 * 60, 'Too many attempts. Please try again in a few minutes.');
+    return this.authService.googleLogin(dto);
   }
 
   @Post('login')

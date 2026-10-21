@@ -8,22 +8,41 @@ import { ProfileBanner } from '@/components/ProfileBanner';
 import { CompanyProfileModal } from '@/components/profile/CompanyProfileModal';
 import { FadeIn } from '@/components/motion/FadeIn';
 import type { JobPosting } from '@/types/job';
-import type { CompanyStats } from '@/types/stats';
+import { PeopleDrawer } from '@/components/stats/PeopleDrawer';
+import { InsightsPanel } from '@/components/stats/InsightsPanel';
+import { StageCount } from '@/components/stats/StageCount';
+import { STAGE_LABEL, type Drill } from '@/components/stats/stages';
+import type { CompanyStats, PeopleStage } from '@/types/stats';
 
-function StatCard({ value, label, hint, delay }: { value: number | string; label: string; hint?: string; delay?: number }) {
+function StatCard({ value, label, hint, delay, onOpen }: { value: number | string; label: string; hint?: string; delay?: number; onOpen?: () => void }) {
+  const clickable = !!onOpen && typeof value === 'number' && value > 0;
+  const body = (
+    <div className={`bg-paper-raised border border-hairline rounded-xl p-5 ${clickable ? 'hover:border-accent transition-colors' : ''}`}>
+      <p className="text-2xl font-heading font-bold text-ink">{value}</p>
+      <p className="text-sm text-ink-grey mt-1">{label}</p>
+      {hint && <p className="text-xs text-ink-grey mt-0.5">{hint}</p>}
+    </div>
+  );
   return (
     <FadeIn delay={delay}>
-      <div className="bg-paper-raised border border-hairline rounded-xl p-5">
-        <p className="text-2xl font-heading font-bold text-ink">{value}</p>
-        <p className="text-sm text-ink-grey mt-1">{label}</p>
-        {hint && <p className="text-xs text-ink-grey mt-0.5">{hint}</p>}
-      </div>
+      {clickable ? (
+        <button type="button" onClick={onOpen} aria-label={`${value} ${label.toLowerCase()}, view list`} className="text-left w-full cursor-pointer">
+          {body}
+        </button>
+      ) : (
+        body
+      )}
     </FadeIn>
   );
 }
 
 export default function CompanyDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const [insights, setInsights] = useState<{ roleId: string; title: string } | null>(null);
+  // Applied / Shortlisted / Rejected list the people (they approved sharing); the server only allows these three stages
+  const openStage = (stage: PeopleStage, title?: string, jobRoleId?: string) =>
+    setDrill({ title: `${title ? `${title} · ` : ''}${STAGE_LABEL[stage]}`, filters: { stage, jobRoleId } });
 
   const { data: profile } = useQuery({
     queryKey: ['companyProfile'],
@@ -54,12 +73,12 @@ export default function CompanyDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard value={t?.scanned ?? '—'} label="Applicants scanned" hint="resumes checked against your jobs" />
         <StatCard value={t?.matched ?? '—'} label="Matched" hint="meet your requirements" delay={0.05} />
-        <StatCard value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" delay={0.1} />
-        <StatCard value={t?.shortlisted ?? '—'} label="Shortlisted" delay={0.15} />
+        <StatCard value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" delay={0.1} onOpen={() => openStage('applied')} />
+        <StatCard value={t?.shortlisted ?? '—'} label="Shortlisted" delay={0.15} onOpen={() => openStage('shortlisted')} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-        <StatCard value={t?.rejected ?? '—'} label="Rejected" delay={0.2} />
+        <StatCard value={t?.rejected ?? '—'} label="Rejected" delay={0.2} onOpen={() => openStage('rejected')} />
         <StatCard value={postings?.length ?? 0} label="Job postings" hint={stoppedJobs ? `${stoppedJobs} stopped` : undefined} delay={0.25} />
         <StatCard value={totalRoles} label="Roles posted" delay={0.3} />
         <StatCard
@@ -94,11 +113,11 @@ export default function CompanyDashboard() {
                       {r.roleTitle}
                     </Link>
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.scanned}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.matched}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.applied}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.shortlisted ?? '—'}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.rejected ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.scanned} stage="scanned" onOpen={() => setInsights({ roleId: r.jobRoleId, title: r.roleTitle })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.matched} stage="matched" onOpen={() => setInsights({ roleId: r.jobRoleId, title: r.roleTitle })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.applied ?? 0} stage="applied" onOpen={() => openStage('applied', r.roleTitle, r.jobRoleId)} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.shortlisted ?? 0} stage="shortlisted" onOpen={() => openStage('shortlisted', r.roleTitle, r.jobRoleId)} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', r.roleTitle, r.jobRoleId)} /></td>
                   <td className="px-4 py-2.5 text-right">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${r.stopped ? 'bg-paper text-ink-grey border border-hairline' : 'bg-success-soft text-success'}`}>
                       {r.stopped ? 'Stopped' : 'Active'}
@@ -110,6 +129,8 @@ export default function CompanyDashboard() {
           </table>
         </div>
       )}
+      <InsightsPanel roleId={insights?.roleId ?? null} roleTitle={insights?.title ?? ''} onClose={() => setInsights(null)} />
+      <PeopleDrawer drill={drill} viewer="company" onClose={() => setDrill(null)} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
 import { cn } from '@/lib/cn';
+import { streamLabel } from '@/lib/streams';
 import { Pill } from '@/components/admin/Pill';
 import type { SystemHealth } from '@/types/admin';
 
@@ -79,7 +80,7 @@ export default function AdminHealthPage() {
                 <tbody>
                   {streams.map((s) => (
                     <tr key={s.name} className={cn('border-b border-hairline last:border-0', s.deadLength > 0 && 'bg-danger-soft/50')}>
-                      <td className="px-4 py-2.5 font-mono text-xs text-ink">{s.name}</td>
+                      <td className="px-4 py-2.5 text-sm text-ink" title={s.name}>{streamLabel(s.name)}</td>
                       <td className="px-3 py-2.5 text-right font-mono">{s.length.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-right">
                         {s.deadLength > 0 ? (

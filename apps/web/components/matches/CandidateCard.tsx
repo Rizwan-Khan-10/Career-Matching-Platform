@@ -43,7 +43,7 @@ export function CandidateCard({
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <p className="text-sm font-medium text-ink truncate">
-                        {person?.name || `Applicant ${match.applicantId.slice(0, 8)}`}
+                        {person?.name || 'Unnamed applicant'}
                     </p>
                     {(person?.headline || person?.location) && (
                         <p className="text-xs text-ink-grey truncate">

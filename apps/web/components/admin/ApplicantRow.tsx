@@ -1,10 +1,21 @@
 import { Pill } from '@/components/admin/Pill';
 import { UserLifecycleActions } from '@/components/admin/UserLifecycleActions';
 import type { AdminApplicant } from '@/types/admin';
+import type { ApplicantStage } from '@/types/stats';
+
+export const STAGE_PILL: Record<ApplicantStage, { label: string; tone: 'success' | 'danger' | 'accent' | 'muted' }> = {
+    none: { label: 'No resume yet', tone: 'muted' },
+    parsed: { label: 'Resume parsed', tone: 'muted' },
+    scanned: { label: 'Scanned', tone: 'muted' },
+    matched: { label: 'Matched', tone: 'accent' },
+    applied: { label: 'Applied', tone: 'accent' },
+    shortlisted: { label: 'Shortlisted', tone: 'success' },
+    rejected: { label: 'Rejected', tone: 'danger' },
+};
 
 export const APPLICANTS_KEY = ['adminApplicants'] as const;
 
-export function ApplicantRow({ applicant }: { applicant: AdminApplicant }) {
+export function ApplicantRow({ applicant, stage }: { applicant: AdminApplicant; stage?: ApplicantStage }) {
     const name = applicant.name || 'This applicant';
     const academic = [
         applicant.cgpa != null ? `CGPA ${applicant.cgpa}` : null,
@@ -19,6 +30,7 @@ export function ApplicantRow({ applicant }: { applicant: AdminApplicant }) {
                 <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium text-ink">{applicant.name || 'Unnamed'}</p>
                     {applicant.isActive === false && <Pill tone="muted">Deactivated</Pill>}
+                    {stage && <Pill tone={STAGE_PILL[stage].tone} title="Furthest stage this applicant reached">{STAGE_PILL[stage].label}</Pill>}
                 </div>
                 <p className="text-xs text-ink-grey truncate">{applicant.email || 'Email not available'}</p>
                 <p className="text-xs text-ink-grey">

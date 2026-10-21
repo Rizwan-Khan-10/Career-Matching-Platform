@@ -109,6 +109,7 @@ services:
     environment:
       <<: [*nest-env, *cloudinary]
       PORT: "3003"
+      USER_SERVICE_URL: http://user-service:3002
     depends_on:
       postgres: *healthy
       redis: *healthy
@@ -133,6 +134,7 @@ services:
     environment:
       <<: *nest-env
       PORT: "3005"
+      USER_SERVICE_URL: http://user-service:3002
     depends_on:
       postgres: *healthy
       redis: *healthy

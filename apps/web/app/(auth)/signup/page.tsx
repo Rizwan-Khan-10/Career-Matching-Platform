@@ -17,6 +17,7 @@ import { toast } from '@/lib/toast';
 import { decodeJwtPayload } from '@/lib/jwt';
 import { getErrorMessage } from '@/lib/errors';
 import type { RegistrationModeInfo } from '@/types/auth';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -125,7 +126,7 @@ export default function SignupPage() {
                     <FieldError message={errors.email?.message} />
                 </StaggerItem>
                 <StaggerItem>
-                    <Input type="password" placeholder="Password" {...register('password')} />
+                    <PasswordInput placeholder="Password" autoComplete="new-password" {...register('password')} />
                     <FieldError message={errors.password?.message} />
                 </StaggerItem>
 

@@ -14,6 +14,10 @@ import { assertSignupAllowed, resolveCompanyStatus } from './signup-policy';
 import axios from 'axios';
 import { currentRequestId } from '../common/request-context';
 
+// Used when the email does not exist, so that request still pays for one bcrypt compare
+// and cannot be told apart from a wrong password by its response time.
+const DUMMY_HASH = bcrypt.hashSync(randomBytes(16).toString('hex'), 10);
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -56,13 +60,10 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      await this.loginLock.recordFailure(email, ip);
-      throw new UnauthorizedException('Invalid credentials');
-    }
 
-    const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) {
+    // Always run exactly one bcrypt compare, whether or not the account exists.
+    const valid = await bcrypt.compare(dto.password, user?.passwordHash ?? DUMMY_HASH);
+    if (!user || !valid) {
       await this.loginLock.recordFailure(email, ip);
       throw new UnauthorizedException('Invalid credentials');
     }

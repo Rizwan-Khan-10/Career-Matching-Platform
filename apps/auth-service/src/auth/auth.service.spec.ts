@@ -9,6 +9,11 @@ import { SessionStore } from '../sessions/session-store.service';
 import { DEFAULT_SETTINGS, SystemSettings } from '../settings/settings';
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
+vi.mock('bcrypt', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  const real = actual.default ?? actual;
+  return { ...real, default: real, compare: vi.fn(real.compare) };
+});
 
 const PASSWORD = 'Password123';
 const HASH = bcrypt.hashSync(PASSWORD, 4);
@@ -224,5 +229,34 @@ describe('AuthService login lock', () => {
     await service.login(right, '1.1.1.1');
 
     expect(fake.store.has('login-attempts:ip:a@b.com:1.1.1.1')).toBe(false);
+  });
+});
+
+describe('AuthService.login: no user enumeration', () => {
+  it('gives the same status and message for an unknown email and a wrong password', async () => {
+    const unknown = await build({}, null).service
+      .login({ email: 'nobody@b.com', password: 'whatever123' })
+      .catch((e) => e);
+    const wrong = await build({}, activeUser()).service
+      .login({ email: 'a@b.com', password: 'wrong-password' })
+      .catch((e) => e);
+
+    expect(unknown).toBeInstanceOf(UnauthorizedException);
+    expect(wrong).toBeInstanceOf(UnauthorizedException);
+    expect(unknown.getStatus()).toBe(wrong.getStatus());
+    expect(unknown.message).toBe(wrong.message);
+    expect(unknown.message).toBe('Invalid credentials');
+  });
+
+  it('runs bcrypt.compare even when the email does not exist', async () => {
+    (bcrypt.compare as any).mockClear();
+    await build({}, null).service.login({ email: 'nobody@b.com', password: 'whatever123' }).catch(() => {});
+    expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+  });
+
+  it('still counts the failure for an unknown email (lock applies to it too)', async () => {
+    const { service, fake } = build({}, null);
+    await service.login({ email: 'nobody@b.com', password: 'x' }, '9.9.9.9').catch(() => {});
+    expect(fake.store.get('login-attempts:ip:nobody@b.com:9.9.9.9')).toBe('1');
   });
 });

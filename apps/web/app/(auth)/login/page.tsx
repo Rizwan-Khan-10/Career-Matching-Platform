@@ -11,20 +11,28 @@ import { useAuthStore } from '@/store/authStore';
 import { loginSchema, LoginFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 import { decodeJwtPayload } from '@/lib/jwt';
 import { getErrorMessage } from '@/lib/errors';
+import { suggestEmailFix } from '@/lib/emailTypo';
 
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [emailBlurred, setEmailBlurred] = useState(false);
 
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
   });
+
+  const emailField = register('email');
+  const emailValue = watch('email') ?? '';
+  // shown only after the user leaves the field, so it does not flash while they are still typing
+  const emailFix = emailBlurred ? suggestEmailFix(emailValue) : null;
 
   const mutation = useMutation({
     mutationFn: (values: LoginFormValues) => apiClient.post('/auth/login', values),
@@ -38,8 +46,13 @@ export default function LoginPage() {
       else if (role === 'COMPANY') router.push('/company/dashboard');
       else router.push('/admin/dashboard');
     },
-    onError: (err: unknown) => {
-      const msg = getErrorMessage(err, 'Something went wrong');
+    onError: (err: unknown, values) => {
+      const raw = getErrorMessage(err, 'Something went wrong');
+      // Same server message for "no such email" and "wrong password" (on purpose). Showing the typed
+      // email lets the user spot a typo without the server leaking which emails have accounts.
+      const msg = raw === 'Invalid credentials'
+        ? `We couldn't sign you in as ${values.email}. Check the email and password.`
+        : raw;
       setServerError(msg);
       toast.error(msg);
     },
@@ -54,11 +67,30 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
         <StaggerItem>
-          <Input type="email" placeholder="Email" {...register('email')} />
+          <Input
+            type="email"
+            placeholder="Email"
+            autoComplete="email"
+            {...emailField}
+            onBlur={(e) => { emailField.onBlur(e); setEmailBlurred(true); }}
+          />
           <FieldError message={errors.email?.message} />
+          {emailFix && (
+            <p className="text-xs text-ink-grey mt-1">
+              Did you mean{' '}
+              <button
+                type="button"
+                className="text-ink font-medium underline underline-offset-2"
+                onClick={() => setValue('email', emailFix, { shouldValidate: true })}
+              >
+                {emailFix}
+              </button>
+              ?
+            </p>
+          )}
         </StaggerItem>
         <StaggerItem>
-          <Input type="password" placeholder="Password" {...register('password')} />
+          <PasswordInput placeholder="Password" autoComplete="current-password" {...register('password')} />
           <FieldError message={errors.password?.message} />
         </StaggerItem>
 

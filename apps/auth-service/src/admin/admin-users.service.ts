@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionStore } from '../sessions/session-store.service';
 import { UserServiceClient } from '../clients/user-service.client';
@@ -9,7 +9,7 @@ export class AdminUsersService {
     private prisma: PrismaService,
     private sessions: SessionStore,
     private userService: UserServiceClient,
-  ) {}
+  ) { }
 
   async setActive(actorId: string, userId: string, active: boolean) {
     if (actorId === userId) throw new ForbiddenException('You cannot change the status of your own account');
@@ -44,10 +44,16 @@ export class AdminUsersService {
     return user;
   }
 
-    /** For a user who lost their phone AND their recovery codes. Signs them out everywhere. */
+  /** For a user who lost their phone AND their recovery codes. Signs them out everywhere. */
   async resetTwoFactor(actorId: string, userId: string) {
     if (actorId === userId) throw new ForbiddenException('Use your own security settings to change two-factor');
-    const user = await this.requireUser(userId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, twoFactorEnabled: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.twoFactorEnabled) throw new BadRequestException('This user has not turned on two-factor');
 
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id: userId }, data: { twoFactorEnabled: false, twoFactorSecret: null } }),

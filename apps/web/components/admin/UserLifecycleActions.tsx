@@ -21,8 +21,8 @@ export function UserLifecycleActions({
     isActive: boolean;
     listKey: readonly unknown[];
 }) {
-    const { setActive, remove } = useUserActions(listKey);
-    const [dialog, setDialog] = useState<'deactivate' | 'delete' | null>(null);
+    const { setActive, remove, resetTwoFactor } = useUserActions(listKey);
+    const [dialog, setDialog] = useState<'deactivate' | 'delete' | 'reset2fa' | null>(null);
     const close = () => setDialog(null);
 
     const reactivate = async () => {
@@ -45,6 +45,9 @@ export function UserLifecycleActions({
                     Reactivate
                 </button>
             )}
+            <button type="button" onClick={() => setDialog('reset2fa')} className={`${buttonClass} hover:text-ink`}>
+                Reset 2FA
+            </button>
             <button type="button" onClick={() => setDialog('delete')} className={`${buttonClass} hover:text-danger hover:border-danger`}>
                 Delete
             </button>
@@ -70,6 +73,17 @@ export function UserLifecycleActions({
                 onConfirm={async () => {
                     await remove.mutateAsync(userId);
                     toast.success(`${name} deleted`);
+                }}
+            />
+            <ConfirmDialog
+                open={dialog === 'reset2fa'}
+                title="Reset two-factor"
+                message={`${name} will be signed out everywhere and can log in with just their password until they turn two-factor on again. Only do this after you have checked who is asking.`}
+                confirmLabel="Reset 2FA"
+                onClose={close}
+                onConfirm={async () => {
+                    await resetTwoFactor.mutateAsync(userId);
+                    toast.success(`Two-factor reset for ${name}`);
                 }}
             />
         </>

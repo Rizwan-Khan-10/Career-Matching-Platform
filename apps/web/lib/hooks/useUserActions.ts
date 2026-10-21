@@ -19,5 +19,10 @@ export function useUserActions(listKey: readonly unknown[]) {
     onSuccess: refresh,
   });
 
-  return { setActive, remove };
+  const resetTwoFactor = useMutation({
+    mutationFn: (userId: string) => apiClient.post(`/auth/admin/users/${userId}/2fa/reset`).then((r) => r.data),
+  });
+
+
+  return { setActive, remove, resetTwoFactor };
 }

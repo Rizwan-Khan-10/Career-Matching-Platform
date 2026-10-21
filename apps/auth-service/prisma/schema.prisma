@@ -17,6 +17,21 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  twoFactorEnabled Boolean        @default(false)
+  twoFactorSecret  String? // AES-256-GCM encrypted, never plain text
+  recoveryCodes    RecoveryCode[]
+
+  @@schema("auth_service")
+}
+
+model RecoveryCode {
+  id       String    @id @default(uuid())
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash String // bcrypt hash; the plain code is shown to the user only once
+  usedAt   DateTime?
+
+  @@index([userId])
   @@schema("auth_service")
 }
 

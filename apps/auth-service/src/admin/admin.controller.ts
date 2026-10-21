@@ -20,7 +20,7 @@ export class AdminController {
     private userImport: UserImportService,
     private users: AdminUsersService,
     private userService: UserServiceClient,
-  ) {}
+  ) { }
 
   @Get('settings')
   getSettings() {
@@ -51,6 +51,11 @@ export class AdminController {
     @Body() dto: SetActiveDto,
   ) {
     return this.users.setActive(req.user.userId, id, dto.active);
+  }
+
+  @Post('users/:id/2fa/reset')
+  resetTwoFactor(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.users.resetTwoFactor(req.user.userId, id);
   }
 
   @Delete('users/:id')

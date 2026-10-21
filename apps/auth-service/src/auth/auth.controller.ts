@@ -9,6 +9,10 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedRequest } from './types/authenticated-request';
 import { RateLimitService } from './rate-limit.service';
+import { TwoFactorService } from './two-factor/two-factor.service';
+import { EnableTwoFactorDto } from './dto/enable-two-factor.dto';
+import { TwoFactorConfirmDto } from './dto/two-factor-confirm.dto';
+import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
 
 const SIGNUP_LIMIT = {
   max: Number(process.env.SIGNUP_RATE_MAX || 20),
@@ -21,6 +25,7 @@ export class AuthController {
     private authService: AuthService,
     private settingsService: SettingsService,
     private rateLimit: RateLimitService,
+    private twoFactor: TwoFactorService,
   ) { }
 
   // Public: lets the signup page adapt to the current mode.
@@ -65,5 +70,43 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.resetToken, dto.newPassword);
+  }
+
+  // ---------- two-factor ----------
+
+  @UseGuards(JwtAuthGuard)
+  @Get('2fa/status')
+  twoFactorStatus(@Req() req: AuthenticatedRequest) {
+    return this.twoFactor.status(req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  twoFactorSetup(@Req() req: AuthenticatedRequest) {
+    return this.twoFactor.setup(req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/enable')
+  twoFactorEnable(@Req() req: AuthenticatedRequest, @Body() dto: EnableTwoFactorDto) {
+    return this.twoFactor.enable(req.user.userId, req.user.sessionId, dto.code);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  twoFactorDisable(@Req() req: AuthenticatedRequest, @Body() dto: TwoFactorConfirmDto) {
+    return this.twoFactor.disable(req.user.userId, req.user.sessionId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/recovery-codes')
+  twoFactorRecoveryCodes(@Req() req: AuthenticatedRequest, @Body() dto: TwoFactorConfirmDto) {
+    return this.twoFactor.regenerateRecoveryCodes(req.user.userId, dto);
+  }
+
+  // Public: the caller has a challenge id from /auth/login, not a token yet.
+  @Post('2fa/verify')
+  twoFactorVerify(@Body() dto: VerifyTwoFactorDto, @Ip() ip: string) {
+    return this.authService.verifyTwoFactor(dto, ip);
   }
 }

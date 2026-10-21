@@ -13,6 +13,8 @@ import { LoginLockService } from './login-lock.service';
 import { assertSignupAllowed, resolveCompanyStatus } from './signup-policy';
 import axios from 'axios';
 import { currentRequestId } from '../common/request-context';
+import { TwoFactorService } from './two-factor/two-factor.service';
+import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
 
 // Used when the email does not exist, so that request still pays for one bcrypt compare
 // and cannot be told apart from a wrong password by its response time.
@@ -29,6 +31,7 @@ export class AuthService {
     private settings: SettingsService,
     private sessions: SessionStore,
     private loginLock: LoginLockService,
+    private twoFactor: TwoFactorService,
   ) { }
 
   async signup(dto: SignupDto) {
@@ -73,7 +76,22 @@ export class AuthService {
 
     await this.loginLock.clear(email, ip);
 
+    // Password was right but the account has 2FA: no tokens yet, only a short-lived challenge.
+    if (user.twoFactorEnabled) {
+      return { twoFactorRequired: true as const, challengeId: await this.twoFactor.createChallenge(user.id) };
+    }
+
     return this.issueTokens(user.id, user.role); // every login is a new session (device)
+  }
+
+  /** Second step of login (also used by Google sign-in in a later batch). */
+  async verifyTwoFactor(dto: VerifyTwoFactorDto, ip = 'unknown') {
+    const { user, method } = await this.twoFactor.verifyChallenge(dto.challengeId, dto, ip);
+    const tokens = await this.issueTokens(user.id, user.role);
+    if (method === 'recovery') {
+      return { ...tokens, recoveryCodesLeft: await this.twoFactor.recoveryCodesLeft(user.id) };
+    }
+    return tokens;
   }
 
   async refresh(refreshToken: string) {

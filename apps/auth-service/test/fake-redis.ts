@@ -7,7 +7,8 @@ export class FakeRedis {
     return this.store.get(key) ?? null;
   }
 
-  async set(key: string, value: string, _ex?: string, seconds?: number) {
+  async set(key: string, value: string, _ex?: string, seconds?: number, nx?: string) {
+    if (nx === 'NX' && this.store.has(key)) return null; // real Redis also answers null
     this.store.set(key, value);
     if (seconds) this.ttls.set(key, seconds);
     return 'OK';

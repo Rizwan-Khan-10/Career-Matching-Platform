@@ -20,6 +20,14 @@ describe('normalizeSettings', () => {
     expect(s.companyApprovalRequired).toBe(true);
     expect(s.jobApprovalRequired).toBe(true);
   });
+
+  it('defaults: admin 2FA off, e-mail verification on; ignores non-boolean values', () => {
+    expect(normalizeSettings({}).requireTwoFactorForAdmin).toBe(false);
+    expect(normalizeSettings({}).emailVerificationRequired).toBe(true);
+    const s = normalizeSettings({ requireTwoFactorForAdmin: 'yes', emailVerificationRequired: false });
+    expect(s.requireTwoFactorForAdmin).toBe(false);
+    expect(s.emailVerificationRequired).toBe(false);
+  });
 });
 
 describe('SettingsService', () => {

@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { REGISTRATION_MODES, RegistrationMode } from '../settings';
 
 export class UpdateSettingsDto {
@@ -16,4 +16,12 @@ export class UpdateSettingsDto {
 
   @IsBoolean()
   jobApprovalRequired: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requireTwoFactorForAdmin?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailVerificationRequired?: boolean;
 }

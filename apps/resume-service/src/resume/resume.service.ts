@@ -8,6 +8,7 @@ import {
     Logger,
 } from '@nestjs/common';
 import { newRequestId } from '../common/request-context';
+import { writeAudit } from '../common/audit-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -289,7 +290,8 @@ export class ResumeService {
         const resume = await this.prisma.resume.findUnique({ where: { id: resumeId } });
         if (!resume) throw new NotFoundException('Resume not found');
 
-        if ((role || '').toUpperCase() !== 'ADMIN') {
+        const isAdmin = (role || '').toUpperCase() === 'ADMIN';
+        if (!isAdmin) {
             const allowed = await this.prisma.$queryRaw<{ ok: number }[]>`
                 SELECT 1 AS ok FROM "matches_service"."Match" m
                 JOIN "jobs_service"."JobRole" jr ON jr.id = m."jobRoleId"
@@ -300,6 +302,11 @@ export class ResumeService {
             if (allowed.length === 0) throw new ForbiddenException('This applicant has not shared their resume with you');
         }
         if (!resume.pdfPublicId) throw new ConflictException('The PDF is still being prepared, try again in a moment');
+
+        // an admin can open any resume: leave a trace (who looked at whose resume). Best effort, never blocks the PDF.
+        if (isAdmin) {
+            void writeAudit({ actorId: userId, action: 'resume.viewed', target: resume.applicantId, meta: { resumeId } });
+        }
 
         return {
             url: this.storage.getSignedUrl(resume.pdfPublicId, 'pdf'),

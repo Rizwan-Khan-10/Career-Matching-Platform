@@ -1,5 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { writeAudit } from '../common/audit-client';
+import {
+    COMPANY_PEOPLE_STAGES,
+    EFFECTIVE_BRANCH_SQL,
+    PEOPLE_STAGES,
+    buildPeopleQuery,
+    clampLimit,
+    clampPage,
+    isDistinctMode,
+    resumeBranchJoin,
+    toPersonRow,
+    type PeopleFilters,
+    type PeoplePage,
+    type PeopleViewer,
+} from './stats-people';
 
 export interface RoleStats {
     jobRoleId: string;
@@ -21,6 +36,7 @@ export interface BranchStats {
     matched: number;
     applied: number;
     shortlisted: number;
+    rejected: number;
 }
 
 export interface Totals {
@@ -129,7 +145,8 @@ export class StatsService {
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = e."applicantId"))::int AS scanned,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = e."applicantId" AND rs.eligible))::int AS matched,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m."applicantStatus" = 'approved' AND m.eligible))::int AS applied,
-                   COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m.decision = 'shortlisted'))::int AS shortlisted
+                   COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m.decision = 'shortlisted'))::int AS shortlisted,
+                   COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM \"matches_service\".\"Match\" m WHERE m.\"applicantId\" = e.\"applicantId\" AND m.decision = 'rejected'))::int AS rejected
             FROM eff e
             GROUP BY e.branch
             ORDER BY scanned DESC, e.branch ASC`);
@@ -170,5 +187,119 @@ export class StatsService {
             .sort((a, b) => b.applied - a.applied || b.matched - a.matched);
 
         return { platform: platform[0], totals, byBranch, companies, roles: roles.slice(0, 300) };
+    }
+
+    // ------------------------------------------------------------------ people behind the numbers
+
+    private async ownedRole(jobRoleId: string, companyId: string) {
+        const rows = await this.prisma.$queryRawUnsafe<{ title: string; companyId: string }[]>(
+            `SELECT jr.title AS title, jp."companyId" AS "companyId"
+             FROM "jobs_service"."JobRole" jr JOIN "jobs_service"."JobPosting" jp ON jp.id = jr."jobPostingId"
+             WHERE jr.id = $1`,
+            jobRoleId,
+        );
+        if (rows.length === 0) throw new NotFoundException('Role not found');
+        if (rows[0].companyId !== companyId) throw new ForbiddenException('This role belongs to another company');
+        return rows[0];
+    }
+
+    /** The people behind one number of a dashboard. Admin: every stage. Company: only people who approved sharing. */
+    async people(filters: PeopleFilters, viewer: PeopleViewer): Promise<PeoplePage> {
+        if (!PEOPLE_STAGES.includes(filters.stage)) throw new BadRequestException('Unknown stage');
+        if (viewer.role === 'COMPANY') {
+            if (!COMPANY_PEOPLE_STAGES.includes(filters.stage)) {
+                throw new ForbiddenException('Companies can only list applicants who approved sharing their resume');
+            }
+            if (filters.jobRoleId) await this.ownedRole(filters.jobRoleId, viewer.userId);
+        }
+        if (filters.stage === 'parsed' && (filters.jobRoleId || filters.companyId)) {
+            throw new BadRequestException('Parsed resumes are not tied to a role or a company');
+        }
+
+        const page = clampPage(filters.page);
+        const limit = clampLimit(filters.limit);
+        const built = buildPeopleQuery({ ...filters, page, limit }, viewer);
+        const [count, rows] = await Promise.all([
+            this.prisma.$queryRawUnsafe<{ total: number }[]>(built.countSql, ...built.args),
+            this.prisma.$queryRawUnsafe<Record<string, any>[]>(built.pageSql, ...built.args),
+        ]);
+        return {
+            stage: filters.stage,
+            total: count[0]?.total ?? 0,
+            page,
+            limit,
+            distinct: isDistinctMode(filters, viewer),
+            rows: rows.map(toPersonRow),
+        };
+    }
+
+    /** Furthest stage of every person, for the Stage column / filter of the admin applicants page. */
+    async applicantStages(): Promise<{ applicantId: string; stage: string }[]> {
+        return this.prisma.$queryRawUnsafe<{ applicantId: string; stage: string }[]>(`
+            SELECT ap."userId" AS "applicantId",
+                   CASE
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m.decision = 'shortlisted') THEN 'shortlisted'
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m."applicantStatus" = 'approved' AND m.eligible AND m.decision IS NULL) THEN 'applied'
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m.decision = 'rejected') THEN 'rejected'
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = ap."userId" AND rs.eligible) THEN 'matched'
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = ap."userId") THEN 'scanned'
+                     WHEN EXISTS (SELECT 1 FROM "resumes_service"."Resume" r WHERE r."applicantId" = ap."userId" AND r.status = 'parsed') THEN 'parsed'
+                     ELSE 'none'
+                   END AS stage
+            FROM "users_service"."ApplicantProfile" ap`);
+    }
+
+    /**
+     * Company, scanned / matched: aggregate only. No names, no emails, because those people did not approve sharing.
+     */
+    async roleInsights(jobRoleId: string, companyId: string) {
+        const role = await this.ownedRole(jobRoleId, companyId);
+        const [counts, buckets, missing, branches] = await Promise.all([
+            this.prisma.$queryRawUnsafe<{ scanned: number; matched: number }[]>(
+                `WITH best AS (SELECT "applicantId", bool_or(eligible) AS eligible FROM "matches_service"."RoleScan" WHERE "jobRoleId" = $1 GROUP BY "applicantId")
+                 SELECT COUNT(*)::int AS scanned, (COUNT(*) FILTER (WHERE eligible))::int AS matched FROM best`,
+                jobRoleId,
+            ),
+            this.prisma.$queryRawUnsafe<{ bucket: number; count: number }[]>(
+                `WITH best AS (SELECT "applicantId", MAX(score) AS score FROM "matches_service"."RoleScan" WHERE "jobRoleId" = $1 GROUP BY "applicantId")
+                 SELECT LEAST(FLOOR(score * 5), 4)::int AS bucket, COUNT(*)::int AS count FROM best GROUP BY 1`,
+                jobRoleId,
+            ),
+            this.prisma.$queryRawUnsafe<{ skill: string; count: number }[]>(
+                `SELECT LOWER(TRIM(s)) AS skill, COUNT(*)::int AS count
+                 FROM "matches_service"."Match" m, UNNEST(m."missingSkills") s
+                 WHERE m."jobRoleId" = $1 AND TRIM(s) <> ''
+                 GROUP BY 1 ORDER BY 2 DESC, 1 ASC LIMIT 5`,
+                jobRoleId,
+            ),
+            this.prisma.$queryRawUnsafe<{ branch: string; scanned: number; matched: number }[]>(
+                `WITH best AS (SELECT "applicantId", bool_or(eligible) AS eligible FROM "matches_service"."RoleScan" WHERE "jobRoleId" = $1 GROUP BY "applicantId")
+                 SELECT ${EFFECTIVE_BRANCH_SQL} AS branch, COUNT(*)::int AS scanned, (COUNT(*) FILTER (WHERE b.eligible))::int AS matched
+                 FROM best b
+                 LEFT JOIN "users_service"."ApplicantProfile" ap ON ap."userId" = b."applicantId"
+                 ${resumeBranchJoin('b."applicantId"')}
+                 GROUP BY 1 ORDER BY 2 DESC, 1 ASC`,
+                jobRoleId,
+            ),
+        ]);
+        const scanned = counts[0]?.scanned ?? 0;
+        const matched = counts[0]?.matched ?? 0;
+        const byBucket = new Map(buckets.map((b) => [b.bucket, b.count]));
+        return {
+            jobRoleId,
+            roleTitle: role.title,
+            scanned,
+            matched,
+            notMatched: Math.max(scanned - matched, 0),
+            scoreBuckets: [0, 1, 2, 3, 4].map((i) => ({ from: i * 20, to: (i + 1) * 20, count: byBucket.get(i) ?? 0 })),
+            topMissingSkills: missing,
+            byBranch: branches,
+        };
+    }
+
+    /** Export of a people list holds personal data (emails): leave a trace in the audit log. */
+    async logPeopleExport(actorId: string, meta: { stage: string; rows: number; jobRoleId?: string; companyId?: string; branch?: string }) {
+        await writeAudit({ actorId, action: 'export.people', target: meta.stage, meta });
+        return { ok: true };
     }
 }

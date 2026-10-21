@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { FadeIn } from '@/components/motion/FadeIn';
-import { ApplicantRow, APPLICANTS_KEY } from '@/components/admin/ApplicantRow';
+import { ApplicantRow, APPLICANTS_KEY, STAGE_PILL } from '@/components/admin/ApplicantRow';
+import { Select } from '@/components/ui/Select';
 import { ListToolbar } from '@/components/admin/ListToolbar';
 import type { AdminApplicant } from '@/types/admin';
+import type { ApplicantStage, ApplicantStageRow } from '@/types/stats';
 
 const PAGE_SIZE = 50;
 type Tab = 'all' | 'active' | 'inactive';
@@ -16,6 +18,14 @@ export default function AdminApplicantsPage() {
     queryKey: APPLICANTS_KEY,
     queryFn: () => apiClient.get('/admin/applicants').then((r) => r.data),
   });
+  // furthest stage of each person (an older backend has no such endpoint: then the column and filter are simply hidden)
+  const { data: stageRows } = useQuery<ApplicantStageRow[]>({
+    queryKey: ['adminApplicantStages'],
+    queryFn: () => apiClient.get('/stats/admin/applicant-stages').then((r) => r.data),
+    retry: false,
+  });
+  const stageOf = new Map((stageRows ?? []).map((r) => [r.applicantId, r.stage]));
+  const [stageFilter, setStageFilter] = useState<'' | ApplicantStage>('');
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -28,6 +38,7 @@ export default function AdminApplicantsPage() {
       const isActive = a.isActive !== false;
       if (tab === 'active' && !isActive) return false;
       if (tab === 'inactive' && isActive) return false;
+      if (stageFilter && stageOf.get(a.userId) !== stageFilter) return false;
       return !q || `${a.name} ${a.email ?? ''} ${a.branch ?? ''}`.toLowerCase().includes(q);
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -53,6 +64,17 @@ export default function AdminApplicantsPage() {
         onTab={(id) => { setTab(id as Tab); setVisible(PAGE_SIZE); }}
       />
 
+      {stageRows && (
+        <div className="mb-4 max-w-xs">
+          <Select value={stageFilter} onChange={(e) => { setStageFilter(e.target.value as '' | ApplicantStage); setVisible(PAGE_SIZE); }} aria-label="Filter by stage">
+            <option value="">All stages</option>
+            {(Object.keys(STAGE_PILL) as ApplicantStage[]).map((st) => (
+              <option key={st} value={st}>{STAGE_PILL[st].label}</option>
+            ))}
+          </Select>
+        </div>
+      )}
+
       {isLoading && <div className="h-40 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
 
       {isError && (
@@ -74,7 +96,7 @@ export default function AdminApplicantsPage() {
           {filtered.slice(0, visible).map((applicant, i) => (
             <FadeIn key={applicant.id} delay={Math.min(i, 10) * 0.03}>
               <div className={i > 0 ? 'border-t border-hairline' : ''}>
-                <ApplicantRow applicant={applicant} />
+                <ApplicantRow applicant={applicant} stage={stageRows ? stageOf.get(applicant.userId) ?? 'none' : undefined} />
               </div>
             </FadeIn>
           ))}

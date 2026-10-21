@@ -12,23 +12,25 @@ import { Select } from '@/components/ui/Select';
 import type { AuditEntry } from '@/types/admin';
 
 const LIMITS = [50, 100, 200];
+const isId = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 export default function AdminAuditPage() {
   const me = useAuthStore((s) => s.userId);
   const [limit, setLimit] = useState(50);
   const [action, setAction] = useState('');
   const [search, setSearch] = useState('');
+  const [personId, setPersonId] = useState('');
 
   const { data, isLoading, isError, refetch } = useQuery<AuditEntry[]>({
-    queryKey: ['adminAudit', limit],
-    queryFn: () => apiClient.get('/admin/audit', { params: { limit } }).then((r) => r.data),
+    queryKey: ['adminAudit', limit, personId],
+    queryFn: () => apiClient.get('/admin/audit', { params: { limit, ...(personId ? { personId } : {}) } }).then((r) => r.data),
   });
 
   const entries = data ?? [];
   const actions = Array.from(new Set(entries.map((e) => e.action))).sort();
   const q = search.trim().toLowerCase();
   const shown = entries.filter(
-    (e) => (!action || e.action === action) && (!q || `${e.target} ${e.actorId} ${metaText(e.meta)}`.toLowerCase().includes(q)),
+    (e) => (!action || e.action === action) && (!q || `${e.target} ${e.targetLabel ?? ''} ${e.actorId} ${e.actorName ?? ''} ${metaText(e.meta)}`.toLowerCase().includes(q)),
   );
 
   return (
@@ -54,6 +56,13 @@ export default function AdminAuditPage() {
           ))}
         </Select>
       </div>
+
+      {personId && (
+        <p className="text-xs text-ink-grey mb-3">
+          Showing only entries about one person.{' '}
+          <button type="button" className="text-accent underline" onClick={() => setPersonId('')}>Show everything</button>
+        </p>
+      )}
 
       {isLoading && <div className="h-48 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
 
@@ -87,9 +96,21 @@ export default function AdminAuditPage() {
                     </time>
                   </div>
                   <p className="text-xs text-ink-grey mt-0.5 break-all">
-                    By {entry.actorId === me ? 'you' : <span className="font-mono" title={entry.actorId}>{entry.actorId.slice(0, 8)}</span>}
+                    By{' '}
+                    {entry.actorId === me ? 'you' : (
+                      <button type="button" className="text-ink hover:text-accent hover:underline" title={`${entry.actorId} (show only this person)`} onClick={() => setPersonId(entry.actorId)}>
+                        {entry.actorName || (isId(entry.actorId) ? 'Admin' : entry.actorId.slice(0, 8))}
+                      </button>
+                    )}
                     {' · '}
-                    Target <span className="font-mono">{entry.target}</span>
+                    Target{' '}
+                    {isId(entry.target) ? (
+                      <button type="button" className="text-ink hover:text-accent hover:underline" title={`${entry.target} (show only this person)`} onClick={() => setPersonId(entry.target)}>
+                        {entry.targetLabel || 'Unknown user'}
+                      </button>
+                    ) : (
+                      <span className="text-ink" title={entry.target}>{entry.targetLabel || entry.target}</span>
+                    )}
                   </p>
                   {details && (
                     <p className="text-xs text-ink mt-1 wrap-break-words" title={JSON.stringify(entry.meta)}>

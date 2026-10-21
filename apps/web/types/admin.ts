@@ -86,4 +86,6 @@ export interface AuditEntry {
   target: string;
   meta: Record<string, unknown> | null;
   createdAt: string;
+  actorName?: string | null;   // resolved by the backend; missing on an older backend
+  targetLabel?: string | null; // e.g. "Company: Acme Ltd"
 }

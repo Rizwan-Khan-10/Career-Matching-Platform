@@ -38,5 +38,5 @@ export class AdminController {
   health() { return this.streams.getStreams(); }
 
   @Get('audit')
-  auditLog(@Query() query: ListAuditDto) { return this.audit.list(query.limit ?? 50); }
+  auditLog(@Query() query: ListAuditDto) { return this.audit.list(query.limit ?? 50, query.personId); }
 }

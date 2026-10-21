@@ -458,3 +458,50 @@ describe('ResumeService.deleteOwn', () => {
         expect(storage.destroyResumeFiles).not.toHaveBeenCalled();
     });
 });
+describe('ResumeService.getSharedPdfLink audit', () => {
+    const shared = { ...parsedResume, pdfPublicId: 'resumes/app-1/pdf/new.pdf' };
+    let fetchMock: jest.SpyInstance;
+
+    beforeEach(() => {
+        process.env.USER_SERVICE_URL = 'http://user-service';
+        fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as Response);
+    });
+    afterEach(() => {
+        fetchMock.mockRestore();
+        delete process.env.USER_SERVICE_URL;
+    });
+
+    it('writes resume.viewed when an admin opens a resume', async () => {
+        const { service, prisma, storage } = setup();
+        prisma.resume.findUnique.mockResolvedValue(shared);
+        (storage as any).getSignedUrl = jest.fn().mockReturnValue('http://signed-pdf');
+
+        const res = await service.getSharedPdfLink('new-1', 'admin-1', 'ADMIN');
+
+        expect(res.url).toBe('http://signed-pdf');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toBe('http://user-service/internal/audit');
+        expect(JSON.parse(init.body)).toEqual({ actorId: 'admin-1', action: 'resume.viewed', target: 'app-1', meta: { resumeId: 'new-1' } });
+    });
+
+    it('does not write an audit entry for a company', async () => {
+        const { service, prisma, storage } = setup();
+        prisma.resume.findUnique.mockResolvedValue(shared);
+        prisma.$queryRaw.mockResolvedValue([{ ok: 1 }]);
+        (storage as any).getSignedUrl = jest.fn().mockReturnValue('http://signed-pdf');
+
+        await service.getSharedPdfLink('new-1', 'company-1', 'COMPANY');
+
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('still returns the PDF when the audit call fails', async () => {
+        const { service, prisma, storage } = setup();
+        prisma.resume.findUnique.mockResolvedValue(shared);
+        (storage as any).getSignedUrl = jest.fn().mockReturnValue('http://signed-pdf');
+        fetchMock.mockRejectedValue(new Error('user-service down'));
+
+        await expect(service.getSharedPdfLink('new-1', 'admin-1', 'ADMIN')).resolves.toMatchObject({ url: 'http://signed-pdf' });
+    });
+});

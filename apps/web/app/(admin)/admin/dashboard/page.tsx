@@ -1,23 +1,36 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { apiClient } from '@/lib/apiClient';
 import { toCsv } from '@/lib/exportCsv';
 import { BranchTable, branchName } from '@/components/admin/BranchTable';
 import { ExportCsvButton } from '@/components/admin/ExportCsvButton';
+import { PeopleDrawer } from '@/components/stats/PeopleDrawer';
+import { StageCount } from '@/components/stats/StageCount';
+import { STAGE_LABEL, type Drill } from '@/components/stats/stages';
 import type { AdminApplicant, AdminCompany } from '@/types/admin';
-import type { AdminStats } from '@/types/stats';
+import type { AdminStats, PeopleFilters, PeopleStage } from '@/types/stats';
 
-function Card({ value, label, hint, href }: { value: number | string; label: string; hint?: string; href?: string }) {
+function Card({ value, label, hint, href, onOpen }: { value: number | string; label: string; hint?: string; href?: string; onOpen?: () => void }) {
+  const clickable = !!href || (!!onOpen && typeof value === 'number' && value > 0);
   const body = (
-    <div className={`bg-paper-raised border border-hairline rounded-xl p-5 ${href ? 'hover:border-accent transition-colors' : ''}`}>
+    <div className={`bg-paper-raised border border-hairline rounded-xl p-5 ${clickable ? 'hover:border-accent transition-colors' : ''}`}>
       <p className="text-3xl font-heading font-bold text-ink">{value}</p>
       <p className="text-sm text-ink-grey mt-1">{label}</p>
       {hint && <p className="text-xs text-ink-grey mt-0.5">{hint}</p>}
     </div>
   );
-  return href ? <Link href={href}>{body}</Link> : body;
+  if (href) return <Link href={href}>{body}</Link>;
+  if (onOpen && typeof value === 'number' && value > 0) {
+    return (
+      <button type="button" onClick={onOpen} aria-label={`${value} ${label.toLowerCase()}, view list`} className="text-left w-full cursor-pointer">
+        {body}
+      </button>
+    );
+  }
+  return body;
 }
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -44,6 +57,13 @@ export default function AdminDashboard() {
     refetchInterval: 30000,
   });
 
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const open = (title: string, filters: PeopleFilters) => setDrill({ title, filters });
+  const openStage = (stage: PeopleStage, scope: { title?: string } & Partial<PeopleFilters> = {}) => {
+    const { title, ...filters } = scope;
+    open(`${title ? `${title} · ` : ''}${STAGE_LABEL[stage]}`, { ...filters, stage });
+  };
+
   const p = stats?.platform;
   const t = stats?.totals;
   const pendingCompanies = companies?.filter((c) => c.status === 'pending').length ?? 0;
@@ -68,16 +88,16 @@ export default function AdminDashboard() {
         />
         <Card href="/admin/applicants" value={applicants?.length ?? p?.applicants ?? '—'} label="Applicants" />
         <Card value={p?.jobs ?? '—'} label="Job postings" hint={p?.stoppedJobs ? `${p.stoppedJobs} stopped` : undefined} />
-        <Card value={p?.resumesScanned ?? '—'} label="Resumes scanned" hint="parsed successfully" />
+        <Card value={p?.resumesScanned ?? '—'} label="Resumes scanned" hint="parsed successfully" onOpen={() => openStage('parsed')} />
       </div>
 
       <h2 className="font-heading text-lg text-ink mt-8 mb-3">Matching funnel</h2>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card value={t?.scanned ?? '—'} label="Applicants scanned" hint="checked against a job" />
-        <Card value={t?.matched ?? '—'} label="Matched" />
-        <Card value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" />
-        <Card value={t?.shortlisted ?? '—'} label="Shortlisted" />
-        <Card value={t?.rejected ?? '—'} label="Rejected" />
+        <Card value={t?.scanned ?? '—'} label="Applicants scanned" hint="checked against a job" onOpen={() => openStage('scanned')} />
+        <Card value={t?.matched ?? '—'} label="Matched" onOpen={() => openStage('matched')} />
+        <Card value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" onOpen={() => openStage('applied')} />
+        <Card value={t?.shortlisted ?? '—'} label="Shortlisted" onOpen={() => openStage('shortlisted')} />
+        <Card value={t?.rejected ?? '—'} label="Rejected" onOpen={() => openStage('rejected')} />
       </div>
 
       <SectionHeader title="By branch">
@@ -91,6 +111,7 @@ export default function AdminDashboard() {
               { header: 'Matched', value: (r) => r.matched },
               { header: 'Applied', value: (r) => r.applied },
               { header: 'Shortlisted', value: (r) => r.shortlisted },
+              { header: 'Rejected', value: (r) => r.rejected ?? 0 },
             ])
           }
         />
@@ -100,7 +121,13 @@ export default function AdminDashboard() {
           No branch data yet. Branch-wise numbers appear once applicants have a branch (from your CSV import or entered by them).
         </p>
       )}
-      {byBranch.length > 0 && <BranchTable rows={byBranch} />}
+      {byBranch.length > 0 && (
+        <BranchTable
+          rows={byBranch}
+          onOpen={(row, stage) => openStage(stage, { title: branchName(row), branch: row.branch?.trim() || 'Unknown' })}
+        />
+      )}
+      {byBranch.length > 0 && <p className="text-xs text-ink-grey mt-2">Each person is counted once, in their branch.</p>}
 
       <SectionHeader title="By company">
         <ExportCsvButton
@@ -143,17 +170,18 @@ export default function AdminDashboard() {
                     {c.jobs}
                     {c.stoppedJobs > 0 && <span className="text-ink-grey"> ({c.stoppedJobs} stopped)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{c.scanned}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{c.matched}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{c.applied}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{c.shortlisted}</td>
-                  <td className="px-4 py-2.5 text-right font-mono">{c.rejected ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={c.scanned} stage="scanned" onOpen={() => openStage('scanned', { title: c.companyName, companyId: c.companyId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={c.matched} stage="matched" onOpen={() => openStage('matched', { title: c.companyName, companyId: c.companyId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={c.applied} stage="applied" onOpen={() => openStage('applied', { title: c.companyName, companyId: c.companyId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={c.shortlisted} stage="shortlisted" onOpen={() => openStage('shortlisted', { title: c.companyName, companyId: c.companyId })} /></td>
+                  <td className="px-4 py-2.5 text-right"><StageCount value={c.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', { title: c.companyName, companyId: c.companyId })} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {stats && stats.companies.length > 0 && <p className="text-xs text-ink-grey mt-2">A person can appear for more than one role, so a company row can add up to more than its distinct people.</p>}
 
       <h2 className="font-heading text-lg text-ink mt-8 mb-3">By job role</h2>
       {stats && stats.roles.length > 0 && (
@@ -176,11 +204,11 @@ export default function AdminDashboard() {
                 <tr key={r.jobRoleId} className="border-b border-hairline last:border-0">
                   <td className="px-4 py-2.5 text-ink">{r.roleTitle}</td>
                   <td className="px-3 py-2.5 text-ink-grey">{r.companyName || 'Unnamed company'}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.scanned}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.matched}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.applied}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.shortlisted}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{r.rejected ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.scanned} stage="scanned" onOpen={() => openStage('scanned', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.matched} stage="matched" onOpen={() => openStage('matched', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.applied} stage="applied" onOpen={() => openStage('applied', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.shortlisted} stage="shortlisted" onOpen={() => openStage('shortlisted', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
+                  <td className="px-3 py-2.5 text-right"><StageCount value={r.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
                   <td className="px-4 py-2.5 text-right">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${r.stopped ? 'bg-paper text-ink-grey border border-hairline' : 'bg-success-soft text-success'}`}>
                       {r.stopped ? 'Stopped' : 'Active'}
@@ -192,6 +220,7 @@ export default function AdminDashboard() {
           </table>
         </div>
       )}
+      <PeopleDrawer drill={drill} viewer="admin" onClose={() => setDrill(null)} />
     </div>
   );
 }

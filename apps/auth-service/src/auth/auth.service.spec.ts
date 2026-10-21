@@ -36,6 +36,7 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
   const settingsService = { getAll: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }) };
   const twoFactor = {
     createChallenge: vi.fn().mockResolvedValue('chal-1'),
+    createSetupChallenge: vi.fn().mockResolvedValue('setup-1'),
     verifyChallenge: vi.fn(),
     recoveryCodesLeft: vi.fn().mockResolvedValue(7),
   };
@@ -54,7 +55,9 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
  */
 async function loginTokens(service: AuthService, creds: { email: string; password: string }, ip?: string) {
   const result = await service.login(creds, ip);
-  if ('twoFactorRequired' in result) throw new Error('expected tokens but got a two-factor challenge');
+  if (!('accessToken' in result)) {
+    throw new Error('expected tokens but got a two-factor challenge or setup step');
+  }
   return result;
 }
 
@@ -461,5 +464,44 @@ describe('AuthService.googleLogin', () => {
       expect(result.accessToken).toBeUndefined();
       expect([...fake.store.keys()].some((k) => k.startsWith('refresh:'))).toBe(false);
     });
+  });
+});
+
+describe('AuthService admin two-factor requirement', () => {
+  const creds = { email: 'a@b.com', password: PASSWORD };
+
+  it('sends an admin without 2FA to setup (no tokens) when the setting is on', async () => {
+    const { service, fake } = build({ requireTwoFactorForAdmin: true }, activeUser({ role: 'ADMIN' }));
+    const result: any = await service.login(creds);
+
+    expect(result).toEqual({ twoFactorSetupRequired: true, setupToken: 'setup-1' });
+    expect(result.accessToken).toBeUndefined();
+    expect([...fake.store.keys()].some((k) => k.startsWith('refresh:'))).toBe(false);
+  });
+
+  it('an admin who already has 2FA gets the normal code challenge', async () => {
+    const { service } = build({ requireTwoFactorForAdmin: true }, activeUser({ role: 'ADMIN', twoFactorEnabled: true }));
+    expect(await service.login(creds)).toEqual({ twoFactorRequired: true, challengeId: 'chal-1' });
+  });
+
+  it('logs the admin in normally when the setting is off', async () => {
+    const { service } = build({ requireTwoFactorForAdmin: false }, activeUser({ role: 'ADMIN' }));
+    expect((await service.login(creds) as any).accessToken).toBeDefined();
+  });
+
+  it('never affects applicants or companies', async () => {
+    const { service } = build({ requireTwoFactorForAdmin: true }, activeUser({ role: 'APPLICANT' }));
+    expect((await service.login(creds) as any).accessToken).toBeDefined();
+  });
+
+  it('finishing the setup returns tokens and the recovery codes', async () => {
+    const { service, twoFactor } = build();
+    (twoFactor as any).finishSetupLogin = vi.fn().mockResolvedValue({
+      user: { id: 'u1', role: 'ADMIN' },
+      recoveryCodes: ['aaaaa-bbbbb'],
+    });
+    const result: any = await service.finishTwoFactorSetupLogin({ setupToken: 'setup-1', code: '123456' });
+    expect(result.accessToken).toBeDefined();
+    expect(result.recoveryCodes).toEqual(['aaaaa-bbbbb']);
   });
 });

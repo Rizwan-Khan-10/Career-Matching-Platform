@@ -64,4 +64,23 @@ export class AdminUsersService {
     await this.userService.audit({ actorId, action: 'user.2fa_reset', target: userId, meta: { role: user.role } });
     return { id: userId, twoFactorEnabled: false };
   }
+
+  /** Required before "admins must use 2FA" can be switched on: otherwise the admin saving it would lock themselves out. */
+  async assertHasTwoFactor(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { twoFactorEnabled: true } });
+    if (!user?.twoFactorEnabled) {
+      throw new BadRequestException(
+        'Turn on two-factor for your own account first (Security in the top bar), then you can require it for all admins.',
+      );
+    }
+  }
+
+  /** Admins who have no 2FA must log in again, and the login then sends them through setup. */
+  async revokeAdminSessionsWithoutTwoFactor() {
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'ADMIN', twoFactorEnabled: false },
+      select: { id: true },
+    });
+    for (const admin of admins) await this.sessions.revokeAll(admin.id);
+  }
 }

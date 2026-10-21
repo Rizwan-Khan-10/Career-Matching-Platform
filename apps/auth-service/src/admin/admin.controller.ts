@@ -29,7 +29,11 @@ export class AdminController {
 
   @Put('settings')
   async updateSettings(@Req() req: AuthenticatedRequest, @Body() dto: UpdateSettingsDto) {
+    if (dto.requireTwoFactorForAdmin) await this.users.assertHasTwoFactor(req.user.userId);
+
     const updated = await this.settings.update(dto);
+    if (updated.requireTwoFactorForAdmin) await this.users.revokeAdminSessionsWithoutTwoFactor();
+
     await this.userService.audit({
       actorId: req.user.userId,
       action: 'settings.updated',

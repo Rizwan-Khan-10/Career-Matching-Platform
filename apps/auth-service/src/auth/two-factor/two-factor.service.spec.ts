@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { FakeRedis } from '../../../test/fake-redis';
 import { RateLimitService } from '../rate-limit.service';
@@ -42,8 +42,9 @@ function build(userOver: Record<string, unknown> = {}) {
         $transaction: vi.fn(async (ops: any[]) => Promise.all(ops)),
     };
     const sessions = new SessionStore(redis);
-    const service = new TwoFactorService(prisma, redis, sessions, new RateLimitService(redis));
-    return { service, prisma, fake, user, codes };
+    const settings = { getAll: vi.fn(async () => ({ requireTwoFactorForAdmin: false })) };
+    const service = new TwoFactorService(prisma, redis, sessions, new RateLimitService(redis), settings as any);
+    return { service, prisma, fake, user, codes, settings };
 }
 
 // offset -1 / 0 / +1 = three different 30 s steps, all accepted, but each only once
@@ -196,5 +197,58 @@ describe('TwoFactorService login challenge', () => {
         await expect(
             service.verifyChallenge(challenge, { code: codeAt(secret, 1) }, '1.1.1.1'),
         ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+});
+
+describe('TwoFactorService: required for admins', () => {
+    it('setup-only login: start, finish with a good code, token is single use', async () => {
+        const { service, user } = build({ role: 'ADMIN' });
+        const token = await service.createSetupChallenge('u1');
+
+        const { secret } = await service.startSetupLogin(token, '1.1.1.1');
+        const done = await service.finishSetupLogin(token, codeAt(secret, 0), '1.1.1.1');
+
+        expect(user.twoFactorEnabled).toBe(true);
+        expect(done.recoveryCodes).toHaveLength(10);
+        await expect(service.startSetupLogin(token, '1.1.1.1')).rejects.toThrow('expired');
+    });
+
+    it('a wrong code does not burn the setup token', async () => {
+        const { service } = build({ role: 'ADMIN' });
+        const token = await service.createSetupChallenge('u1');
+        const { secret } = await service.startSetupLogin(token, '1.1.1.1');
+
+        await expect(service.finishSetupLogin(token, '000000', '1.1.1.1')).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.finishSetupLogin(token, codeAt(secret, 0), '1.1.1.1')).resolves.toBeDefined();
+    });
+
+    it('refuses an unknown setup token and a user who already has 2FA', async () => {
+        const { service } = build({ role: 'ADMIN' });
+        await expect(service.startSetupLogin('nope', '1.1.1.1')).rejects.toBeInstanceOf(UnauthorizedException);
+
+        const enrolledCtx = await enrolled({ role: 'ADMIN' });
+        const token = await enrolledCtx.service.createSetupChallenge('u1');
+        await expect(enrolledCtx.service.startSetupLogin(token, '1.1.1.1')).rejects.toThrow('expired');
+    });
+
+    it('an admin cannot turn 2FA off while it is required', async () => {
+        const ctx = await enrolled({ role: 'ADMIN' });
+        ctx.settings.getAll.mockResolvedValue({ requireTwoFactorForAdmin: true });
+
+        await expect(
+            ctx.service.disable('u1', 's1', { password: PASSWORD, code: codeAt(ctx.secret, -1) }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(ctx.user.twoFactorEnabled).toBe(true);
+    });
+
+    it('an admin may turn it off when it is not required, and users are never blocked', async () => {
+        const admin = await enrolled({ role: 'ADMIN' });
+        await admin.service.disable('u1', 's1', { password: PASSWORD, code: codeAt(admin.secret, -1) });
+        expect(admin.user.twoFactorEnabled).toBe(false);
+
+        const applicant = await enrolled();
+        applicant.settings.getAll.mockResolvedValue({ requireTwoFactorForAdmin: true });
+        await applicant.service.disable('u1', 's1', { password: PASSWORD, code: codeAt(applicant.secret, -1) });
+        expect(applicant.user.twoFactorEnabled).toBe(false);
     });
 });

@@ -18,7 +18,7 @@ import { toast } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors';
 import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
 import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
-import { isTwoFactorChallenge, LoginResponse, TokenResponse } from '@/types/auth';
+import { isTwoFactorChallenge, GoogleLoginResponse, TokenResponse } from '@/types/auth';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -53,7 +53,7 @@ export default function SignupPage() {
     const googleMutation = useMutation({
         // the chosen role is only used when this Google account has no account yet
         mutationFn: (credential: string) =>
-            apiClient.post<LoginResponse>('/auth/google', { credential, role }).then((r) => r.data),
+            apiClient.post<GoogleLoginResponse>('/auth/google', { credential, role }).then((r) => r.data),
         onSuccess: (data) => {
             setServerError(null);
             if (isTwoFactorChallenge(data)) {

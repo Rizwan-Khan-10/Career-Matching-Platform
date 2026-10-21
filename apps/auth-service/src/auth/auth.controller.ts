@@ -16,6 +16,8 @@ import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { getGoogleClientId } from './google-token-verifier';
 import { isGoogleSignInAllowed } from './signup-policy';
+import { FinishSetupLoginDto } from './dto/finish-setup-login.dto';
+import { SetupTokenDto } from './dto/setup-token.dto';
 
 const SIGNUP_LIMIT = {
   max: Number(process.env.SIGNUP_RATE_MAX || 20),
@@ -121,5 +123,16 @@ export class AuthController {
   @Post('2fa/verify')
   twoFactorVerify(@Body() dto: VerifyTwoFactorDto, @Ip() ip: string) {
     return this.authService.verifyTwoFactor(dto, ip);
+  }
+
+  // Public: an admin who must set up 2FA before getting tokens (setupToken comes from /auth/login).
+  @Post('2fa/setup-login/start')
+  twoFactorSetupLoginStart(@Body() dto: SetupTokenDto, @Ip() ip: string) {
+    return this.authService.startTwoFactorSetupLogin(dto, ip);
+  }
+
+  @Post('2fa/setup-login/finish')
+  twoFactorSetupLoginFinish(@Body() dto: FinishSetupLoginDto, @Ip() ip: string) {
+    return this.authService.finishTwoFactorSetupLogin(dto, ip);
   }
 }

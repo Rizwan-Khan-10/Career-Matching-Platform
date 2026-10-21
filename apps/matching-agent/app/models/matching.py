@@ -40,6 +40,7 @@ class MatchComputedEvent(BaseModel):
     resumeId: Optional[str] = None
     score: float
     eligible: bool
+    verdict: str = "not_eligible"   # eligible | review | not_eligible (eligible is True only for 'eligible')
     reason: str = ""
     matchedSkills: list[str] = []
     partialSkills: list[str] = []

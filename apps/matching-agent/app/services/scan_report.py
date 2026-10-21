@@ -9,7 +9,7 @@ SCAN_CHUNK = 200
 
 
 def scan_entry(job_role_id: str, applicant_id: str, resume_id, result, input_hash: str | None = None) -> dict:
-    return {
+    entry = {
         "jobRoleId": job_role_id,
         "applicantId": applicant_id,
         "resumeId": resume_id,
@@ -17,6 +17,10 @@ def scan_entry(job_role_id: str, applicant_id: str, resume_id, result, input_has
         "score": float(result.score),
         "inputHash": input_hash,
     }
+    verdict = getattr(result, "verdict", None)
+    if verdict:                        # eligible | review | not_eligible (extra key: older consumers ignore it)
+        entry["verdict"] = verdict
+    return entry
 
 
 def chunked(items: list, size: int = SCAN_CHUNK):

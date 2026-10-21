@@ -22,7 +22,8 @@ import numpy as np
 from sklearn.model_selection import GroupKFold
 
 from app.core.embeddings import model_name
-from app.services.features import FEATURE_NAMES
+from app.services.features import FEATURE_NAMES, BASE_FEATURE_NAMES
+from app.services.rules import normalize_level
 from training import bounded_logreg
 from training.common import (load_rows, build_matrix, holdout_split, metrics, best_threshold,
                              ranking_metrics, calibration_error, drop_gold_overlap, row_keys)
@@ -30,6 +31,22 @@ from training.fairness import assert_fair_features
 
 FREE_SIGN = {"has_req_skills", "is_fresher_role"}   # constant-ish flags: has_req_skills is a bias shift, is_fresher_role marks the role type
 NONNEG = np.array([n not in FREE_SIGN for n in FEATURE_NAMES])   # every quality feature (incl. project_evidence, has_internship) must help, never hurt
+LEVELS = ("fresher", "experienced", "any")
+
+
+def select_levels(rows, levels):
+    """Keep only the pairs whose ROLE level is in `levels` (None / empty = keep all). A missing level counts as experienced."""
+    if not levels:
+        return list(rows)
+    return [r for r in rows if normalize_level((r.get("role") or {}).get("requirements")) in levels]
+
+
+def feature_set(base_only):
+    """-> (names, column indexes into FEATURE_NAMES, non-negative mask). base_only = the 14 base features; the fresher
+    ones (is_fresher_role, project_evidence, has_internship) are then not trained and the agent uses its interim weights."""
+    names = list(BASE_FEATURE_NAMES if base_only else FEATURE_NAMES)
+    cols = [FEATURE_NAMES.index(n) for n in names]
+    return names, cols, np.array([n not in FREE_SIGN for n in names])
 GOLD_DEFAULT = "training/gold/gold_pairs.jsonl"
 
 
@@ -54,22 +71,32 @@ def main():
     ap.add_argument("--gold", default=GOLD_DEFAULT, help="gold set: only used to drop overlapping training rows")
     ap.add_argument("--version", default=None, help="override the scorer version label")
     ap.add_argument("--out", default="app/artifacts/scorer.json")
+    ap.add_argument("--levels", nargs="+", choices=LEVELS, default=None,
+                    help="train on pairs of these ROLE levels only (e.g. --levels experienced). Default: all. "
+                         "Most real pairs are experienced roles, so an experienced-only model is the honest one.")
+    ap.add_argument("--base-only", action="store_true",
+                    help="train only the 14 base features (no fresher features); fresher / any roles then use the interim weights")
     a = ap.parse_args()
 
-    assert_fair_features(FEATURE_NAMES)
+    names, cols, nonneg = feature_set(a.base_only)
+    assert_fair_features(names)
     real = load_rows(*a.real)
     refuse_gold(list(a.real), real)
     real, dropped = drop_gold_overlap(real, a.gold)
     if dropped:
         print(f"dropped {dropped} training rows that share a role or resume with the gold set")
     gold = {r["_src"] for r in load_rows(*a.recruiter)} if a.recruiter else set()
+    if a.levels:
+        before = len(real)
+        real = select_levels(real, a.levels)
+        print(f"--levels {' '.join(a.levels)}: kept {len(real)} of {before} pairs")
     rows = real
-    print(f"{len(real)} real pairs | embedder = {model_name()}")
+    print(f"{len(real)} real pairs | embedder = {model_name()} | features: {len(names)}{' (base only)' if a.base_only else ''}")
     if len(real) < 300:
         print("WARNING: <300 real pairs - metrics below are unreliable, do not ship this model.")
 
     M = build_matrix(rows)
-    X, y, groups, splits = M["X"], M["y"], M["groups"], M["splits"]
+    X, y, groups, splits = M["X"][:, cols], M["y"], M["groups"], M["splits"]
     gold_w = np.array([a.recruiter_weight if r["_src"] in gold else 1.0 for r in rows])
     w = gold_w * np.array([float(r.get("weight", 1.0)) for r in rows])
 
@@ -85,7 +112,7 @@ def main():
         oof = np.zeros(tr.sum())
         Xt, yt, st, wt = X[tr], y[tr], splits[tr], w[tr]
         for fit_i, val_i in GroupKFold(n_splits=5).split(Xt, yt, st):
-            coef, b = bounded_logreg.fit(Xt[fit_i], yt[fit_i], wt[fit_i], C=C, nonneg=NONNEG)
+            coef, b = bounded_logreg.fit(Xt[fit_i], yt[fit_i], wt[fit_i], C=C, nonneg=nonneg)
             oof[val_i] = bounded_logreg.predict_proba(Xt[val_i], coef, b)
         thr, f = best_threshold(yt, oof, a.beta)
         if best is None or f > best[0]:
@@ -94,7 +121,7 @@ def main():
     print(f"chosen C={C}  threshold={thr}  (cv F{a.beta:g}={f_cv})")
 
     # 2) honest numbers on the held-out pairs
-    coef, b = bounded_logreg.fit(X[tr], y[tr], w[tr], C=C, nonneg=NONNEG)
+    coef, b = bounded_logreg.fit(X[tr], y[tr], w[tr], C=C, nonneg=nonneg)
     p = bounded_logreg.predict_proba(X[te], coef, b)
     test_metrics = metrics(y[te], (p >= thr).astype(int), p)
     test_metrics["ece"] = calibration_error(y[te], p)
@@ -102,17 +129,17 @@ def main():
     print("held-out:", json.dumps(test_metrics))
 
     # 3) final model on everything (gold rows were already excluded above)
-    coef, b = bounded_logreg.fit(X, y, w, C=C, nonneg=NONNEG)
+    coef, b = bounded_logreg.fit(X, y, w, C=C, nonneg=nonneg)
     fingerprint = hashlib.md5("".join(sorted(f"{rk}{sk}" for rk, sk in (row_keys(r) for r in rows))).encode()).hexdigest()[:12]
     artifact = {
-        "version": a.version or f"blr-{dt.date.today().isoformat()}-real{len(real)}",
+        "version": a.version or f"blr-{dt.date.today().isoformat()}-real{len(real)}{'-' + '+'.join(a.levels) if a.levels else ''}",
         "embedding_model": model_name(),
-        "features": FEATURE_NAMES,
-        "weights": {n: round(float(c), 5) for n, c in zip(FEATURE_NAMES, coef)},
+        "features": names,
+        "weights": {n: round(float(c), 5) for n, c in zip(names, coef)},
         "bias": round(float(b), 5),
         "threshold": thr,
         "metrics": {"held_out_real": test_metrics, "cv_f_beta": f_cv, "beta": a.beta, "C": C,
-                    "n_real_pairs": len(real), "n_recruiter_pairs": int(sum(r["_src"] in gold for r in rows)),
+                    "n_real_pairs": len(real), "levels": a.levels or "all", "base_only": bool(a.base_only), "n_recruiter_pairs": int(sum(r["_src"] in gold for r in rows)),
                     "split": {"mode": "role+resume disjoint", "test_frac": a.test_frac, "seed": a.seed,
                               "train": int(tr.sum()), "held_out": int(te.sum()), "unused": int(unused)},
                     "gold_rows_dropped_from_training": dropped, "data_fingerprint": fingerprint,

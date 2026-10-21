@@ -52,6 +52,20 @@ MIN_REQUIRED_SKILL_COVERAGE = float(os.getenv("MIN_REQUIRED_SKILL_COVERAGE", 0.3
 EXPERIENCE_GATE_RATIO = float(os.getenv("EXPERIENCE_GATE_RATIO", 0.5))   # exp < ratio * min_exp ...
 EXPERIENCE_GATE_MIN_GAP_YEARS = float(os.getenv("EXPERIENCE_GATE_MIN_GAP_YEARS", 1.0))  # ... and gap >= 1 yr
 
+# --- verdict: eligible / review / not_eligible ---------------------------------
+# review = a "possible match": score in [threshold - REVIEW_BAND_WIDTH, threshold) and no hard gate failed.
+# REVIEW_BAND_WIDTH=0 switches the review band off (only eligible / not_eligible, as before).
+REVIEW_BAND_WIDTH = float(os.getenv("REVIEW_BAND_WIDTH", 0.10))
+# separate bar for fresher / any roles (they never get the experience-surplus boost). Empty = same as ELIGIBILITY_THRESHOLD.
+_ft = os.getenv("FRESHER_ELIGIBILITY_THRESHOLD")
+FRESHER_ELIGIBILITY_THRESHOLD = float(_ft) if _ft else None
+# how many "review" pairs are published per run (eligible pairs are never capped here)
+MAX_REVIEW_PER_RESUME = int(os.getenv("MAX_REVIEW_PER_RESUME", 20))
+MAX_REVIEW_PER_ROLE = int(os.getenv("MAX_REVIEW_PER_ROLE", 20))
+# "overqualified" note for recruiters: only when the company set NO max experience, the role has a minimum, and the
+# candidate has more than minimum + this many years. It never changes the verdict or the score.
+OVERQUALIFIED_EXTRA_YEARS = float(os.getenv("OVERQUALIFIED_EXTRA_YEARS", 5))
+
 # --- role level (fresher / any roles) ----------------------------------------
 # INTERIM nudges (logit units) for projects / internship on fresher + any roles. They are used ONLY while the
 # loaded scorer.json was trained without the fresher features; a scorer trained with them (task 2.10) uses its own

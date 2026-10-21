@@ -33,13 +33,27 @@ from training.fairness import assert_fair_features
 COL = {n: i for i, n in enumerate(FEATURE_NAMES)}
 
 
-def full_pipeline(M, probs):
-    thr = scorer.threshold()
+def pipeline_verdicts(M, probs=None):
+    """What the agent decides for each pair (eligible / review / not_eligible): model + hard gates + per-level bars."""
     out = []
-    for p, x, e, me, lv in zip(probs, M["X"], M["exp"], M["min_exp"], M["level"]):
+    for x, e, me, lv in zip(M["X"], M["exp"], M["min_exp"], M["level"]):
         f = dict(zip(FEATURE_NAMES, x))
-        out.append(int(p >= thr and not scorer.apply_gates(f, {"experienceYears": e, "minExperienceYears": me or None, "level": str(lv)})))
+        out.append(scorer.judge(f, {"experienceYears": e, "minExperienceYears": me or None, "level": str(lv)}).verdict)
     return np.array(out)
+
+
+def full_pipeline(M, probs=None):
+    """1 = eligible (review pairs are NOT counted as eligible here, same meaning as before)."""
+    return (pipeline_verdicts(M, probs) == "eligible").astype(int)
+
+
+def _pr(y, pred):
+    tp, fp, fn = int(((pred == 1) & (y == 1)).sum()), int(((pred == 1) & (y == 0)).sum()), int(((pred == 0) & (y == 1)).sum())
+    p = tp / (tp + fp) if tp + fp else None
+    r = tp / (tp + fn) if tp + fn else None
+    f1 = 2 * p * r / (p + r) if p and r else None
+    rnd = lambda v: None if v is None else round(float(v), 3)  # noqa: E731
+    return {"precision": rnd(p), "recall": rnd(r), "f1": rnd(f1)}
 
 
 def evaluate_set(M, thr_a, thr_b, ks=(3, 5)):
@@ -47,7 +61,8 @@ def evaluate_set(M, thr_a, thr_b, ks=(3, 5)):
     X, y, groups, kinds = M["X"], M["y"], M["groups"], M["kinds"]
     probs = np.array([scorer.probability(dict(zip(FEATURE_NAMES, x))) for x in X])
     thr = scorer.threshold()
-    full = full_pipeline(M, probs)
+    verdicts = pipeline_verdicts(M, probs)
+    full = (verdicts == "eligible").astype(int)
     sa, sb = X[:, COL["global_sim"]], X[:, COL["req_exact"]]
     methods = {
         "A cosine-only": (sa, (sa >= thr_a).astype(int)),
@@ -61,6 +76,20 @@ def evaluate_set(M, thr_a, thr_b, ks=(3, 5)):
         m["ranking"] = {f"k={k}": ranking_metrics(y, score, groups, k=k) for k in ks}
         out["methods"][name] = m
     out["ece"] = calibration_error(y, probs)
+    # review band ("possible match"): how good are those pairs, and what do we gain by showing them to a person?
+    review = verdicts == "review"
+    out["review_band"] = {
+        "review_pairs": int(review.sum()),
+        "share_truly_eligible_in_review": round(float(y[review].mean()), 3) if review.any() else None,
+        "eligible_only": _pr(y, full),
+        "eligible_plus_review": _pr(y, (full | review).astype(int)),
+    }
+    out["by_level"] = {}
+    for lv in sorted(set(M["level"].tolist())):
+        idx = M["level"] == lv
+        out["by_level"][lv] = {"n": int(idx.sum()), "truly_eligible": round(float(y[idx].mean()), 3),
+                               "predicted_eligible": round(float(full[idx].mean()), 3), "eligible_only": _pr(y[idx], full[idx]),
+                               "eligible_plus_review": _pr(y[idx], (full | review)[idx].astype(int))}
     out["by_kind"] = {}
     for k in sorted(set(kinds.tolist())):
         idx = kinds == k
@@ -81,6 +110,13 @@ def print_set(title, res):
     print(f"calibration error (ECE, lower is better): {res['ece']}")
     for k, v in res["by_kind"].items():
         print(f"  {k:18s} n={v['n']:4d} acc={v['accuracy']:.3f} predicted-eligible={v['predicted_eligible']:.2f} truly-eligible={v['truly_eligible']:.2f}")
+    rb = res.get("review_band")
+    if rb:
+        print(f"review band: {rb['review_pairs']} pairs, {rb['share_truly_eligible_in_review']} of them truly eligible | "
+              f"eligible only {rb['eligible_only']} | eligible+review {rb['eligible_plus_review']}")
+    for lv, v in (res.get("by_level") or {}).items():
+        print(f"  level {lv:12s} n={v['n']:4d} true={v['truly_eligible']:.2f} predicted={v['predicted_eligible']:.2f} "
+              f"eligible-only {v['eligible_only']} | +review {v['eligible_plus_review']}")
 
 
 def markdown(report):
@@ -98,6 +134,16 @@ def markdown(report):
             L.append(f"| {name} | {m['accuracy']} | {m['precision']} | {m['recall']} | {m['f1']} | {m.get('roc_auc', '-')} | "
                      f"{r3['precision@3']} | {r3['ndcg@3']} | {r5['precision@5']} | {r5['ndcg@5']} | {r5['mrr']} |")
         L += ["", "Full pipeline by candidate type: " + "; ".join(f"{k}: acc {v['accuracy']} (n={v['n']})" for k, v in res["by_kind"].items()), ""]
+        rb = res.get("review_band")
+        if rb:
+            L += [f"Review band (possible matches): {rb['review_pairs']} pairs, share truly eligible: {rb['share_truly_eligible_in_review']}.",
+                  f"Eligible only: {rb['eligible_only']}. Eligible + review: {rb['eligible_plus_review']}.", ""]
+        if res.get("by_level"):
+            L += ["| role level | pairs | truly eligible | predicted eligible | eligible only (P / R / F1) | eligible + review (P / R / F1) |", "|---|---|---|---|---|---|"]
+            for lv, v in res["by_level"].items():
+                a, b = v["eligible_only"], v["eligible_plus_review"]
+                L.append(f"| {lv} | {v['n']} | {v['truly_eligible']} | {v['predicted_eligible']} | {a['precision']} / {a['recall']} / {a['f1']} | {b['precision']} / {b['recall']} / {b['f1']} |")
+            L.append("")
     return "\n".join(L)
 
 
@@ -113,12 +159,13 @@ def main():
     a = ap.parse_args()
 
     assert_fair_features(FEATURE_NAMES)
-    print(f"embedder={model_name()} scorer={scorer.model_version()} threshold={scorer.threshold()}")
-    report = {"scorer": scorer.model_version(), "embedder": model_name(), "threshold": scorer.threshold(), "beta": a.beta,
+    print(f"embedder={model_name()} scorer={scorer.model_version()} threshold={scorer.threshold()} fresher threshold={scorer.threshold('fresher')} review band width={config.REVIEW_BAND_WIDTH}")
+    report = {"scorer": scorer.model_version(), "embedder": model_name(), "threshold": scorer.threshold(), "fresher_threshold": scorer.threshold("fresher"), "beta": a.beta,
               "date": dt.date.today().isoformat(), "test_frac": a.test_frac, "seed": a.seed,
               # the serving settings this evaluation ran with (env vars count): training/model_info.py writes them into MODEL_INFO.md
               "config": {n: getattr(config, n) for n in ("MIN_REQUIRED_SKILL_COVERAGE", "EXPERIENCE_GATE_RATIO", "EXPERIENCE_GATE_MIN_GAP_YEARS",
                                                           "FRESHER_PROJECT_WEIGHT", "FRESHER_INTERNSHIP_WEIGHT", "ELIGIBILITY_THRESHOLD",
+                                                          "FRESHER_ELIGIBILITY_THRESHOLD", "REVIEW_BAND_WIDTH", "OVERQUALIFIED_EXTRA_YEARS",
                                                           "MIN_PUBLISH_SCORE")}}
 
     thr_a = thr_b = None

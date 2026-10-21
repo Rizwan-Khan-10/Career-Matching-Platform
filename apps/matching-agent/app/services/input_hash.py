@@ -2,7 +2,8 @@
 
     sha1(canonical JSON of { resumeId, resume.parsedData, role.title + role.requirements,
                              effective academic values used by the role's rules (only if the role has any academic rule),
-                             scorer modelVersion })
+                             scorer modelVersion,
+                             policy (thresholds, review band, gates: scorer.policy_key()) })
 
 The hash is stored by matching-results-service in RoleScan.inputHash (it arrives in `match.scanned`).
 """
@@ -19,7 +20,7 @@ def content_hash(obj) -> str:
 
 
 def compute_input_hash(resume_id: str, parsed_data, role_title: str, requirements, model_version: str,
-                       academic: dict | None = None) -> str:
+                       academic: dict | None = None, policy: str | None = None) -> str:
     """`academic` = the effective academic values the role's rules read ({"cgpa": 7.2, ...}); None when the role has no
     academic rule, in which case the key is left out entirely (an applicant's profile change then never invalidates the pair)."""
     payload = {
@@ -30,4 +31,6 @@ def compute_input_hash(resume_id: str, parsed_data, role_title: str, requirement
     }
     if academic is not None:
         payload["academic"] = academic
+    if policy is not None:      # scorer.policy_key(): thresholds / review band / gates. None = key left out (old hashes stay valid)
+        payload["policy"] = policy
     return content_hash(payload)

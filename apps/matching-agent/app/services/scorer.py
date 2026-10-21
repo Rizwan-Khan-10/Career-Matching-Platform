@@ -9,9 +9,11 @@ import json
 import logging
 import math
 import os
+from dataclasses import dataclass, field
 
 from app.core import config
 from app.core.embeddings import model_name
+from app.services import experience
 from app.services.features import FEATURE_NAMES, BASE_FEATURE_NAMES, FRESHER_FEATURE_NAMES
 
 log = logging.getLogger("matching.scorer")
@@ -117,8 +119,32 @@ def model_version() -> str:
     return f"{v}+fresher-interim" if _uses_interim() else v
 
 
-def threshold() -> float:
+def _is_fresher(level) -> bool:
+    return str(level or "experienced") in ("fresher", "any")      # same grouping as rules.is_fresher_level
+
+
+def threshold(level: str | None = None) -> float:
+    """Probability needed for 'eligible'. Fresher / any roles can have their own bar (FRESHER_ELIGIBILITY_THRESHOLD)."""
+    if _is_fresher(level) and level is not None and config.FRESHER_ELIGIBILITY_THRESHOLD is not None:
+        return config.FRESHER_ELIGIBILITY_THRESHOLD
     return config.ELIGIBILITY_THRESHOLD if config.ELIGIBILITY_THRESHOLD is not None else float(_load().get("threshold", 0.5))
+
+
+def review_lower(level: str | None = None) -> float:
+    """Lowest probability of the 'review' band. Equal to the threshold when the band is off (REVIEW_BAND_WIDTH=0)."""
+    thr = threshold(level)
+    return round(max(0.0, thr - max(config.REVIEW_BAND_WIDTH, 0.0)), 6)
+
+
+def policy_key() -> str:
+    """Everything OUTSIDE the model weights that can change a pair's verdict (thresholds, review band, gates, interim
+    fresher weights). It goes into the input hash: change any of these settings and old pairs are scored again
+    instead of being skipped as 'unchanged'."""
+    parts = [("t", threshold()), ("ft", config.FRESHER_ELIGIBILITY_THRESHOLD if config.FRESHER_ELIGIBILITY_THRESHOLD is not None else -1),
+             ("bw", config.REVIEW_BAND_WIDTH), ("cov", config.MIN_REQUIRED_SKILL_COVERAGE),
+             ("er", config.EXPERIENCE_GATE_RATIO), ("eg", config.EXPERIENCE_GATE_MIN_GAP_YEARS),
+             ("oq", config.OVERQUALIFIED_EXTRA_YEARS), ("fp", config.FRESHER_PROJECT_WEIGHT), ("fi", config.FRESHER_INTERNSHIP_WEIGHT)]
+    return "|".join(f"{k}{v:g}" for k, v in parts)
 
 
 def probability(features: dict) -> float:
@@ -132,25 +158,67 @@ def probability(features: dict) -> float:
     return e / (1.0 + e)
 
 
+def _experience_check(detail: dict) -> experience.ExperienceCheck:
+    return experience.check(detail.get("level", "experienced"), detail.get("experienceYears"), detail.get("minExperienceYears"),
+                            detail.get("maxExperienceYears"), bool(detail.get("strictMinExperience")))
+
+
 def apply_gates(features: dict, detail: dict) -> list:
-    """Hard rules that can veto eligibility whatever the model says. Returns list of reason strings."""
+    """Hard rules that can veto eligibility whatever the model says. Returns list of reason strings.
+    Experience rules come from the company (see experience.py); unknown experience never vetoes."""
     failed = []
     if features["has_req_skills"] and features["req_cov"] < config.MIN_REQUIRED_SKILL_COVERAGE:
         failed.append(f"covers only {features['req_cov']:.0%} of the required skills")
-    min_exp = detail.get("minExperienceYears") or 0.0
-    exp = detail.get("experienceYears") or 0.0
-    # experience gate: experienced roles only (level fresher / any = off; a missing level means experienced)
-    if detail.get("level", "experienced") == "experienced" and min_exp and exp < min_exp * config.EXPERIENCE_GATE_RATIO and (min_exp - exp) >= config.EXPERIENCE_GATE_MIN_GAP_YEARS:
-        failed.append(f"{exp:g} yrs experience vs {min_exp:g} yrs required")
+    failed += _experience_check(detail).gates
     return failed
 
 
-def decide(features: dict, detail: dict, extra_gates: list | None = None):
-    """-> (score, eligible, prob, gates_failed). Score is always consistent with eligibility.
-    `extra_gates` = reasons of other hard rules (campus rules) that veto the pair like the built-in gates."""
+@dataclass
+class Decision:
+    score: float
+    eligible: bool                  # verdict == "eligible"
+    verdict: str                    # eligible | review | not_eligible
+    prob: float
+    gates: list = field(default_factory=list)
+    threshold: float = 0.5
+    reviewLower: float = 0.5
+    overqualified: str | None = None
+    experienceUnverified: bool = False
+
+
+def judge(features: dict, detail: dict, extra_gates: list | None = None) -> Decision:
+    """The verdict of one pair.
+      not_eligible  a hard gate failed, or probability < review_lower
+      review        no gate failed and review_lower <= probability < threshold   (a "possible match", a human decides)
+                    also: eligible by score but the experience the role asks about is unknown
+      eligible      no gate failed and probability >= threshold
+    `extra_gates` = reasons of other hard rules (campus rules). The score is always consistent with the verdict:
+    eligible >= threshold > review >= review_lower > anything else, so sorting by score never contradicts the verdict."""
+    level = detail.get("level", "experienced")
     prob = probability(features)
-    thr = threshold()
+    thr, lo = threshold(level), review_lower(level)
+    chk = _experience_check(detail)
     gates = apply_gates(features, detail) + list(extra_gates or [])
-    eligible = prob >= thr and not gates
-    score = prob if eligible or prob < thr else thr * 0.99   # vetoed pairs never display above threshold
-    return round(float(score), 4), eligible, prob, gates
+    band_on = config.REVIEW_BAND_WIDTH > 0
+    if gates:
+        verdict = "not_eligible"
+    elif prob + 1e-9 >= thr:
+        verdict = "review" if (chk.unverified and band_on) else "eligible"
+    elif band_on and prob + 1e-9 >= lo:
+        verdict = "review"
+    else:
+        verdict = "not_eligible"
+    if verdict == "eligible":
+        score = prob
+    elif verdict == "review":
+        score = min(prob, thr * 0.99)
+    else:
+        score = min(prob, lo * 0.99) if prob + 1e-9 >= lo else prob      # vetoed pairs never rank above review pairs
+    return Decision(score=round(float(score), 4), eligible=verdict == "eligible", verdict=verdict, prob=prob, gates=gates,
+                    threshold=thr, reviewLower=lo, overqualified=chk.overqualified, experienceUnverified=chk.unverified)
+
+
+def decide(features: dict, detail: dict, extra_gates: list | None = None):
+    """-> (score, eligible, prob, gates_failed). Kept for older callers; judge() has the full verdict."""
+    d = judge(features, detail, extra_gates)
+    return d.score, d.eligible, d.prob, d.gates

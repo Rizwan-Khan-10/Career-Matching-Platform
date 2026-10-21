@@ -2,8 +2,9 @@
   "scorer": "blr-2026-10-20-real2069",
   "embedder": "all-MiniLM-L6-v2",
   "threshold": 0.4,
+  "fresher_threshold": 0.4,
   "beta": 0.5,
-  "date": "2026-10-20",
+  "date": "2026-10-21",
   "test_frac": 0.2,
   "seed": 7,
   "config": {
@@ -13,6 +14,9 @@
     "FRESHER_PROJECT_WEIGHT": 0.6,
     "FRESHER_INTERNSHIP_WEIGHT": 0.3,
     "ELIGIBILITY_THRESHOLD": 0.4,
+    "FRESHER_ELIGIBILITY_THRESHOLD": null,
+    "REVIEW_BAND_WIDTH": 0.1,
+    "OVERQUALIFIED_EXTRA_YEARS": 5.0,
     "MIN_PUBLISH_SCORE": 0.2
   },
   "held_out": {
@@ -126,6 +130,52 @@
       }
     },
     "ece": 0.0921,
+    "review_band": {
+      "review_pairs": 7,
+      "share_truly_eligible_in_review": 0.429,
+      "eligible_only": {
+        "precision": 0.588,
+        "recall": 0.278,
+        "f1": 0.377
+      },
+      "eligible_plus_review": {
+        "precision": 0.542,
+        "recall": 0.361,
+        "f1": 0.433
+      }
+    },
+    "by_level": {
+      "any": {
+        "n": 10,
+        "truly_eligible": 0.2,
+        "predicted_eligible": 0.0,
+        "eligible_only": {
+          "precision": null,
+          "recall": 0.0,
+          "f1": null
+        },
+        "eligible_plus_review": {
+          "precision": 0.333,
+          "recall": 0.5,
+          "f1": 0.4
+        }
+      },
+      "experienced": {
+        "n": 76,
+        "truly_eligible": 0.447,
+        "predicted_eligible": 0.224,
+        "eligible_only": {
+          "precision": 0.588,
+          "recall": 0.294,
+          "f1": 0.392
+        },
+        "eligible_plus_review": {
+          "precision": 0.571,
+          "recall": 0.353,
+          "f1": 0.436
+        }
+      }
+    },
     "by_kind": {
       "hf_fit": {
         "n": 86,
@@ -247,6 +297,52 @@
       }
     },
     "ece": 0.198,
+    "review_band": {
+      "review_pairs": 25,
+      "share_truly_eligible_in_review": 0.36,
+      "eligible_only": {
+        "precision": 0.83,
+        "recall": 0.709,
+        "f1": 0.765
+      },
+      "eligible_plus_review": {
+        "precision": 0.667,
+        "recall": 0.873,
+        "f1": 0.756
+      }
+    },
+    "by_level": {
+      "experienced": {
+        "n": 100,
+        "truly_eligible": 0.23,
+        "predicted_eligible": 0.21,
+        "eligible_only": {
+          "precision": 0.905,
+          "recall": 0.826,
+          "f1": 0.864
+        },
+        "eligible_plus_review": {
+          "precision": 0.786,
+          "recall": 0.957,
+          "f1": 0.863
+        }
+      },
+      "fresher": {
+        "n": 100,
+        "truly_eligible": 0.32,
+        "predicted_eligible": 0.26,
+        "eligible_only": {
+          "precision": 0.769,
+          "recall": 0.625,
+          "f1": 0.69
+        },
+        "eligible_plus_review": {
+          "precision": 0.591,
+          "recall": 0.812,
+          "f1": 0.684
+        }
+      }
+    },
     "by_kind": {
       "gold-experienced": {
         "n": 100,

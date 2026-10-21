@@ -43,6 +43,16 @@ export function passwordResetEmail(o: { webUrl: string; resetToken: string; invi
   };
 }
 
+export function emailVerificationEmail(o: { webUrl: string; verifyToken: string }): RenderedEmail {
+  const link = `${base(o.webUrl)}/verify-email?token=${encodeURIComponent(o.verifyToken)}`;
+  return {
+    subject: 'Confirm your email address',
+    html: `<p>Welcome to Career Match! Please confirm that this is your email address.</p>
+           <p><a href="${esc(link)}">Confirm my email</a> (valid for 24 hours).</p>
+           <p>If you did not sign up, you can ignore this e-mail: nothing will happen.</p>`,
+  };
+}
+
 export function eligibleEmail(o: { webUrl: string; roleTitle?: string | null }): RenderedEmail {
   const role = clean(o.roleTitle);
   return {

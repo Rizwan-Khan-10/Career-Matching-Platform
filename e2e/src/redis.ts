@@ -32,3 +32,21 @@ export async function setupToken(email: string, userId: string): Promise<string>
   await api('/auth/forgot-password', { method: 'POST', json: { email } });
   return eventually(`a reset token in Redis for ${email}`, () => scanForToken(userId), { timeoutMs: 30_000, intervalMs: 1000 });
 }
+
+/** The confirmation link is only e-mailed, so the test takes the token from Redis ("verify-latest:<email>"). */
+export async function verificationToken(email: string, notEqualTo?: string): Promise<string> {
+  return eventually(
+    `a verification token in Redis for ${email}`,
+    async () => {
+      const redis = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 2 });
+      try {
+        await redis.connect();
+        const token = await redis.get(`verify-latest:${email}`);
+        return token && token !== notEqualTo ? token : null;
+      } finally {
+        redis.disconnect();
+      }
+    },
+    { timeoutMs: 15_000, intervalMs: 500 },
+  );
+}

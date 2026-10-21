@@ -18,6 +18,8 @@ import { getGoogleClientId } from './google-token-verifier';
 import { isGoogleSignInAllowed } from './signup-policy';
 import { FinishSetupLoginDto } from './dto/finish-setup-login.dto';
 import { SetupTokenDto } from './dto/setup-token.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 const SIGNUP_LIMIT = {
   max: Number(process.env.SIGNUP_RATE_MAX || 20),
@@ -53,6 +55,21 @@ export class AuthController {
       'Too many sign-up attempts from this network. Please try again later.',
     );
     return this.authService.signup(dto);
+  }
+
+  // The link from the verification e-mail.
+  @Post('verify-email')
+  async verifyEmail(@Body() dto: VerifyEmailDto, @Ip() ip: string) {
+    await this.rateLimit.assert('verify-email', ip, 30, 10 * 60, 'Too many attempts. Please try again in a few minutes.');
+    return this.authService.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Body() dto: ResendVerificationDto, @Ip() ip: string) {
+    const tooMany = 'Too many requests. Please try again in a few minutes.';
+    await this.rateLimit.assert('resend-verification-ip', ip, 10, 60 * 60, tooMany);
+    await this.rateLimit.assert('resend-verification-email', dto.email, 3, 15 * 60, tooMany); // no mail flood to one inbox
+    return this.authService.resendVerification(dto.email);
   }
 
   @Post('google')

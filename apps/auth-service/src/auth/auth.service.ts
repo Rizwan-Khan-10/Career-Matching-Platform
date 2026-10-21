@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, ForbiddenException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomUUID } from 'crypto';
@@ -19,10 +19,13 @@ import { GoogleTokenVerifier } from './google-token-verifier';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { FinishSetupLoginDto } from './dto/finish-setup-login.dto';
 import { SetupTokenDto } from './dto/setup-token.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto'
+import { ResendVerificationDto } from './dto/resend-verification.dto'
 
 // Used when the email does not exist, so that request still pays for one bcrypt compare
 // and cannot be told apart from a wrong password by its response time.
 const DUMMY_HASH = bcrypt.hashSync(randomBytes(16).toString('hex'), 10);
+const VERIFY_TTL_SECONDS = 24 * 60 * 60;
 
 @Injectable()
 export class AuthService {
@@ -45,12 +48,32 @@ export class AuthService {
     assertSignupAllowed(settings, dto.email);
 
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (existing) throw new ConflictException('Email already registered');
+    // A verified account (or an admin) owns the address. Same 409 as always.
+    if (existing && (existing.emailVerified || existing.role === 'ADMIN' || !settings.emailVerificationRequired)) {
+      throw new ConflictException('Email already registered');
+    }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    if (existing) {
+      // Someone registered this address but never proved it is theirs. A new sign-up takes it over:
+      // new password and role, old sessions gone, a fresh link. This ends "pre-registering a victim's e-mail".
+      await this.prisma.user.update({ where: { id: existing.id }, data: { passwordHash, role: dto.role } });
+      await this.sessions.revokeAll(existing.id);
+      await this.sendVerification(existing.email, existing.id);
+      return { verificationRequired: true as const, email: existing.email };
+    }
+
+    const verifyRequired = settings.emailVerificationRequired;
     const user = await this.prisma.user.create({
-      data: { email: dto.email, passwordHash, role: dto.role },
+      data: { email: dto.email, passwordHash, role: dto.role, emailVerified: !verifyRequired },
     });
+
+    if (verifyRequired) {
+      // No tokens and no profile yet: both come after the link is used (see verifyEmail).
+      await this.sendVerification(user.email, user.id);
+      return { verificationRequired: true as const, email: user.email };
+    }
 
     // Awaited on purpose: the company status (pending/approved) must be stored before the
     // web app asks for the profile. Failure is still best-effort (logged), as before.
@@ -78,6 +101,14 @@ export class AuthService {
 
     // Checked only after the password is right, so a stranger cannot find out which accounts are disabled.
     if (!user.isActive) throw new UnauthorizedException('Account disabled');
+
+    // Only after the password is right, so this reveals nothing to a stranger.
+    if (!user.emailVerified) {
+      throw new ForbiddenException({
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email first. Check your inbox for the link.',
+      });
+    }
 
     await this.loginLock.clear(email, ip);
 
@@ -149,13 +180,21 @@ export class AuthService {
           message: 'This email already has an account protected by two-factor. Please log in with your email and password.',
         });
       }
-      // Signup does not verify e-mails either, so the password may belong to someone who pre-registered
-      // this address. Google proves the real owner is here: replace the password and end every session.
+
+      const wasUnverified = !byEmail.emailVerified;
       await this.prisma.user.update({
         where: { id: byEmail.id },
-        data: { googleId: profile.sub, passwordHash: await this.randomPasswordHash() },
+        data: {
+          googleId: profile.sub,
+          passwordHash: await this.randomPasswordHash(),
+          ...(wasUnverified ? { emailVerified: true } : {}),
+        },
       });
       await this.sessions.revokeAll(byEmail.id);
+      // an unverified sign-up has no profile yet: Google just proved the address, so create it now
+      if (wasUnverified) {
+        await this.createUserProfile(byEmail.id, byEmail.role, byEmail.email, resolveCompanyStatus(settings));
+      }
       return this.issueTokens(byEmail.id, byEmail.role);
     }
 
@@ -248,6 +287,68 @@ export class AuthService {
       this.logger.error(`could not queue the password-reset e-mail: ${(err as Error).message}`); // never log the token itself
     }
     return generic;
+  }
+
+  /** The link in the mail. Works once; the user is signed in right away. */
+  async verifyEmail(token: string) {
+    const invalid = () => new BadRequestException('This verification link is invalid or has expired.');
+    const userId = await this.safeRedisGet(`verify:${token}`);
+    if (!userId) throw invalid();
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw invalid();
+    if (!user.isActive) throw new UnauthorizedException('Account disabled');
+    if (user.emailVerified) {
+      // e.g. linked with Google in the meantime: a used link must never hand out tokens
+      await this.dropVerification(token, user.email);
+      throw new BadRequestException('This link has already been used. Please log in.');
+    }
+
+    await this.prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+    await this.dropVerification(token, user.email);
+
+    // The profile is created only now, so spam sign-ups never reach the other services.
+    await this.createUserProfile(user.id, user.role, user.email, resolveCompanyStatus(await this.settings.getAll()));
+    return this.issueTokens(user.id, user.role);
+  }
+
+  /** Always the same answer: it must not tell whether the address has an account. */
+  async resendVerification(email: string) {
+    const generic = { message: 'If that email is waiting for verification, a new link has been sent.' };
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.emailVerified || !user.isActive) return generic;
+    try {
+      await this.sendVerification(user.email, user.id);
+    } catch {
+      // swallowed on purpose: an error here would show that this address exists
+    }
+    return generic;
+  }
+
+  /** One live link per address: a new link replaces the old one. */
+  private async sendVerification(email: string, userId: string) {
+    const token = randomBytes(32).toString('hex');
+    try {
+      const previous = await this.redis.client.get(`verify-latest:${email}`);
+      if (previous) await this.redis.client.del(`verify:${previous}`);
+      await this.redis.client.set(`verify:${token}`, userId, 'EX', VERIFY_TTL_SECONDS);
+      await this.redis.client.set(`verify-latest:${email}`, token, 'EX', VERIFY_TTL_SECONDS);
+    } catch {
+      throw new BadRequestException('Verification is temporarily unavailable, try again shortly');
+    }
+    try {
+      await this.mail.enqueueEmailVerification(email, token);
+    } catch (err) {
+      this.logger.error(`could not queue the verification e-mail: ${(err as Error).message}`); // never log the token itself
+    }
+  }
+
+  private async dropVerification(token: string, email: string) {
+    try {
+      await this.redis.client.del(`verify:${token}`, `verify-latest:${email}`);
+    } catch {
+      /* the keys expire on their own */
+    }
   }
 
   async resetPassword(resetToken: string, newPassword: string) {

@@ -102,7 +102,7 @@ export function RegistrationSettingsForm({
                                 mode === m.value ? 'border-accent bg-accent-soft/40' : 'border-hairline bg-paper-raised hover:border-ink-grey',
                             )}
                         >
-                            <input type="radio" value={m.value} {...register('registrationMode')} className="mt-1 accent-[var(--color-accent)]" />
+                            <input type="radio" value={m.value} {...register('registrationMode')} className="mt-1 accent-accent" />
                             <span>
                                 <span className="block text-sm font-medium text-ink">{m.title}</span>
                                 <span className="block text-xs text-ink-grey mt-0.5">{m.text}</span>

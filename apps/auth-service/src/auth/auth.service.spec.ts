@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
@@ -18,7 +18,7 @@ vi.mock('bcrypt', async (importOriginal) => {
 const PASSWORD = 'Password123';
 const HASH = bcrypt.hashSync(PASSWORD, 4);
 const activeUser = (over: Record<string, unknown> = {}) => ({
-  id: 'u1', email: 'a@b.com', role: 'APPLICANT', passwordHash: HASH, isActive: true, ...over,
+  id: 'u1', email: 'a@b.com', role: 'APPLICANT', passwordHash: HASH, isActive: true, emailVerified: true, ...over,
 });
 
 function build(settings: Partial<SystemSettings> = {}, existingUser: any = null) {
@@ -32,8 +32,8 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
     },
   };
   const jwt = new JwtService({});
-  const mail = { enqueuePasswordReset: vi.fn() };
-  const settingsService = { getAll: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, ...settings }) };
+  const mail = { enqueuePasswordReset: vi.fn(), enqueueEmailVerification: vi.fn() };
+  const settingsService = { getAll: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, emailVerificationRequired: false, ...settings }) };
   const twoFactor = {
     createChallenge: vi.fn().mockResolvedValue('chal-1'),
     createSetupChallenge: vi.fn().mockResolvedValue('setup-1'),
@@ -46,7 +46,7 @@ function build(settings: Partial<SystemSettings> = {}, existingUser: any = null)
     new SessionStore(redis as any), new LoginLockService(redis as any), twoFactor as any, google as any,
   );
   const sid = (token: string) => (jwt.decode(token) as { sid: string }).sid;
-  return { service, prisma, fake, jwt, sid, twoFactor, google };
+  return { service, prisma, fake, jwt, sid, twoFactor, google, mail };
 }
 
 /**
@@ -74,7 +74,7 @@ describe('AuthService.signup', () => {
 
   it('creates the user in open mode and sends companyStatus=pending when approval is required', async () => {
     const { service, prisma } = build({ registrationMode: 'open', companyApprovalRequired: true });
-    const result = await service.signup(companyDto);
+    const result: any = await service.signup(companyDto);
 
     expect(prisma.user.create).toHaveBeenCalledOnce();
     expect(result.role).toBe('COMPANY');
@@ -447,6 +447,14 @@ describe('AuthService.googleLogin', () => {
       await expect(service.googleLogin(dto)).rejects.toThrow('Account disabled');
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
+
+    it('linking an account that was never verified also verifies it and creates its profile', async () => {
+      (axios.post as any).mockClear();
+      const { service, prisma } = setup({}, { byEmail: activeUser({ googleId: null, twoFactorEnabled: false, emailVerified: false }) });
+      await service.googleLogin(dto);
+      expect(prisma.user.update.mock.calls[0][0].data.emailVerified).toBe(true);
+      expect(axios.post).toHaveBeenCalledWith('http://user-service/internal/profiles', expect.anything(), expect.anything());
+    });
   });
 
   describe('already linked', () => {
@@ -503,5 +511,131 @@ describe('AuthService admin two-factor requirement', () => {
     const result: any = await service.finishTwoFactorSetupLogin({ setupToken: 'setup-1', code: '123456' });
     expect(result.accessToken).toBeDefined();
     expect(result.recoveryCodes).toEqual(['aaaaa-bbbbb']);
+  });
+});
+
+describe('AuthService email verification', () => {
+  const verifying = { registrationMode: 'open', emailVerificationRequired: true } as const;
+  const signupDto = { email: 'new@b.com', password: 'Password123', role: 'APPLICANT' as const };
+
+  describe('signup', () => {
+    it('creates an unverified user, sends the mail, issues NO tokens and creates NO profile yet', async () => {
+      (axios.post as any).mockClear();
+      const { service, prisma, fake, mail } = build(verifying, null);
+      const result: any = await service.signup(signupDto);
+
+      expect(result).toEqual({ verificationRequired: true, email: 'new@b.com' });
+      expect(result.accessToken).toBeUndefined();
+      expect(prisma.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ emailVerified: false }) });
+      expect(axios.post).not.toHaveBeenCalled();
+      expect([...fake.store.keys()].some((k) => k.startsWith('refresh:'))).toBe(false);
+
+      const [, token] = mail.enqueueEmailVerification.mock.calls[0];
+      expect(mail.enqueueEmailVerification).toHaveBeenCalledWith('new@b.com', expect.any(String));
+      expect(fake.store.get(`verify:${token}`)).toBe('u1');
+    });
+
+    it('works as before when verification is switched off', async () => {
+      const { service, prisma, mail } = build({ ...verifying, emailVerificationRequired: false }, null);
+      const result: any = await service.signup(signupDto);
+      expect(result.accessToken).toBeDefined();
+      expect(prisma.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ emailVerified: true }) });
+      expect(mail.enqueueEmailVerification).not.toHaveBeenCalled();
+    });
+
+    it('a sign-up on an address nobody verified takes it over: new password, old sessions gone, new mail', async () => {
+      const { service, prisma, fake, mail } = build(verifying, activeUser({ emailVerified: false }));
+      fake.store.set('refresh:u1:old-device', 'old-token');
+
+      const result: any = await service.signup({ ...signupDto, role: 'COMPANY' });
+
+      expect(result.verificationRequired).toBe(true);
+      const data = prisma.user.update.mock.calls[0][0].data;
+      expect(data.role).toBe('COMPANY');
+      expect(await bcrypt.compare('Password123', data.passwordHash)).toBe(true);
+      expect(fake.store.has('refresh:u1:old-device')).toBe(false);
+      expect(mail.enqueueEmailVerification).toHaveBeenCalledTimes(1);
+    });
+
+    it('a verified account still answers 409', async () => {
+      const { service } = build(verifying, activeUser({ emailVerified: true }));
+      await expect(service.signup(signupDto)).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('login', () => {
+    it('refuses an unverified user after the right password, with a code the web app can act on', async () => {
+      const { service } = build(verifying, activeUser({ emailVerified: false }));
+      const err: any = await service.login({ email: 'a@b.com', password: PASSWORD }).catch((e) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err.getResponse()).toMatchObject({ code: 'EMAIL_NOT_VERIFIED' });
+    });
+
+    it('a wrong password on an unverified account still says Invalid credentials (nothing leaks)', async () => {
+      const { service } = build(verifying, activeUser({ emailVerified: false }));
+      await expect(service.login({ email: 'a@b.com', password: 'wrong-password' })).rejects.toThrow('Invalid credentials');
+    });
+  });
+
+  describe('verifyEmail', () => {
+    it('verifies, creates the profile now, drops the link and signs the user in', async () => {
+      (axios.post as any).mockClear();
+      const { service, prisma, fake } = build({ ...verifying, companyApprovalRequired: true }, activeUser({ emailVerified: false, role: 'COMPANY' }));
+      fake.store.set('verify:tok', 'u1');
+      fake.store.set('verify-latest:a@b.com', 'tok');
+
+      const result: any = await service.verifyEmail('tok');
+
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { emailVerified: true } });
+      expect(axios.post).toHaveBeenCalledWith(
+        'http://user-service/internal/profiles',
+        expect.objectContaining({ role: 'COMPANY', companyStatus: 'pending' }),
+        expect.anything(),
+      );
+      expect(result.accessToken).toBeDefined();
+      expect(fake.store.has('verify:tok')).toBe(false);
+      expect(fake.store.has('verify-latest:a@b.com')).toBe(false);
+    });
+
+    it('refuses an unknown or expired link', async () => {
+      const { service } = build(verifying, activeUser({ emailVerified: false }));
+      await expect(service.verifyEmail('nope')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('a link for an already verified user gives no tokens', async () => {
+      const { service, fake } = build(verifying, activeUser({ emailVerified: true }));
+      fake.store.set('verify:tok', 'u1');
+      await expect(service.verifyEmail('tok')).rejects.toThrow('already been used');
+    });
+
+    it('a disabled user cannot finish verification', async () => {
+      const { service, fake } = build(verifying, activeUser({ emailVerified: false, isActive: false }));
+      fake.store.set('verify:tok', 'u1');
+      await expect(service.verifyEmail('tok')).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('resendVerification', () => {
+    const generic = { message: 'If that email is waiting for verification, a new link has been sent.' };
+
+    it('sends a fresh link to an unverified user and the old link stops working', async () => {
+      const { service, fake, mail } = build(verifying, activeUser({ emailVerified: false }));
+      fake.store.set('verify:old', 'u1');
+      fake.store.set('verify-latest:a@b.com', 'old');
+
+      expect(await service.resendVerification('a@b.com')).toEqual(generic);
+      expect(mail.enqueueEmailVerification).toHaveBeenCalledTimes(1);
+      expect(fake.store.has('verify:old')).toBe(false);
+    });
+
+    it('gives the same answer and sends nothing for unknown or already verified addresses', async () => {
+      const unknown = build(verifying, null);
+      expect(await unknown.service.resendVerification('nobody@b.com')).toEqual(generic);
+      expect(unknown.mail.enqueueEmailVerification).not.toHaveBeenCalled();
+
+      const verified = build(verifying, activeUser({ emailVerified: true }));
+      expect(await verified.service.resendVerification('a@b.com')).toEqual(generic);
+      expect(verified.mail.enqueueEmailVerification).not.toHaveBeenCalled();
+    });
   });
 });

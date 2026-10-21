@@ -24,6 +24,9 @@ An AI-assisted hiring platform for tech roles (fresher and experienced). Applica
 - Registration mode (`open`, `domain`, `invite_only`), company approval and job-posting approval switches.
 - CSV user import with invite emails, user and company management, audit log, system health (streams, dead letters).
 
+- Optional e-mail verification for self-signup (admin setting, on by default): the account is created and the profile appears only after the user clicks the mailed link.
+- Admins can be required to use two-factor (admin setting); an admin without it is guided through setup at login.
+
 ## How matching works
 
 1. A resume is parsed, but **not matched** until the applicant confirms it.
@@ -143,6 +146,9 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - Never commit `.env` files; the `Secret Scan` workflow checks every push.
 - 2FA secrets are encrypted at rest (`TWO_FACTOR_ENCRYPTION_KEY`, 32 bytes hex). Back this key up like `JWT_SECRET`: if it is lost, every user with 2FA must be reset by an admin.
 - Google sign-in verifies the ID token on the server (`GOOGLE_CLIENT_ID`); it is available only while registration is `open`.
+- Lost every admin authenticator and recovery code (and no other admin can reset it)? Turn 2FA off for that account directly in the database:
+  `UPDATE auth_service."User" SET "twoFactorEnabled" = false, "twoFactorSecret" = NULL WHERE email = '<admin email>';` and `DELETE FROM auth_service."RecoveryCode" WHERE "userId" = (SELECT id FROM auth_service."User" WHERE email = '<admin email>');`. With the setting on, that admin is then sent through setup again at the next login.
+- Sign-ups that never click the verification link stay as unverified rows without a profile. They are harmless (they cannot log in) and a new sign-up with the same address replaces them. There is no automatic cleanup yet.
 
 ## Before going live
 
@@ -155,6 +161,8 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - [ ] Daily jobs run: resume cleanup, notification expiry
 - [ ] `TWO_FACTOR_ENCRYPTION_KEY` generated (`openssl rand -hex 32`) and backed up
 - [ ] Google sign-in (optional): OAuth client created, your real domain added under *Authorized JavaScript origins*, consent screen published (not "Testing"), `GOOGLE_CLIENT_ID` set; leave it empty to keep Google off
+- [ ] E-mail sending works (`EMAIL_PROVIDER` + credentials): with *Verify email on sign-up* on, nobody can finish signing up without it
+- [ ] Turn on *Require two-factor for admins* only after your own admin account has two-factor and its recovery codes are saved
 
 ## Google sign-in (optional)
 

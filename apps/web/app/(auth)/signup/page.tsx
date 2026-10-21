@@ -2,36 +2,34 @@
 
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
-import { useAuthStore } from '@/store/authStore';
 import { signupSchema, SignupFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { toast } from '@/lib/toast';
-import { decodeJwtPayload } from '@/lib/jwt';
 import { getErrorMessage } from '@/lib/errors';
-import type { RegistrationModeInfo } from '@/types/auth';
-import { PasswordInput } from '@/components/ui/PasswordInput';
+import { useFinishLogin } from '@/lib/hooks/useFinishLogin';
+import { useRegistrationMode } from '@/lib/hooks/useRegistrationMode';
+import { isTwoFactorChallenge, LoginResponse, TokenResponse } from '@/types/auth';
 
 export default function SignupPage() {
     const router = useRouter();
-    const setAuth = useAuthStore((s) => s.setAuth);
+    const finishLogin = useFinishLogin();
     const [serverError, setServerError] = useState<string | null>(null);
 
-    const { data: modeInfo, isLoading: isModeLoading } = useQuery<RegistrationModeInfo>({
-        queryKey: ['auth', 'registration-mode'],
-        queryFn: () => apiClient.get('/auth/registration-mode').then((r) => r.data),
-        staleTime: 60_000,
-        retry: false, // if this fails we show the normal form; the server still enforces the mode on signup
-    });
+    const { data: modeInfo, isLoading: isModeLoading } = useRegistrationMode();
     const isClosed = modeInfo?.mode === 'invite_only';
     const allowedDomains = modeInfo?.mode === 'domain' ? modeInfo.allowedDomains : [];
+    // null in college mode (invite_only / domain): the Google button is then not rendered at all
+    const googleClientId = modeInfo?.googleEnabled ? modeInfo.googleClientId : null;
 
     const { register, handleSubmit, control, formState: { errors } } = useForm<SignupFormValues>({
         resolver: zodResolver(signupSchema),
@@ -41,17 +39,33 @@ export default function SignupPage() {
     const role = useWatch({ control, name: 'role' });
 
     const mutation = useMutation({
-        mutationFn: (values: SignupFormValues) => apiClient.post('/auth/signup', values),
+        mutationFn: (values: SignupFormValues) => apiClient.post<TokenResponse>('/auth/signup', values),
         onSuccess: (res) => {
-            const { accessToken, refreshToken, role } = res.data;
-            const payload = decodeJwtPayload(accessToken);
-            if (!payload) { setServerError('Login failed, please try again'); return; }
-            setAuth(accessToken, role, payload.sub, refreshToken);
-            if (role === 'APPLICANT') router.push('/applicant/dashboard');
-            else router.push('/company/dashboard');
+            if (!finishLogin(res.data)) setServerError('Login failed, please try again');
         },
         onError: (err: unknown) => {
             const msg = getErrorMessage(err, 'Something went wrong');
+            setServerError(msg);
+            toast.error(msg);
+        },
+    });
+
+    const googleMutation = useMutation({
+        // the chosen role is only used when this Google account has no account yet
+        mutationFn: (credential: string) =>
+            apiClient.post<LoginResponse>('/auth/google', { credential, role }).then((r) => r.data),
+        onSuccess: (data) => {
+            setServerError(null);
+            if (isTwoFactorChallenge(data)) {
+                // this Google account already exists and has two-factor: finish it on the login page
+                toast.info('You already have an account. Please log in.');
+                router.push('/login');
+                return;
+            }
+            if (!finishLogin(data)) setServerError('Login failed, please try again');
+        },
+        onError: (err: unknown) => {
+            const msg = getErrorMessage(err, 'Google sign-in failed, please try again');
             setServerError(msg);
             toast.error(msg);
         },
@@ -84,6 +98,8 @@ export default function SignupPage() {
             </Stagger>
         );
     }
+
+    const busy = mutation.isPending || googleMutation.isPending;
 
     return (
         <Stagger className="w-full max-w-sm">
@@ -121,8 +137,28 @@ export default function SignupPage() {
                     </div>
                 </StaggerItem>
 
+                {googleClientId && (
+                    <StaggerItem>
+                        <GoogleSignInButton
+                            clientId={googleClientId}
+                            text="signup_with"
+                            disabled={busy}
+                            onCredential={(credential) => googleMutation.mutate(credential)}
+                        />
+                        <p className="text-xs text-ink-grey mt-2">
+                            Already registered with this email? Continuing with Google links it to your account,
+                            and your old password stops working. You can set a new one with Forgot password.
+                        </p>
+                        <div className="flex items-center gap-3 mt-5">
+                            <div className="h-px flex-1 bg-hairline" />
+                            <span className="text-xs text-ink-grey">or</span>
+                            <div className="h-px flex-1 bg-hairline" />
+                        </div>
+                    </StaggerItem>
+                )}
+
                 <StaggerItem>
-                    <Input type="email" placeholder="Email" {...register('email')} />
+                    <Input type="email" placeholder="Email" autoComplete="email" {...register('email')} />
                     <FieldError message={errors.email?.message} />
                 </StaggerItem>
                 <StaggerItem>
@@ -137,7 +173,7 @@ export default function SignupPage() {
                 )}
 
                 <StaggerItem>
-                    <Button type="submit" disabled={mutation.isPending} className="w-full">
+                    <Button type="submit" disabled={busy} className="w-full">
                         {mutation.isPending ? 'Creating account...' : 'Sign up'}
                     </Button>
                 </StaggerItem>

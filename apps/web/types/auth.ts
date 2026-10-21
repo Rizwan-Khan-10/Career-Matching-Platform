@@ -3,6 +3,9 @@ export type RegistrationMode = 'open' | 'invite_only' | 'domain';
 export interface RegistrationModeInfo {
   mode: RegistrationMode;
   allowedDomains: string[];
+  /** false in college mode (invite_only / domain), or when GOOGLE_CLIENT_ID is not set on the server */
+  googleEnabled: boolean;
+  googleClientId: string | null;
 }
 
 export type Role = 'ADMIN' | 'COMPANY' | 'APPLICANT';

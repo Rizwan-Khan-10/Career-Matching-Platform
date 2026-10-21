@@ -17,3 +17,12 @@ export function isForbidden(err: unknown): boolean {
 export function isConflict(err: unknown): boolean {
   return isAxiosError(err) && err.response?.status === 409;
 }
+
+/** Some Nest errors carry a machine-readable { code } next to the message (ROLE_REQUIRED, GOOGLE_LINK_BLOCKED). */
+export function getErrorCode(err: unknown): string | undefined {
+  if (isAxiosError(err)) {
+    const code = err.response?.data?.code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}

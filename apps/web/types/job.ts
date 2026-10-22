@@ -8,6 +8,8 @@ export interface JobRoleRequirements {
   requiredSkills?: string[];
   preferredSkills?: string[];
   minExperienceYears?: number | null;
+  maxExperienceYears?: number | null; // company's upper bound; empty = no limit
+  strictMinExperience?: boolean | null; // true = below the minimum is rejected outright (no soft rule)
   qualifications?: string | null;
   responsibilities?: string[];
   seniority?: string | null;

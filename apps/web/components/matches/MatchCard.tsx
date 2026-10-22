@@ -14,7 +14,7 @@ function badgeFor(match: Match): { label: string; className: string } {
     if (match.outcome === 'shortlisted') return { label: 'Shortlisted', className: 'bg-success-soft text-success' };
     if (match.outcome === 'rejected') return { label: 'Not selected', className: 'bg-paper text-ink-grey border border-hairline' };
     if (match.eligible) return { label: 'Eligible', className: 'bg-success-soft text-success' };
-    if (matchGroup(match) === 'almost') return { label: 'Almost eligible', className: 'bg-warning-soft text-warning' };
+    if (matchGroup(match) === 'almost') return { label: 'Possible match', className: 'bg-warning-soft text-warning' };
     return { label: 'Not eligible', className: 'bg-danger-soft text-danger' };
 }
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Match } from '@/types/match';
+import { canApprove, isPossibleMatch } from '@/lib/matchReason';
 
 // consent: the company only sees you (and gets your resume) after you approve
 export function ConsentSection({
@@ -15,17 +16,24 @@ export function ConsentSection({
 }) {
     const [confirming, setConfirming] = useState(false);
     const company = match.companyName || 'this company';
+    const approvable = canApprove(match);
+    const possible = isPossibleMatch(match);
 
     return (
         <>
-            {match.eligible && match.applicantStatus === 'pending' && match.jobStopped && (
+            {approvable && match.applicantStatus === 'pending' && match.jobStopped && (
                 <div className="mt-3 border-t border-hairline pt-3">
                     <p className="text-sm text-ink-grey">This job is no longer accepting applications.</p>
                 </div>
             )}
 
-            {match.eligible && match.applicantStatus === 'pending' && !match.jobStopped && (
+            {approvable && match.applicantStatus === 'pending' && !match.jobStopped && (
                 <div className="mt-3 border-t border-hairline pt-3">
+                    {possible && (
+                        <p className="text-xs text-ink-grey mb-2">
+                            This is a possible match, not a confirmed one. If you share your resume, the company will look at it themselves and decide.
+                        </p>
+                    )}
                     {!confirming ? (
                         <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -75,7 +83,7 @@ export function ConsentSection({
                 </div>
             )}
 
-            {match.eligible && match.applicantStatus === 'declined' && !match.jobStopped && (
+            {approvable && match.applicantStatus === 'declined' && !match.jobStopped && (
                 <div className="mt-3 border-t border-hairline pt-3 flex items-center gap-3">
                     <p className="text-sm text-ink-grey">You said you&apos;re not interested.</p>
                     <button

@@ -24,6 +24,19 @@ function normalizeRequirements(req: Record<string, any>): Record<string, any> {
     return out;
 }
 
+/** The company's experience band: max must not be below min (both optional; null / missing = not set). */
+export function experienceBandError(min: unknown, max: unknown): string | null {
+    if (typeof min === 'number' && typeof max === 'number' && max < min) {
+        return `maxExperienceYears (${max}) cannot be below minExperienceYears (${min})`;
+    }
+    return null;
+}
+
+function assertValidExperienceBand(requirements: Record<string, any>) {
+    const error = experienceBandError(requirements.minExperienceYears, requirements.maxExperienceYears);
+    if (error) throw new BadRequestException(error);
+}
+
 function assertValidTarget(track: unknown, stacks: unknown) {
     const error = roleTargetError(track, stacks);
     if (error) throw new BadRequestException(error);
@@ -77,6 +90,7 @@ export class JobsService {
     async createRole(jobPostingId: string, companyId: string, dto: CreateJobRoleDto) {
         const posting = await this.assertOwnsPosting(jobPostingId, companyId);
         assertValidTarget(dto.track, dto.stacks);
+        assertValidExperienceBand({ minExperienceYears: dto.minExperienceYears, maxExperienceYears: dto.maxExperienceYears });
         const role = await this.prisma.jobRole.create({
             data: {
                 jobPostingId,
@@ -87,6 +101,8 @@ export class JobsService {
                     requiredSkills: dto.requiredSkills,
                     preferredSkills: dto.preferredSkills ?? [],
                     minExperienceYears: dto.minExperienceYears ?? null,
+                    maxExperienceYears: dto.maxExperienceYears ?? null,       // null = no upper limit
+                    strictMinExperience: dto.strictMinExperience ?? null,
                     qualifications: dto.qualifications ?? null,
                     responsibilities: dto.responsibilities ?? [],
                     level: dto.level ?? null,
@@ -115,6 +131,8 @@ export class JobsService {
         if (dto.title) merged.title = dto.title; // keep requirements.title in sync with the role title
         // only when this request touches them: an old role with odd stored values can still be renamed
         if ('track' in changes || 'stacks' in changes) assertValidTarget(merged.track, merged.stacks);
+        // same idea for the experience band: checked on the merged values, only when this request touches them
+        if ('minExperienceYears' in changes || 'maxExperienceYears' in changes) assertValidExperienceBand(merged);
 
         const updated = await this.prisma.jobRole.update({
             where: { id: roleId },

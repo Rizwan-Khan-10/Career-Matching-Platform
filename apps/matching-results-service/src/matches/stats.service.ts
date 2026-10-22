@@ -71,7 +71,7 @@ export class StatsService {
             ) s ON s."jobRoleId" = jr.id
             LEFT JOIN (
                 SELECT "jobRoleId",
-                       COUNT(*) FILTER (WHERE "applicantStatus" = 'approved' AND eligible) AS applied,
+                       COUNT(*) FILTER (WHERE "applicantStatus" = 'approved' AND (eligible OR verdict = 'review')) AS applied,
                        COUNT(*) FILTER (WHERE decision = 'shortlisted') AS shortlisted,
                        COUNT(*) FILTER (WHERE decision = 'rejected') AS rejected
                 FROM "matches_service"."Match" GROUP BY "jobRoleId"
@@ -93,7 +93,7 @@ export class StatsService {
             ...args,
         );
         const dec = await this.prisma.$queryRawUnsafe<{ applied: number; shortlisted: number; rejected: number }[]>(
-            `SELECT (COUNT(DISTINCT m."applicantId") FILTER (WHERE m."applicantStatus" = 'approved' AND m.eligible))::int AS applied,
+            `SELECT (COUNT(DISTINCT m."applicantId") FILTER (WHERE m."applicantStatus" = 'approved' AND (m.eligible OR m.verdict = 'review')))::int AS applied,
                     (COUNT(DISTINCT m."applicantId") FILTER (WHERE m.decision = 'shortlisted'))::int AS shortlisted,
                     (COUNT(DISTINCT m."applicantId") FILTER (WHERE m.decision = 'rejected'))::int AS rejected
              FROM "matches_service"."Match" m
@@ -144,7 +144,7 @@ export class StatsService {
             SELECT e.branch AS branch,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = e."applicantId"))::int AS scanned,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = e."applicantId" AND rs.eligible))::int AS matched,
-                   COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m."applicantStatus" = 'approved' AND m.eligible))::int AS applied,
+                   COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m."applicantStatus" = 'approved' AND (m.eligible OR m.verdict = 'review')))::int AS applied,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = e."applicantId" AND m.decision = 'shortlisted'))::int AS shortlisted,
                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM \"matches_service\".\"Match\" m WHERE m.\"applicantId\" = e.\"applicantId\" AND m.decision = 'rejected'))::int AS rejected
             FROM eff e
@@ -239,7 +239,7 @@ export class StatsService {
             SELECT ap."userId" AS "applicantId",
                    CASE
                      WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m.decision = 'shortlisted') THEN 'shortlisted'
-                     WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m."applicantStatus" = 'approved' AND m.eligible AND m.decision IS NULL) THEN 'applied'
+                     WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m."applicantStatus" = 'approved' AND (m.eligible OR m.verdict = 'review') AND m.decision IS NULL) THEN 'applied'
                      WHEN EXISTS (SELECT 1 FROM "matches_service"."Match" m WHERE m."applicantId" = ap."userId" AND m.decision = 'rejected') THEN 'rejected'
                      WHEN EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = ap."userId" AND rs.eligible) THEN 'matched'
                      WHEN EXISTS (SELECT 1 FROM "matches_service"."RoleScan" rs WHERE rs."applicantId" = ap."userId") THEN 'scanned'

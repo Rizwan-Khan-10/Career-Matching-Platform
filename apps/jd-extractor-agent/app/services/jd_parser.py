@@ -18,6 +18,7 @@ Respond with valid JSON only, exactly this shape (never omit a key; use null / [
       "requiredSkills": ["string"],
       "preferredSkills": ["string"],
       "minExperienceYears": number or null,
+      "maxExperienceYears": number or null,
       "qualifications": "education requirement as written, or null",
       "responsibilities": ["short string"],
       "seniority": "intern | junior | mid | senior | lead | null",
@@ -38,6 +39,8 @@ Rules:
   One skill per item (short noun phrases, no sentences). Never put the same skill in both lists.
 - If alternatives are given ("React or Angular") write them as ONE item: "React / Angular".
 - minExperienceYears = the LOWER bound in years ("2-4 years" -> 2, "fresher" -> 0), null if not stated.
+- maxExperienceYears = the UPPER bound ONLY when the document gives one ("2-4 years" -> 4, "0-1 years" -> 1, "up to 3 years" -> 3).
+  "3+ years", "minimum 2 years", "fresher" or nothing stated -> null. Never guess an upper bound.
 - If the document describes only one role, return an array with one item. Never invent roles or requirements.
 - level: "fresher" for freshers / campus hiring / 0 years / recent graduates / interns, "experienced" when experience is
   required, otherwise "any".

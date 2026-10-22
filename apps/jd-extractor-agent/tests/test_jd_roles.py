@@ -73,10 +73,23 @@ class TaxonomyTest(unittest.TestCase):
 
     def test_every_contract_key_is_written(self):
         keys = set(self.one().model_dump())
-        for key in ("title", "summary", "requiredSkills", "preferredSkills", "minExperienceYears", "qualifications",
+        for key in ("title", "summary", "requiredSkills", "preferredSkills", "minExperienceYears", "maxExperienceYears", "qualifications",
                     "responsibilities", "level", "track", "stacks", "minCgpa", "allowedBranches", "passingYears",
                     "maxBacklogs"):
             self.assertIn(key, keys)
+
+
+class MaxExperienceTest(unittest.TestCase):
+    def test_upper_bound_only_when_stated(self):
+        for raw, expected in [("2-4 years", 4.0), ("0 - 1 yrs", 1.0), ("2 to 5 years", 5.0), ("up to 3 years", 3.0), (4, 4.0),
+                              ("3+", None), ("minimum 2 years", None), ("fresher", None), (None, None), ("5-2", None), (True, None)]:
+            self.assertEqual(jn.coerce_max_years(raw), expected, raw)
+
+    def test_band_below_min_is_dropped(self):
+        from app.models.jd import JobRoleData
+        self.assertIsNone(JobRoleData(minExperienceYears=3, maxExperienceYears=1).maxExperienceYears)
+        self.assertEqual(JobRoleData(minExperienceYears=2, maxExperienceYears="2-4 years").maxExperienceYears, 4.0)
+        self.assertIsNone(JobRoleData().maxExperienceYears)
 
 
 class LevelTest(unittest.TestCase):

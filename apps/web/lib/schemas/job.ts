@@ -15,6 +15,13 @@ export const jobRoleSchema = z.object({
         .max(60, 'That looks too high')
         .nullable()
         .optional(),
+    maxExperienceYears: z
+        .number({ error: 'Enter a number' })
+        .min(0, "Can't be negative")
+        .max(60, 'That looks too high')
+        .nullable()
+        .optional(),
+    strictMinExperience: z.boolean().nullable().optional(),
     qualifications: z.string().max(300, 'Keep it under 300 characters').nullable().optional(),
 
     // contract 4.1: every rule below is optional; null = "rule not set"
@@ -46,6 +53,9 @@ export const jobRoleSchema = z.object({
         .max(50, 'That looks too high')
         .nullable()
         .optional(),
-});
+}).refine(
+    (v) => v.minExperienceYears == null || v.maxExperienceYears == null || v.maxExperienceYears >= v.minExperienceYears,
+    { path: ['maxExperienceYears'], message: 'Max experience cannot be below the minimum' },
+);
 
 export type JobRoleValues = z.infer<typeof jobRoleSchema>;

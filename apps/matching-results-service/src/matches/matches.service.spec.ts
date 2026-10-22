@@ -73,6 +73,22 @@ describe('MatchesService', () => {
             expect(prisma.match.upsert.mock.calls[0][0].update.unverifiedRules).toEqual([]);
         });
 
+        it('stores the verdict: explicit, from breakdown, or derived from eligible; eligible=true always wins', async () => {
+            await service.saveMatchResult({ ...computed, eligible: false, verdict: 'review' });
+            await service.saveMatchResult({ ...computed, eligible: false, breakdown: { verdict: 'review' } });
+            await service.saveMatchResult({ ...computed, eligible: false });
+            await service.saveMatchResult({ ...computed, eligible: true, verdict: 'review' });
+
+            const verdicts = prisma.match.upsert.mock.calls.map((c: any[]) => c[0].create.verdict);
+            expect(verdicts).toEqual(['review', 'review', 'not_eligible', 'eligible']);
+        });
+
+        it('scans carry the verdict too', async () => {
+            await service.saveScans({ scans: [{ jobRoleId: 'r1', applicantId: 'a1', resumeId: 'res1', eligible: false, verdict: 'review', score: 0.35 }] });
+
+            expect(prisma.roleScan.upsert.mock.calls[0][0].create.verdict).toBe('review');
+        });
+
         it('sends no e-mail and publishes nothing (notification-service owns that now)', async () => {
             await service.saveMatchResult(computed);
             await service.saveMatchResult({ ...computed, eligible: false });

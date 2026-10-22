@@ -97,8 +97,22 @@ describe('MatchesService read APIs and feedback consumers (contract 5.6)', () =>
 
             const [m] = await service.getForJobRole('r1');
 
-            expect(prisma.match.findMany.mock.calls[0][0].where).toEqual({ jobRoleId: 'r1', eligible: true, applicantStatus: 'approved' });
+            expect(prisma.match.findMany.mock.calls[0][0].where).toEqual({ jobRoleId: 'r1', OR: [{ eligible: true }, { verdict: 'review' }], applicantStatus: 'approved' });
             expect(m).toMatchObject({ decision: 'rejected', rejectReason: 'experience', rejectMessage: 'note', unverifiedRules: ['branch'], resumeTargetLabel: 'Backend · Java' });
+        });
+    });
+
+    describe('getForJobRole ordering', () => {
+        it('lists eligible candidates first, then possible matches, each best score first', async () => {
+            prisma.match.findMany.mockResolvedValue([
+                row({ id: 'r-hi', eligible: false, verdict: 'review', score: 0.39 }),
+                row({ id: 'e-lo', eligible: true, verdict: 'eligible', score: 0.41 }),
+                row({ id: 'e-hi', eligible: true, verdict: 'eligible', score: 0.8 }),
+            ]);
+
+            const out = await service.getForJobRole('r1');
+
+            expect(out.map((m: any) => m.id)).toEqual(['e-hi', 'e-lo', 'r-hi']);
         });
     });
 

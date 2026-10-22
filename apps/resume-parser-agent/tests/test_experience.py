@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from app.services.experience import parse_month_index, total_experience_years
+from app.services.experience import is_internship, parse_month_index, total_experience_years
 
 TODAY = date(2026, 10, 4)
 
@@ -38,6 +38,24 @@ class ExperienceTest(unittest.TestCase):
     def test_no_usable_dates(self):
         self.assertIsNone(total_experience_years([], TODAY))
         self.assertIsNone(total_experience_years([{"startDate": None, "endDate": None}], TODAY))
+
+    def test_internships_are_not_work_experience(self):
+        e = [{"title": "Software Intern", "startDate": "Jan 2023", "endDate": "Jun 2023"},
+             {"title": "Backend Developer", "company": "Acme", "startDate": "Jan 2024", "endDate": "Dec 2024"}]
+        self.assertEqual(total_experience_years(e, TODAY), 1.0)                                   # only the job
+        self.assertEqual(total_experience_years(e, TODAY, exclude_internships=False), 1.5)
+
+    def test_only_internships_means_zero_years(self):
+        e = [{"title": "Data Science Intern", "startDate": "Jan 2024", "endDate": "Jun 2024"},
+             {"title": "Trainee Engineer", "startDate": "Jul 2024", "endDate": "Dec 2024"}]
+        self.assertEqual(total_experience_years(e, TODAY), 0.0)
+
+    def test_internship_without_dates_is_still_none(self):
+        self.assertIsNone(total_experience_years([{"title": "Intern"}], TODAY))
+
+    def test_word_boundaries(self):
+        self.assertFalse(is_internship({"title": "International Sales Lead"}))
+        self.assertTrue(is_internship({"title": "Intern - Backend"}))
 
 
 if __name__ == "__main__":

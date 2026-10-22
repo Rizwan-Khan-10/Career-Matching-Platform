@@ -12,6 +12,8 @@ export interface RoleFormState {
     skills: string[];
     preferred: string[];
     minExperienceYears: string;
+    maxExperienceYears: string; // '' = no upper limit
+    strictMinExperience: boolean;
     qualifications: string;
     level: string; // '' = not set
     track: string; // '' = no filter
@@ -34,6 +36,8 @@ export function toFormState(initial?: {
         skills: r?.requiredSkills ?? [],
         preferred: r?.preferredSkills ?? [],
         minExperienceYears: text(r?.minExperienceYears),
+        maxExperienceYears: text(r?.maxExperienceYears),
+        strictMinExperience: r?.strictMinExperience === true,
         qualifications: r?.qualifications ?? '',
         level: r?.level ?? '',
         track: r?.track ?? '',
@@ -43,6 +47,28 @@ export function toFormState(initial?: {
         passingYears: (r?.passingYears ?? []).join(', '),
         maxBacklogs: text(r?.maxBacklogs),
     };
+}
+
+/** Pre-filled (never forced) when a company picks "Fresher": fresher roles rarely want more than ~1 year. */
+export const FRESHER_DEFAULT_MAX_YEARS = 1;
+/** Above this a "Fresher" role is probably a mistake: the form shows a warning, not an error. */
+export const FRESHER_MAX_WARNING_YEARS = 5;
+
+/** Level changed: for Fresher, pre-fill the max experience when the company left it empty. */
+export function onLevelChange(form: RoleFormState, level: string): Partial<RoleFormState> {
+    if (level === 'fresher' && form.maxExperienceYears.trim() === '') {
+        return { level, maxExperienceYears: String(FRESHER_DEFAULT_MAX_YEARS) };
+    }
+    return { level };
+}
+
+/** Soft warnings (do not block saving). */
+export function experienceWarning(form: RoleFormState): string | null {
+    const max = form.maxExperienceYears.trim() === '' ? null : Number(form.maxExperienceYears);
+    if (form.level === 'fresher' && max != null && max > FRESHER_MAX_WARNING_YEARS) {
+        return `A fresher role with up to ${max} years of experience is unusual. Pick "Experienced" if that is what you want.`;
+    }
+    return null;
 }
 
 const numberOrNull = (value: string) => (value.trim() === '' ? null : Number(value));
@@ -63,6 +89,9 @@ export function toPayload(form: RoleFormState) {
         requiredSkills: form.skills,
         preferredSkills: form.preferred,
         minExperienceYears: numberOrNull(form.minExperienceYears),
+        maxExperienceYears: numberOrNull(form.maxExperienceYears),
+        // only meaningful with a minimum; null = "not set" so clearing it really removes it
+        strictMinExperience: form.strictMinExperience && form.minExperienceYears.trim() !== '' ? true : null,
         qualifications: form.qualifications.trim() || null,
         level: form.level || null,
         track: form.track || null,
@@ -85,4 +114,17 @@ export function describeRules(req: JobRoleRequirements | null | undefined): stri
         rules.push(req.maxBacklogs === 0 ? 'No backlogs' : `Max ${req.maxBacklogs} backlog${req.maxBacklogs === 1 ? '' : 's'}`);
     }
     return rules;
+}
+
+/** "2-4 yrs experience", "2+ yrs experience", "Up to 1 yr experience"; null when neither bound is set. */
+export function describeExperience(req: JobRoleRequirements | null | undefined): string | null {
+    const min = req?.minExperienceYears ?? null;
+    const max = req?.maxExperienceYears ?? null;
+    const yrs = (n: number) => `${n} ${n === 1 ? 'yr' : 'yrs'}`;
+    let text: string;
+    if (min != null && max != null) text = min === max ? `${yrs(min)} experience` : `${min}-${max} yrs experience`;
+    else if (min != null) text = `${min}+ yrs experience`;
+    else if (max != null) text = `Up to ${yrs(max)} experience`;
+    else return null;
+    return min != null && min > 0 && req?.strictMinExperience ? `${text} (minimum required)` : text;
 }

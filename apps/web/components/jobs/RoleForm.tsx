@@ -8,7 +8,7 @@ import { SkillsInput } from '@/components/ui/SkillsInput';
 import { RoleStackPicker } from '@/components/jobs/RoleStackPicker';
 import { EligibilityFields } from '@/components/jobs/EligibilityFields';
 import { jobRoleSchema, type JobRoleValues } from '@/lib/schemas/job';
-import { LEVEL_LABELS, toFormState, toPayload, type RoleFormState } from '@/lib/roleForm';
+import { experienceWarning, LEVEL_LABELS, onLevelChange, toFormState, toPayload, type RoleFormState } from '@/lib/roleForm';
 import type { JobRoleRequirements } from '@/types/job';
 
 const selectClass =
@@ -83,7 +83,7 @@ export function RoleForm({
                     <select
                         id="role-level"
                         value={form.level}
-                        onChange={(e) => update({ level: e.target.value })}
+                        onChange={(e) => update(onLevelChange(form, e.target.value))}
                         className={selectClass}
                     >
                         <option value="">Not set</option>
@@ -95,18 +95,51 @@ export function RoleForm({
                     </select>
                     <FieldError message={errors.level} />
                 </div>
-                <div>
-                    <label className="text-xs text-ink-grey mb-1.5 block">Min. experience (yrs)</label>
-                    <Input
-                        type="number"
-                        step="0.5"
-                        value={form.minExperienceYears}
-                        onChange={(e) => update({ minExperienceYears: e.target.value })}
-                        placeholder="2"
-                    />
-                    <FieldError message={errors.minExperienceYears} />
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-ink-grey mb-1.5 block">Min. experience (yrs)</label>
+                        <Input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={form.minExperienceYears}
+                            onChange={(e) => update({ minExperienceYears: e.target.value })}
+                            placeholder="2"
+                        />
+                        <FieldError message={errors.minExperienceYears} />
+                    </div>
+                    <div>
+                        <label className="text-xs text-ink-grey mb-1.5 block">Max. experience (yrs)</label>
+                        <Input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={form.maxExperienceYears}
+                            onChange={(e) => update({ maxExperienceYears: e.target.value })}
+                            placeholder="No limit"
+                        />
+                        <FieldError message={errors.maxExperienceYears} />
+                    </div>
                 </div>
             </div>
+
+            {experienceWarning(form) && <p className="text-xs text-ink-grey">{experienceWarning(form)}</p>}
+
+            <label className="flex items-start gap-2 text-sm text-ink cursor-pointer">
+                <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={form.strictMinExperience}
+                    disabled={form.minExperienceYears.trim() === ''}
+                    onChange={(e) => update({ strictMinExperience: e.target.checked })}
+                />
+                <span>
+                    Reject candidates below the minimum
+                    <span className="block text-xs text-ink-grey">
+                        Off: someone slightly below the minimum can still show up as a possible match. On: below the minimum is always rejected.
+                    </span>
+                </span>
+            </label>
 
             <div>
                 <label className="text-xs text-ink-grey mb-1.5 block">Qualifications</label>

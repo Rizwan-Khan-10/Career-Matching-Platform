@@ -35,9 +35,28 @@ def parse_month_index(value, today: date, is_end: bool = False):
     return None
 
 
-def total_experience_years(entries, today: date | None = None):
-    """entries: list of dicts/objects with startDate / endDate. Returns years (1 decimal) or None if no usable dates."""
+_INTERN = re.compile(r"\b(intern|interns|internship|trainee|apprentice)\b", re.I)
+
+
+def is_internship(entry) -> bool:
+    """An internship / trainee entry (by title or company). These are NOT work experience for a "min years" rule:
+    three 6-month internships must not turn a fresher into someone with 1.5 years of experience."""
+    get = (lambda k: entry.get(k)) if isinstance(entry, dict) else (lambda k: getattr(entry, k, None))
+    return bool(_INTERN.search(f"{get('title') or ''} {get('company') or ''}"))
+
+
+def total_experience_years(entries, today: date | None = None, exclude_internships: bool = True):
+    """entries: list of dicts/objects with startDate / endDate. Returns years (1 decimal) or None if no usable dates.
+    Internships are left out by default; a resume with ONLY internships has 0.0 years of work experience."""
     today = today or date.today()
+    if exclude_internships:
+        entries = list(entries or [])
+        work = [e for e in entries if not is_internship(e)]
+        if len(work) < len(entries):
+            if work:
+                entries = work
+            elif total_experience_years(entries, today, exclude_internships=False) is not None:
+                return 0.0  # dated internships only
     now = today.year * 12 + today.month
     spans = []
     for e in entries or []:

@@ -9,6 +9,8 @@ import { Select } from '@/components/ui/Select';
 import { ListToolbar } from '@/components/admin/ListToolbar';
 import type { AdminApplicant } from '@/types/admin';
 import type { ApplicantStage, ApplicantStageRow } from '@/types/stats';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 
 const PAGE_SIZE = 50;
 type Tab = 'all' | 'active' | 'inactive';
@@ -75,16 +77,9 @@ export default function AdminApplicantsPage() {
         </div>
       )}
 
-      {isLoading && <div className="h-40 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <ListSkeleton rows={4} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load the applicants.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load the applicants." onRetry={() => refetch()} />}
 
       {data && (
         <div className="bg-paper-raised border border-hairline rounded-xl overflow-hidden">

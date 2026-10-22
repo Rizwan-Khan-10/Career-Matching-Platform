@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { AnimatePresence, motion } from 'motion/react';
 import { Bell } from 'lucide-react';
 import { NotificationFeed } from '@/components/notifications/NotificationFeed';
 import { useMarkAllRead, useUnreadCount } from '@/lib/hooks/useNotifications';
@@ -41,11 +42,20 @@ export function NotificationBell() {
                 className="relative p-2 rounded-lg text-ink-grey hover:text-ink hover:bg-paper transition-colors"
             >
                 <Bell className="size-[18px]" />
-                {count > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-danger text-white text-[10px] font-medium leading-4 text-center">
-                        {count > 99 ? '99+' : count}
-                    </span>
-                )}
+                <AnimatePresence>
+                    {count > 0 && (
+                        <motion.span
+                            key={count}
+                            initial={{ scale: 0.4, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.4, opacity: 0 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-danger text-white text-[11px] font-medium leading-4 text-center"
+                        >
+                            {count > 99 ? '99+' : count}
+                        </motion.span>
+                    )}
+                </AnimatePresence>
             </button>
 
             {open && (

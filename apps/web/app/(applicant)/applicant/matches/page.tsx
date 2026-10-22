@@ -9,6 +9,11 @@ import { useAuthStore } from '@/store/authStore';
 import { getSocket } from '@/lib/socket';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { MatchCard } from '@/components/matches/MatchCard';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { matchGroup, type MatchGroup } from '@/lib/matchReason';
+import { Target } from 'lucide-react';
 import { ApplicantProfileModal } from '@/components/profile/ApplicantProfileModal';
 import type { Match } from '@/types/match';
 
@@ -20,6 +25,12 @@ const LIVE_EVENTS = [
   'candidate.rejected',
   'prep.ready',
   'rejection-feedback.ready',
+];
+
+const GROUPS: { id: MatchGroup; title: string; text: string }[] = [
+  { id: 'eligible', title: 'Eligible', text: 'You fit these roles. Approve to share your resume with the company.' },
+  { id: 'almost', title: 'Almost eligible', text: 'Close. A person needs to review these, or a skill or two would help.' },
+  { id: 'not_eligible', title: 'Not eligible', text: 'Not a fit right now. Each card shows what to improve.' },
 ];
 
 export default function MatchesPage() {
@@ -74,6 +85,10 @@ export default function MatchesPage() {
     onError: (err) => toast.error(getErrorMessage(err, 'Could not save your choice, try again')),
   });
 
+  // best score first inside each group
+  const grouped: Record<MatchGroup, Match[]> = { eligible: [], almost: [], not_eligible: [] };
+  [...(matches ?? [])].sort((a, b) => b.score - a.score).forEach((m) => grouped[matchGroup(m)].push(m));
+
   const waitingForYou = matches?.filter((m) => m.eligible && m.applicantStatus === 'pending' && !m.jobStopped).length ?? 0;
   const shortlisted = matches?.filter((m) => m.outcome === 'shortlisted').length ?? 0;
 
@@ -98,37 +113,46 @@ export default function MatchesPage() {
         </p>
       )}
 
-      {isLoading && <div className="h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <ListSkeleton rows={3} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load your matches.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load your matches." onRetry={() => refetch()} />}
 
       {!isLoading && !isError && matches?.length === 0 && (
-        <p className="text-sm text-ink-grey">
-          No matches yet — confirm a resume and this fills in automatically once it is matched against open roles.
-        </p>
+        <EmptyState
+          icon={Target}
+          title="No matches yet"
+          text="Confirm a resume and this fills in automatically once it is matched against open roles."
+          actionLabel="Go to my resume"
+          actionHref="/applicant/resume"
+        />
       )}
 
-      <div className="flex flex-col gap-3">
-        {matches?.map((match, i) => (
-          <FadeIn key={match.id} delay={i * 0.05}>
-            <div id={`match-${match.id}`} className="scroll-mt-20 rounded-xl transition-shadow target:ring-2 target:ring-accent">
-              <MatchCard
-                match={match}
-                busy={decide.isPending}
-                onDecide={(approved) => decide.mutate({ id: match.id, approved })}
-                onOpenProfile={() => setIsProfileOpen(true)}
-              />
+      {GROUPS.map(({ id, title, text }) => {
+        const list = grouped[id];
+        if (list.length === 0) return null;
+        return (
+          <section key={id} aria-labelledby={`group-${id}`} className="mb-8">
+            <h2 id={`group-${id}`} className="font-heading text-lg text-ink">
+              {title} <span className="font-mono text-sm text-ink-grey">{list.length}</span>
+            </h2>
+            <p className="text-sm text-ink-grey mb-3">{text}</p>
+            <div className="flex flex-col gap-3">
+              {list.map((match, i) => (
+                <FadeIn key={match.id} delay={Math.min(i, 10) * 0.03}>
+                  <div id={`match-${match.id}`} className="scroll-mt-20 rounded-xl transition-shadow target:ring-2 target:ring-accent">
+                    <MatchCard
+                      match={match}
+                      busy={decide.isPending}
+                      onDecide={(approved) => decide.mutate({ id: match.id, approved })}
+                      onOpenProfile={() => setIsProfileOpen(true)}
+                    />
+                  </div>
+                </FadeIn>
+              ))}
             </div>
-          </FadeIn>
-        ))}
-      </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

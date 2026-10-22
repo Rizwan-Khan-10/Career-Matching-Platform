@@ -3,6 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { DrawerShell } from '@/components/stats/DrawerShell';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { Skeleton } from '@/components/ui/Skeleton';
 import type { RoleInsights } from '@/types/stats';
 
 /** Company, Scanned / Matched: numbers only. Those people did not approve sharing, so no names and no emails. */
@@ -23,13 +25,8 @@ export function InsightsPanel({ roleId, roleTitle, onClose }: { roleId: string |
                     under <span className="text-ink">Applied</span> once someone approves.
                 </p>
 
-                {isLoading && <div className="h-40 rounded-xl bg-paper border border-hairline animate-pulse" />}
-                {isError && (
-                    <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-lg px-3.5 py-3">
-                        <span>Couldn&apos;t load the insights.</span>
-                        <button type="button" onClick={() => refetch()} className="font-medium underline">Try again</button>
-                    </div>
-                )}
+                {isLoading && <Skeleton className="h-40 rounded-xl" />}
+                {isError && <ErrorBox message="Couldn't load the insights." onRetry={() => refetch()} />}
 
                 {data && (
                     <>

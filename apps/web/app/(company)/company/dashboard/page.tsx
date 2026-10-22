@@ -1,40 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { apiClient } from '@/lib/apiClient';
 import { ProfileBanner } from '@/components/ProfileBanner';
 import { CompanyProfileModal } from '@/components/profile/CompanyProfileModal';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { Pill } from '@/components/admin/Pill';
 import type { JobPosting } from '@/types/job';
 import { PeopleDrawer } from '@/components/stats/PeopleDrawer';
 import { InsightsPanel } from '@/components/stats/InsightsPanel';
-import { StageCount } from '@/components/stats/StageCount';
-import { STAGE_LABEL, type Drill } from '@/components/stats/stages';
-import type { CompanyStats, PeopleStage } from '@/types/stats';
-
-function StatCard({ value, label, hint, delay, onOpen }: { value: number | string; label: string; hint?: string; delay?: number; onOpen?: () => void }) {
-  const clickable = !!onOpen && typeof value === 'number' && value > 0;
-  const body = (
-    <div className={`bg-paper-raised border border-hairline rounded-xl p-5 ${clickable ? 'hover:border-accent transition-colors' : ''}`}>
-      <p className="text-2xl font-heading font-bold text-ink">{value}</p>
-      <p className="text-sm text-ink-grey mt-1">{label}</p>
-      {hint && <p className="text-xs text-ink-grey mt-0.5">{hint}</p>}
-    </div>
-  );
-  return (
-    <FadeIn delay={delay}>
-      {clickable ? (
-        <button type="button" onClick={onOpen} aria-label={`${value} ${label.toLowerCase()}, view list`} className="text-left w-full cursor-pointer">
-          {body}
-        </button>
-      ) : (
-        body
-      )}
-    </FadeIn>
-  );
-}
+import { FunnelBars } from '@/components/stats/FunnelBars';
+import { StatCard } from '@/components/stats/StatCard';
+import { StageLegend, StatsTable, stageColumns, type StatsColumn } from '@/components/stats/StatsTable';
+import { COMPANY_LIST_STAGES, STAGE_LABEL, type Drill } from '@/components/stats/stages';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { TableSkeleton } from '@/components/ui/Skeleton';
+import { FileUp } from 'lucide-react';
+import type { CompanyStats, PeopleStage, RoleStats } from '@/types/stats';
 
 export default function CompanyDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -54,80 +38,82 @@ export default function CompanyDashboard() {
     queryFn: () => apiClient.get('/jobs/mine').then((r) => r.data),
   });
 
-  const { data: stats } = useQuery<CompanyStats>({
+  const { data: stats, isError, refetch } = useQuery<CompanyStats>({
     queryKey: ['companyStats'],
     queryFn: () => apiClient.get('/stats/company').then((r) => r.data),
     refetchInterval: 30000,
+    placeholderData: keepPreviousData,
   });
 
-  const totalRoles = postings?.reduce((sum, p) => sum + (p.roles?.length ?? 0), 0) ?? 0;
+  const totalRoles = postings ? postings.reduce((sum, p) => sum + (p.roles?.length ?? 0), 0) : undefined;
   const stoppedJobs = postings?.filter((p) => p.stoppedAt).length ?? 0;
   const t = stats?.totals;
 
+  // scanned / matched are numbers only (those people have not approved sharing): they open the insights panel per role
+  const roleColumns: StatsColumn<RoleStats>[] = [
+    {
+      key: 'role',
+      header: 'Role',
+      cell: (r) => (
+        <Link href={`/company/roles/${r.jobRoleId}/applicants`} className="text-ink hover:text-accent">
+          {r.roleTitle}
+        </Link>
+      ),
+    },
+    ...stageColumns<RoleStats>((r, stage) => {
+      if (stage === 'scanned' || stage === 'matched') setInsights({ roleId: r.jobRoleId, title: r.roleTitle });
+      else openStage(stage, r.roleTitle, r.jobRoleId);
+    }),
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'right',
+      cell: (r) => <Pill tone={r.stopped ? 'muted' : 'success'}>{r.stopped ? 'Stopped' : 'Active'}</Pill>,
+    },
+  ];
+
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       {profile && !profile.name && <ProfileBanner onClick={() => setIsProfileOpen(true)} />}
       <CompanyProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
-      <h1 className="font-heading text-2xl text-ink mb-6">Dashboard</h1>
+      <h1 className="font-heading text-2xl text-ink mb-1">Dashboard</h1>
+      <p className="text-sm text-ink-grey mb-6">How your jobs are doing, from the resumes checked to the people you shortlisted.</p>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard value={t?.scanned ?? '—'} label="Applicants scanned" hint="resumes checked against your jobs" />
-        <StatCard value={t?.matched ?? '—'} label="Matched" hint="meet your requirements" delay={0.05} />
-        <StatCard value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" delay={0.1} onOpen={() => openStage('applied')} />
-        <StatCard value={t?.shortlisted ?? '—'} label="Shortlisted" delay={0.15} onOpen={() => openStage('shortlisted')} />
-      </div>
+      {isError && !stats && <ErrorBox className="mb-4" message="Couldn't load your numbers." onRetry={() => refetch()} />}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-        <StatCard value={t?.rejected ?? '—'} label="Rejected" delay={0.2} onOpen={() => openStage('rejected')} />
-        <StatCard value={postings?.length ?? 0} label="Job postings" hint={stoppedJobs ? `${stoppedJobs} stopped` : undefined} delay={0.25} />
-        <StatCard value={totalRoles} label="Roles posted" delay={0.3} />
+      <h2 className="font-heading text-lg text-ink mb-3">Hiring funnel</h2>
+      <FunnelBars
+        totals={t}
+        stages={['scanned', 'matched', 'applied', 'shortlisted', 'rejected']}
+        canOpen={(stage) => COMPANY_LIST_STAGES.includes(stage)}
+        onOpen={(stage) => openStage(stage)}
+      />
+      <p className="text-xs text-ink-grey mt-2">Applied, shortlisted and rejected open the list of people. Scanned and matched are numbers only, per role below.</p>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+        <StatCard value={postings?.length} label="Job postings" hint={stoppedJobs ? `${stoppedJobs} stopped` : undefined} href="/company/jobs" />
+        <StatCard value={totalRoles} label="Roles posted" href="/company/jobs" />
         <StatCard
-          value={t ? Math.max(t.matched - t.applied, 0) : '—'}
+          value={t ? Math.max(t.matched - t.applied, 0) : stats ? null : undefined}
           label="Matched, not applied yet"
           hint="waiting for the applicant's approval"
-          delay={0.35}
         />
       </div>
 
-      <h2 className="font-heading text-lg text-ink mt-8 mb-3">By role</h2>
-      {stats && stats.roles.length === 0 && <p className="text-sm text-ink-grey">No roles yet — upload a requirement document to get started.</p>}
+      <h2 className="font-heading text-lg text-ink mt-10 mb-1">By role</h2>
+      <StageLegend />
+      {!stats && !isError && <TableSkeleton rows={4} />}
+      {stats && stats.roles.length === 0 && (
+        <EmptyState
+          icon={FileUp}
+          title="No roles yet"
+          text="Upload a requirement document and the roles in it will show up here with their numbers."
+          actionLabel="Upload a job"
+          actionHref="/company/jobs"
+        />
+      )}
       {stats && stats.roles.length > 0 && (
-        <div className="bg-paper-raised border border-hairline rounded-xl overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-grey border-b border-hairline">
-                <th className="px-4 py-2.5 font-medium">Role</th>
-                <th className="px-3 py-2.5 font-medium text-right">Scanned</th>
-                <th className="px-3 py-2.5 font-medium text-right">Matched</th>
-                <th className="px-3 py-2.5 font-medium text-right">Applied</th>
-                <th className="px-3 py-2.5 font-medium text-right">Shortlisted</th>
-                <th className="px-3 py-2.5 font-medium text-right">Rejected</th>
-                <th className="px-4 py-2.5 font-medium text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.roles.map((r) => (
-                <tr key={r.jobRoleId} className="border-b border-hairline last:border-0">
-                  <td className="px-4 py-2.5">
-                    <Link href={`/company/roles/${r.jobRoleId}/applicants`} className="text-ink hover:text-accent">
-                      {r.roleTitle}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.scanned} stage="scanned" onOpen={() => setInsights({ roleId: r.jobRoleId, title: r.roleTitle })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.matched} stage="matched" onOpen={() => setInsights({ roleId: r.jobRoleId, title: r.roleTitle })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.applied ?? 0} stage="applied" onOpen={() => openStage('applied', r.roleTitle, r.jobRoleId)} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.shortlisted ?? 0} stage="shortlisted" onOpen={() => openStage('shortlisted', r.roleTitle, r.jobRoleId)} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', r.roleTitle, r.jobRoleId)} /></td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.stopped ? 'bg-paper text-ink-grey border border-hairline' : 'bg-success-soft text-success'}`}>
-                      {r.stopped ? 'Stopped' : 'Active'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StatsTable rows={stats.roles} columns={roleColumns} getKey={(r) => r.jobRoleId} caption="Funnel numbers by role" />
       )}
       <InsightsPanel roleId={insights?.roleId ?? null} roleTitle={insights?.title ?? ''} onClose={() => setInsights(null)} />
       <PeopleDrawer drill={drill} viewer="company" onClose={() => setDrill(null)} />

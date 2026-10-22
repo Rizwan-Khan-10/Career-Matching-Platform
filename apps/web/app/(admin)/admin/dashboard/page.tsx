@@ -1,41 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { apiClient } from '@/lib/apiClient';
 import { toCsv } from '@/lib/exportCsv';
 import { BranchTable, branchName } from '@/components/admin/BranchTable';
 import { ExportCsvButton } from '@/components/admin/ExportCsvButton';
+import { Pill } from '@/components/admin/Pill';
 import { PeopleDrawer } from '@/components/stats/PeopleDrawer';
-import { StageCount } from '@/components/stats/StageCount';
+import { FunnelBars } from '@/components/stats/FunnelBars';
+import { StatCard } from '@/components/stats/StatCard';
+import { StageLegend, StatsTable, stageColumns, type StatsColumn } from '@/components/stats/StatsTable';
 import { STAGE_LABEL, type Drill } from '@/components/stats/stages';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { TableSkeleton } from '@/components/ui/Skeleton';
 import type { AdminApplicant, AdminCompany } from '@/types/admin';
-import type { AdminStats, PeopleFilters, PeopleStage } from '@/types/stats';
-
-function Card({ value, label, hint, href, onOpen }: { value: number | string; label: string; hint?: string; href?: string; onOpen?: () => void }) {
-  const clickable = !!href || (!!onOpen && typeof value === 'number' && value > 0);
-  const body = (
-    <div className={`bg-paper-raised border border-hairline rounded-xl p-5 ${clickable ? 'hover:border-accent transition-colors' : ''}`}>
-      <p className="text-3xl font-heading font-bold text-ink">{value}</p>
-      <p className="text-sm text-ink-grey mt-1">{label}</p>
-      {hint && <p className="text-xs text-ink-grey mt-0.5">{hint}</p>}
-    </div>
-  );
-  if (href) return <Link href={href}>{body}</Link>;
-  if (onOpen && typeof value === 'number' && value > 0) {
-    return (
-      <button type="button" onClick={onOpen} aria-label={`${value} ${label.toLowerCase()}, view list`} className="text-left w-full cursor-pointer">
-        {body}
-      </button>
-    );
-  }
-  return body;
-}
+import type { AdminCompanyRow, AdminStats, PeopleFilters, PeopleStage, RoleStats } from '@/types/stats';
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 mt-8 mb-3">
+    <div className="flex items-center justify-between gap-3 mt-10 mb-1">
       <h2 className="font-heading text-lg text-ink">{title}</h2>
       {children}
     </div>
@@ -51,10 +36,11 @@ export default function AdminDashboard() {
     queryKey: ['adminApplicants'],
     queryFn: () => apiClient.get('/admin/applicants').then((r) => r.data),
   });
-  const { data: stats } = useQuery<AdminStats>({
+  const { data: stats, isError, refetch } = useQuery<AdminStats>({
     queryKey: ['adminStats'],
     queryFn: () => apiClient.get('/stats/admin').then((r) => r.data),
     refetchInterval: 30000,
+    placeholderData: keepPreviousData,
   });
 
   const [drill, setDrill] = useState<Drill | null>(null);
@@ -68,9 +54,40 @@ export default function AdminDashboard() {
   const t = stats?.totals;
   const pendingCompanies = companies?.filter((c) => c.status === 'pending').length ?? 0;
   const byBranch = stats?.byBranch ?? [];
+  const roleName = (r: RoleStats) => `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`;
+
+  const companyColumns: StatsColumn<AdminCompanyRow>[] = [
+    { key: 'company', header: 'Company', cell: (c) => <span className="text-ink">{c.companyName}</span> },
+    {
+      key: 'jobs',
+      header: 'Jobs',
+      align: 'right',
+      title: 'Job postings this company uploaded',
+      cell: (c) => (
+        <span className={`font-mono tabular-nums ${c.jobs === 0 ? 'text-ink-grey' : ''}`}>
+          {c.jobs.toLocaleString()}
+          {c.stoppedJobs > 0 && <span className="text-ink-grey font-body"> ({c.stoppedJobs} stopped)</span>}
+        </span>
+      ),
+      total: (rows) => <span className="font-mono tabular-nums">{rows.reduce((s, r) => s + r.jobs, 0).toLocaleString()}</span>,
+    },
+    ...stageColumns<AdminCompanyRow>((c, stage) => openStage(stage, { title: c.companyName, companyId: c.companyId })),
+  ];
+
+  const roleColumns: StatsColumn<RoleStats>[] = [
+    { key: 'role', header: 'Role', cell: (r) => <span className="text-ink">{r.roleTitle}</span> },
+    { key: 'company', header: 'Company', cell: (r) => <span className="text-ink-grey">{r.companyName || 'Unnamed company'}</span> },
+    ...stageColumns<RoleStats>((r, stage) => openStage(stage, { title: roleName(r), jobRoleId: r.jobRoleId })),
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'right',
+      cell: (r) => <Pill tone={r.stopped ? 'muted' : 'success'}>{r.stopped ? 'Stopped' : 'Active'}</Pill>,
+    },
+  ];
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-6xl">
       <h1 className="font-heading text-2xl text-ink mb-1">Admin Dashboard</h1>
       <p className="text-sm text-ink-grey mb-6">
         Platform overview.{' '}
@@ -79,26 +96,25 @@ export default function AdminDashboard() {
         <Link href="/admin/audit" className="text-accent underline underline-offset-2">Audit log</Link>
       </p>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card
+      {isError && !stats && <ErrorBox className="mb-4" message="Couldn't load the platform numbers." onRetry={() => refetch()} />}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
           href="/admin/companies"
-          value={companies?.length ?? '—'}
+          value={companies?.length}
           label="Companies"
           hint={pendingCompanies > 0 ? `${pendingCompanies} waiting for approval` : undefined}
         />
-        <Card href="/admin/applicants" value={applicants?.length ?? p?.applicants ?? '—'} label="Applicants" />
-        <Card value={p?.jobs ?? '—'} label="Job postings" hint={p?.stoppedJobs ? `${p.stoppedJobs} stopped` : undefined} />
-        <Card value={p?.resumesScanned ?? '—'} label="Resumes scanned" hint="parsed successfully" onOpen={() => openStage('parsed')} />
+        <StatCard href="/admin/applicants" value={applicants?.length ?? p?.applicants} label="Applicants" />
+        <StatCard value={p?.jobs} label="Job postings" hint={p?.stoppedJobs ? `${p.stoppedJobs} stopped` : undefined} />
+        <StatCard value={p?.resumesScanned} label="Resumes scanned" hint="parsed successfully" onOpen={() => openStage('parsed')} />
       </div>
 
-      <h2 className="font-heading text-lg text-ink mt-8 mb-3">Matching funnel</h2>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card value={t?.scanned ?? '—'} label="Applicants scanned" hint="checked against a job" onOpen={() => openStage('scanned')} />
-        <Card value={t?.matched ?? '—'} label="Matched" onOpen={() => openStage('matched')} />
-        <Card value={t?.applied ?? '—'} label="Applied" hint="approved sharing their resume" onOpen={() => openStage('applied')} />
-        <Card value={t?.shortlisted ?? '—'} label="Shortlisted" onOpen={() => openStage('shortlisted')} />
-        <Card value={t?.rejected ?? '—'} label="Rejected" onOpen={() => openStage('rejected')} />
-      </div>
+      <SectionHeader title="Matching funnel" />
+      <p className="text-sm text-ink-grey mb-3">
+        Bar width is the share of everyone who was scanned. The text beside each number shows how many made it from the step before.
+      </p>
+      <FunnelBars totals={t} onOpen={(stage) => openStage(stage)} />
 
       <SectionHeader title="By branch">
         <ExportCsvButton
@@ -116,6 +132,8 @@ export default function AdminDashboard() {
           }
         />
       </SectionHeader>
+      <StageLegend />
+      {!stats && <TableSkeleton rows={3} />}
       {stats && byBranch.length === 0 && (
         <p className="text-sm text-ink-grey">
           No branch data yet. Branch-wise numbers appear once applicants have a branch (from your CSV import or entered by them).
@@ -147,79 +165,24 @@ export default function AdminDashboard() {
           }
         />
       </SectionHeader>
+      <StageLegend />
+      {!stats && <TableSkeleton rows={4} />}
       {stats && stats.companies.length === 0 && <p className="text-sm text-ink-grey">No jobs posted yet.</p>}
       {stats && stats.companies.length > 0 && (
-        <div className="bg-paper-raised border border-hairline rounded-xl overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-grey border-b border-hairline">
-                <th className="px-4 py-2.5 font-medium">Company</th>
-                <th className="px-3 py-2.5 font-medium text-right">Jobs</th>
-                <th className="px-3 py-2.5 font-medium text-right">Scanned</th>
-                <th className="px-3 py-2.5 font-medium text-right">Matched</th>
-                <th className="px-3 py-2.5 font-medium text-right">Applied</th>
-                <th className="px-3 py-2.5 font-medium text-right">Shortlisted</th>
-                <th className="px-4 py-2.5 font-medium text-right">Rejected</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.companies.map((c) => (
-                <tr key={c.companyId} className="border-b border-hairline last:border-0">
-                  <td className="px-4 py-2.5 text-ink">{c.companyName}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">
-                    {c.jobs}
-                    {c.stoppedJobs > 0 && <span className="text-ink-grey"> ({c.stoppedJobs} stopped)</span>}
-                  </td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={c.scanned} stage="scanned" onOpen={() => openStage('scanned', { title: c.companyName, companyId: c.companyId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={c.matched} stage="matched" onOpen={() => openStage('matched', { title: c.companyName, companyId: c.companyId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={c.applied} stage="applied" onOpen={() => openStage('applied', { title: c.companyName, companyId: c.companyId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={c.shortlisted} stage="shortlisted" onOpen={() => openStage('shortlisted', { title: c.companyName, companyId: c.companyId })} /></td>
-                  <td className="px-4 py-2.5 text-right"><StageCount value={c.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', { title: c.companyName, companyId: c.companyId })} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StatsTable rows={stats.companies} columns={companyColumns} getKey={(c) => c.companyId} caption="Funnel numbers by company" />
       )}
-      {stats && stats.companies.length > 0 && <p className="text-xs text-ink-grey mt-2">A person can appear for more than one role, so a company row can add up to more than its distinct people.</p>}
+      {stats && stats.companies.length > 0 && (
+        <p className="text-xs text-ink-grey mt-2">A person can appear for more than one role, so a company row can add up to more than its distinct people.</p>
+      )}
 
-      <h2 className="font-heading text-lg text-ink mt-8 mb-3">By job role</h2>
+      <SectionHeader title="By job role" />
+      <StageLegend />
+      {!stats && <TableSkeleton rows={5} />}
+      {stats && stats.roles.length === 0 && <p className="text-sm text-ink-grey">No roles yet.</p>}
       {stats && stats.roles.length > 0 && (
-        <div className="bg-paper-raised border border-hairline rounded-xl overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-grey border-b border-hairline">
-                <th className="px-4 py-2.5 font-medium">Role</th>
-                <th className="px-3 py-2.5 font-medium">Company</th>
-                <th className="px-3 py-2.5 font-medium text-right">Scanned</th>
-                <th className="px-3 py-2.5 font-medium text-right">Matched</th>
-                <th className="px-3 py-2.5 font-medium text-right">Applied</th>
-                <th className="px-3 py-2.5 font-medium text-right">Shortlisted</th>
-                <th className="px-3 py-2.5 font-medium text-right">Rejected</th>
-                <th className="px-4 py-2.5 font-medium text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.roles.map((r) => (
-                <tr key={r.jobRoleId} className="border-b border-hairline last:border-0">
-                  <td className="px-4 py-2.5 text-ink">{r.roleTitle}</td>
-                  <td className="px-3 py-2.5 text-ink-grey">{r.companyName || 'Unnamed company'}</td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.scanned} stage="scanned" onOpen={() => openStage('scanned', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.matched} stage="matched" onOpen={() => openStage('matched', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.applied} stage="applied" onOpen={() => openStage('applied', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.shortlisted} stage="shortlisted" onOpen={() => openStage('shortlisted', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
-                  <td className="px-3 py-2.5 text-right"><StageCount value={r.rejected ?? 0} stage="rejected" onOpen={() => openStage('rejected', { title: `${r.roleTitle} at ${r.companyName || 'Unnamed company'}`, jobRoleId: r.jobRoleId })} /></td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.stopped ? 'bg-paper text-ink-grey border border-hairline' : 'bg-success-soft text-success'}`}>
-                      {r.stopped ? 'Stopped' : 'Active'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StatsTable rows={stats.roles} columns={roleColumns} getKey={(r) => r.jobRoleId} caption="Funnel numbers by job role" />
       )}
+
       <PeopleDrawer drill={drill} viewer="admin" onClose={() => setDrill(null)} />
     </div>
   );

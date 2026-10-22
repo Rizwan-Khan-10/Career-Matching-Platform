@@ -4,6 +4,7 @@ const TONES = {
     success: 'bg-success-soft text-success',
     danger: 'bg-danger-soft text-danger',
     accent: 'bg-accent-soft text-accent',
+    warning: 'bg-warning-soft text-warning',
     muted: 'bg-paper text-ink-grey border border-hairline',
 } as const;
 

@@ -7,6 +7,8 @@ import { PENDING_JOBS_KEY } from '@/lib/hooks/useJobApproval';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { JobApprovalRow } from '@/components/admin/JobApprovalRow';
 import type { PendingJob } from '@/types/admin';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 
 export default function AdminJobApprovalsPage() {
   const { data, isLoading, isError, refetch } = useQuery<PendingJob[]>({
@@ -25,16 +27,9 @@ export default function AdminJobApprovalsPage() {
         . An approved job is read and matched; a rejected one is not.
       </p>
 
-      {isLoading && <div className="h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <ListSkeleton rows={3} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load the pending jobs.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load the pending jobs." onRetry={() => refetch()} />}
 
       {data && (
         <div className="bg-paper-raised border border-hairline rounded-xl overflow-hidden">

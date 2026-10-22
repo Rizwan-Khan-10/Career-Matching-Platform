@@ -6,6 +6,7 @@ import { AcademicDetails } from '@/components/resume/AcademicDetails';
 import { useApplicantProfile } from '@/lib/hooks/useApplicantProfile';
 import { ACADEMIC_FIELDS, ACADEMIC_LABELS, effectiveAcademic } from '@/lib/academic';
 import type { Resume } from '@/types/resume';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const fmt = (iso: string) =>
     new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -40,7 +41,7 @@ export function ResumeReviewPanel({
             </div>
 
             {isLoading ? (
-                <div className="h-24 rounded-lg bg-hairline-soft animate-pulse" />
+                <Skeleton className="h-24" />
             ) : (
                 <AcademicDetails effective={effective} onFill={onOpenProfile} />
             )}

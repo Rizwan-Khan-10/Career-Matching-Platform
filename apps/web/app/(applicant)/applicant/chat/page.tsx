@@ -5,6 +5,11 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { toast } from '@/lib/toast';
+import { MessagesSquare } from 'lucide-react';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 
 interface Conversation {
     id: string;
@@ -18,7 +23,7 @@ export default function ChatListPage() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
 
-    const { data: conversations, isLoading } = useQuery<Conversation[]>({
+    const { data: conversations, isLoading, isError, refetch } = useQuery<Conversation[]>({
         queryKey: ['conversations'],
         queryFn: () => apiClient.get('/chat/conversations').then((r) => r.data),
     });
@@ -47,12 +52,18 @@ export default function ChatListPage() {
                 One conversation per role you&apos;ve been evaluated against — ask about your match or feedback.
             </p>
 
-            {isLoading && <p className="text-sm text-ink-grey">Loading...</p>}
+            {isLoading && <ListSkeleton rows={3} />}
+
+            {isError && <ErrorBox message="Couldn't load your conversations." onRetry={() => refetch()} />}
 
             {conversations?.length === 0 && (
-                <p className="text-sm text-ink-grey">
-                    No conversations yet — these appear automatically once you&apos;ve been matched against a role.
-                </p>
+                <EmptyState
+                    icon={MessagesSquare}
+                    title="No conversations yet"
+                    text="One appears for each role once you have been matched against it."
+                    actionLabel="See my matches"
+                    actionHref="/applicant/matches"
+                />
             )}
 
             <div className="flex flex-col gap-2">
@@ -74,8 +85,9 @@ export default function ChatListPage() {
                                 className="flex-1 border border-hairline rounded px-2 py-1 text-sm font-body text-ink focus:outline-none focus:border-accent"
                             />
                         ) : (
-                            <Link href={`/applicant/chat/${convo.id}`} className="flex-1 text-sm font-medium text-ink hover:text-accent">
-                                {convo.name}
+                            <Link href={`/applicant/chat/${convo.id}`} className="flex-1 min-w-0 text-sm font-medium text-ink hover:text-accent">
+                                <span className="block truncate">{convo.name}</span>
+                                <TimeAgo iso={convo.updatedAt} className="block text-xs font-normal text-ink-grey" />
                             </Link>
                         )}
 

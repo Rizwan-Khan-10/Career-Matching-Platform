@@ -1,6 +1,7 @@
 'use client';
 
 import { useTargetRoles } from '@/lib/hooks/useTargetRoles';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export interface TargetSelection {
     track: string;
@@ -24,7 +25,7 @@ export function TargetRolePicker({
 }) {
     const { data, isLoading, isError, refetch } = useTargetRoles();
 
-    if (isLoading) return <div className="h-20 rounded-lg bg-hairline-soft animate-pulse mb-4" />;
+    if (isLoading) return <Skeleton className="h-20 mb-4" />;
 
     if (isError || !data) {
         return (

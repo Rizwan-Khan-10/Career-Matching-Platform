@@ -14,6 +14,7 @@ import { JobPostingCard } from '@/components/jobs/JobPostingCard';
 import type { JobPosting } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
 import type { CompanyStats, RoleStats } from '@/types/stats';
+import { ListSkeleton } from '@/components/ui/Skeleton';
 
 export default function CompanyJobsPage() {
   const token = useAuthStore((s) => s.token);
@@ -146,9 +147,7 @@ export default function CompanyJobsPage() {
         />
       </FadeIn>
 
-      {isLoading && (
-        <div className="mt-6 h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />
-      )}
+      {isLoading && <ListSkeleton rows={2} className="mt-6" />}
 
       {!isLoading && postings?.length === 0 && (
         <FadeIn delay={0.05}>

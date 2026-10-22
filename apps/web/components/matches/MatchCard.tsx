@@ -3,6 +3,8 @@
 import { motion } from 'motion/react';
 import { SkillChips } from '@/components/matches/SkillChips';
 import { ConsentSection } from '@/components/matches/ConsentSection';
+import { ScoreBadge, SCORE_MEANING } from '@/components/matches/ScoreBadge';
+import { matchGroup, plainReason } from '@/lib/matchReason';
 import { UnverifiedRulesNote } from '@/components/matches/UnverifiedRulesNote';
 import { ShortlistCard } from '@/components/matches/ShortlistCard';
 import { RejectionCard } from '@/components/matches/RejectionCard';
@@ -11,9 +13,9 @@ import type { Match } from '@/types/match';
 function badgeFor(match: Match): { label: string; className: string } {
     if (match.outcome === 'shortlisted') return { label: 'Shortlisted', className: 'bg-success-soft text-success' };
     if (match.outcome === 'rejected') return { label: 'Not selected', className: 'bg-paper text-ink-grey border border-hairline' };
-    return match.eligible
-        ? { label: 'Eligible', className: 'bg-success-soft text-success' }
-        : { label: 'Not eligible', className: 'bg-danger-soft text-danger' };
+    if (match.eligible) return { label: 'Eligible', className: 'bg-success-soft text-success' };
+    if (matchGroup(match) === 'almost') return { label: 'Almost eligible', className: 'bg-warning-soft text-warning' };
+    return { label: 'Not eligible', className: 'bg-danger-soft text-danger' };
 }
 
 export function MatchCard({
@@ -33,12 +35,15 @@ export function MatchCard({
         <div className="bg-paper-raised border border-hairline rounded-xl p-4">
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink truncate">{match.roleTitle || `Role ${match.jobRoleId.slice(0, 8)}`}</p>
+                    <p className="text-sm font-medium text-ink truncate">{match.roleTitle || 'Untitled role'}</p>
                     <p className="text-xs text-ink-grey truncate">
                         {match.companyName}
                         {match.companyIndustry ? ` · ${match.companyIndustry}` : ''}
                     </p>
-                    <p className="text-xs text-ink-grey font-mono mt-0.5">Match: {Math.round(match.score * 100)}%</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <ScoreBadge score={match.score} />
+                        <span className="text-xs text-ink-grey">{SCORE_MEANING}</span>
+                    </div>
                 </div>
                 <motion.span
                     key={badge.label}
@@ -57,11 +62,11 @@ export function MatchCard({
                 </p>
             )}
 
-            {match.reason && <p className="text-sm text-ink-grey mt-2">{match.reason}</p>}
+            {match.reason && <p className="text-sm text-ink mt-2">{plainReason(match.reason)}</p>}
 
-            <SkillChips label="Skills you have" skills={match.matchedSkills} className="bg-success-soft text-success" />
-            <SkillChips label="Related experience" skills={match.partialSkills} className="bg-accent-soft text-accent" />
-            <SkillChips label="Skills to add" skills={match.missingSkills} className="bg-danger-soft text-danger" />
+            <SkillChips label="Skills you have" skills={match.matchedSkills} kind="matched" />
+            <SkillChips label="Related experience" skills={match.partialSkills} kind="partial" />
+            <SkillChips label="Skills to add" skills={match.missingSkills} kind="missing" />
 
             <UnverifiedRulesNote rules={match.unverifiedRules ?? []} onOpenProfile={onOpenProfile} />
 

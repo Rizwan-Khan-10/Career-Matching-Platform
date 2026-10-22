@@ -3,6 +3,7 @@
 import { useTargetRoles } from '@/lib/hooks/useTargetRoles';
 import { stackLabel } from '@/lib/targetRoles';
 import { cn } from '@/lib/cn';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const selectClass =
     'w-full border border-hairline bg-paper-raised rounded px-3 py-2.5 text-sm font-body text-ink outline-none transition-colors focus:border-ink';
@@ -18,7 +19,7 @@ export function RoleStackPicker({
 }) {
     const { data, isLoading, isError, refetch } = useTargetRoles();
 
-    if (isLoading) return <div className="h-20 rounded-lg bg-hairline-soft animate-pulse" />;
+    if (isLoading) return <Skeleton className="h-20" />;
 
     if (isError || !data) {
         return (

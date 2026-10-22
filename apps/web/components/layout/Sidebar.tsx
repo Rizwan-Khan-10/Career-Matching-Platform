@@ -1,64 +1,61 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/cn';
-import { SidebarProfileCard } from './SidebarProfileCard';
+import { useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { X } from 'lucide-react';
+import { useDialogBehavior } from '@/lib/hooks/useDialogBehavior';
+import type { NavRole } from '@/lib/navItems';
+import { SidebarNav } from './SidebarNav';
 
-const NAV_ITEMS: Record<string, { label: string; href: string }[]> = {
-    APPLICANT: [
-        { label: 'Dashboard', href: '/applicant/dashboard' },
-        { label: 'Resume', href: '/applicant/resume' },
-        { label: 'Matches', href: '/applicant/matches' },
-        { label: 'Feedback', href: '/applicant/feedback' },
-        { label: 'Chat', href: '/applicant/chat' },
-        { label: 'Notifications', href: '/applicant/notifications' },
-    ],
-    COMPANY: [
-        { label: 'Dashboard', href: '/company/dashboard' },
-        { label: 'Jobs', href: '/company/jobs' },
-        { label: 'Ask AI', href: '/company/ask' },
-        { label: 'Notifications', href: '/company/notifications' },
-    ],
-    ADMIN: [
-        { label: 'Dashboard', href: '/admin/dashboard' },
-        { label: 'Companies', href: '/admin/companies' },
-        { label: 'Applicants', href: '/admin/applicants' },
-        { label: 'Job approvals', href: '/admin/jobs' },
-        { label: 'Import users', href: '/admin/import' },
-        { label: 'Settings', href: '/admin/settings' },
-        { label: 'System health', href: '/admin/health' },
-        { label: 'Audit log', href: '/admin/audit' },
-        { label: 'Notifications', href: '/admin/notifications' },
-    ],
-};
+/** Fixed sidebar from `lg` up. Below that it is hidden: the Topbar hamburger opens <MobileSidebar /> instead. */
+export function Sidebar({ role }: { role: NavRole }) {
+    return (
+        <aside className="hidden lg:block w-60 shrink-0 bg-paper-raised border-r border-hairline sticky top-0 h-screen">
+            <SidebarNav role={role} />
+        </aside>
+    );
+}
 
-export function Sidebar({ role }: { role: 'ADMIN' | 'COMPANY' | 'APPLICANT' }) {
-    const pathname = usePathname();
-    const items = NAV_ITEMS[role] || [];
+/** Slide-in drawer for phones and tablets. Closes on a link click, on Esc, on a tap outside, and when the route changes. */
+export function MobileSidebar({ role, open, onClose }: { role: NavRole; open: boolean; onClose: () => void }) {
+    const panelRef = useRef<HTMLDivElement>(null);
+    useDialogBehavior(open, onClose, panelRef);
 
     return (
-        <aside className="w-56 bg-paper-raised border-r border-hairline min-h-screen flex flex-col">
-            <div className="px-5 py-6 font-heading font-bold text-lg text-ink border-b border-hairline">
-                CareerMatch
-            </div>
-            <SidebarProfileCard role={role} />
-            <nav className="flex-1 px-2 py-4 flex flex-col gap-1">
-                {items.map((item) => (
-                    <Link
-                        key={item.href}
-                        href={item.href}
-                        className={cn(
-                            'px-3 py-2 rounded-lg text-sm font-body transition-colors',
-                            pathname === item.href
-                                ? 'bg-accent-soft text-accent font-medium'
-                                : 'text-ink-grey hover:bg-paper',
-                        )}
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm lg:hidden"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={onClose}
+                >
+                    <motion.div
+                        ref={panelRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Menu"
+                        initial={{ x: '-100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '-100%' }}
+                        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="relative bg-paper-raised border-r border-hairline shadow-xl w-72 max-w-[85vw] h-full"
                     >
-                        {item.label}
-                    </Link>
-                ))}
-            </nav>
-        </aside>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close menu"
+                            className="absolute right-3 top-4 p-1.5 rounded-lg text-ink-grey hover:text-ink hover:bg-paper transition-colors"
+                        >
+                            <X className="size-4" />
+                        </button>
+                        <SidebarNav role={role} onNavigate={onClose} />
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }

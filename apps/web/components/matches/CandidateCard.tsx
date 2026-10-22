@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { ACADEMIC_LABELS, type AcademicField } from '@/lib/academic';
+import { ScoreBadge } from '@/components/matches/ScoreBadge';
+import { plainReason } from '@/lib/matchReason';
 import { DecisionSummary } from '@/components/matches/DecisionSummary';
 import type { ApplicantSummary, Match } from '@/types/match';
 
@@ -53,9 +55,7 @@ export function CandidateCard({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <span className={cn('text-xs font-medium px-2 py-1 rounded-full', badge.className)}>{badge.label}</span>
-                    <span className="text-xs font-mono text-success bg-success-soft px-2.5 py-1 rounded-full">
-                        {Math.round(match.score * 100)}%
-                    </span>
+                    <ScoreBadge score={match.score} />
                 </div>
             </div>
 
@@ -78,7 +78,7 @@ export function CandidateCard({
                 </div>
             )}
 
-            {match.reason && <p className="text-sm text-ink-grey mt-2">{match.reason}</p>}
+            {match.reason && <p className="text-sm text-ink-grey mt-2">{plainReason(match.reason)}</p>}
 
             {(match.matchedSkills?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">

@@ -1,13 +1,15 @@
 'use client';
 
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'motion/react';
 import { Toaster } from 'sonner';
 import { queryClient } from '@/lib/queryClient';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
+      {/* every animation in the app honours the visitor's "reduce motion" setting */}
+      <MotionConfig reducedMotion="user">{children}</MotionConfig>
       <Toaster
         position="top-right"
         toastOptions={{

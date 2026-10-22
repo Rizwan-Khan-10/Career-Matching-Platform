@@ -246,8 +246,8 @@ On `resume.superseded` / `resume.deleted`: delete the **non-approved** `Match` r
 | `resume.superseded` | resume-service → results-service | `{ resumeId, applicantId }` |
 | `resume.deleted` | resume-service → results-service, matching-agent | `{ resumeId, applicantId }` |
 | `profile.updated` | user-service → matching-agent | `{ applicantId }` |
-| `match.computed` | matching-agent → results, feedback, ws, notification | existing + `unverifiedRules: string[]` (names among `cgpa, branch, passingYear, backlogs`); failed rules appear in `reason` and `breakdown.gatesFailed` |
-| `match.scanned` | matching-agent → results | `{ scans: [{ jobRoleId, applicantId, resumeId, eligible, score, inputHash }] }` (chunked) |
+| `match.computed` | matching-agent → results, feedback, ws, notification | existing + `verdict: eligible \| review \| not_eligible` (`eligible` is true ONLY for `eligible`; `review` = possible match, the applicant may still approve it) + `unverifiedRules: string[]` (names among `cgpa, branch, passingYear, backlogs`); failed rules appear in `reason` and `breakdown.gatesFailed` |
+| `match.scanned` | matching-agent → results | `{ scans: [{ jobRoleId, applicantId, resumeId, eligible, verdict, score, inputHash }] }` (chunked) |
 | `candidate.ready` | results → ws, notification | `{ companyId, matchId, jobRoleId, roleTitle, applicantName, score }` |
 | `candidate.shortlisted` | results → feedback-agent, notification, ws | `{ matchId, applicantId, jobRoleId, companyId, roleTitle, companyName, shortlist }` |
 | `candidate.rejected` | results → feedback-agent, notification, ws | `{ matchId, applicantId, jobRoleId, companyId, roleTitle, reasonCategory, message? }` |
@@ -266,7 +266,7 @@ Unchanged streams are in Spec §7. matching-agent consumes `resume.confirmed, re
 | `resume.parsed` | applicant | `resume_ready` — "Review and confirm your resume" | no |
 | `jd.extracted` | company | `roles_ready` | no |
 | `match.computed` with `eligible = true` | applicant | `match_eligible` | **yes** — first time only (`dedupeKey = matchKey`) |
-| `match.computed` with `eligible = false` | — | none | no |
+| `match.computed` with `eligible = false` (incl. `verdict = review`) | — | none | no |
 | `feedback.ready` | applicant | `feedback_ready` | no |
 | `candidate.ready` | company | `candidate_ready` | **yes** |
 | `candidate.shortlisted` | applicant | `shortlisted` | **yes** — company details verbatim |

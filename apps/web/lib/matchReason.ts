@@ -21,10 +21,21 @@ export function plainReason(reason: string | null | undefined): string {
 export type MatchGroup = 'eligible' | 'almost' | 'not_eligible';
 
 /**
- * The API does not send the engine's verdict, but a "needs a review" result is not eligible and its reason starts with
+ * The API sends `verdict` (older rows do not: then a "needs a review" result is not eligible and its reason starts with
  * "Possible match". That is what we call "almost eligible".
  */
-export function matchGroup(match: Pick<Match, 'eligible' | 'reason'>): MatchGroup {
+export function matchGroup(match: Pick<Match, 'eligible' | 'reason'> & { verdict?: Match['verdict'] }): MatchGroup {
     if (match.eligible) return 'eligible';
-    return /^possible match/i.test(match.reason ?? '') ? 'almost' : 'not_eligible';
+    if (match.verdict) return match.verdict === 'review' ? 'almost' : 'not_eligible';
+    return /^possible match/i.test(match.reason ?? '') ? 'almost' : 'not_eligible'; // old rows without a verdict
+}
+
+/** The applicant may share the resume for an eligible match AND for a possible match (the company then decides). */
+export function canApprove(match: Pick<Match, 'eligible' | 'reason'> & { verdict?: Match['verdict'] }): boolean {
+    return match.eligible || matchGroup(match) === 'almost';
+}
+
+/** Company side: a possible match is not confirmed by the system, a person should look at it. */
+export function isPossibleMatch(match: Pick<Match, 'eligible' | 'reason'> & { verdict?: Match['verdict'] }): boolean {
+    return matchGroup(match) === 'almost';
 }

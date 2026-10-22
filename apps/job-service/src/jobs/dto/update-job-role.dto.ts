@@ -1,5 +1,5 @@
 import {
-    ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, MaxLength, Min,
+    ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, MaxLength, Min,
 } from 'class-validator';
 import { ALL_STACK_IDS, TRACK_IDS } from '../../taxonomy/taxonomy';
 import { ROLE_LEVELS } from './create-job-role.dto';
@@ -36,6 +36,19 @@ export class UpdateJobRoleDto {
     @Min(0)
     @Max(60)
     minExperienceYears?: number | null;
+
+    // Upper limit set by the company ("up to 3 years"). null / absent = NO upper limit. Must not be below minExperienceYears
+    // (checked in JobsService, it needs both values).
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(60)
+    maxExperienceYears?: number | null;
+
+    // true = a candidate below minExperienceYears is rejected outright; false / null = only a big shortfall is
+    @IsOptional()
+    @IsBoolean()
+    strictMinExperience?: boolean | null;
 
     @IsOptional()
     @IsString()

@@ -6,6 +6,7 @@ import { FileText, UploadCloud, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
+import { UPLOAD_ACCEPT, UPLOAD_FORMATS_HINT, UPLOAD_MAX_MB, validateUploadFile } from '@/lib/uploadTypes';
 import {
     EMPTY_TARGET,
     TargetRolePicker,
@@ -13,7 +14,7 @@ import {
     type TargetSelection,
 } from '@/components/resume/TargetRolePicker';
 
-const MAX_SIZE_MB = 10;
+const MAX_SIZE_MB = UPLOAD_MAX_MB;
 
 export function UploadDropzone({
     onUpload,
@@ -36,12 +37,9 @@ export function UploadDropzone({
 
     const validateAndSet = (candidate: File | undefined | null) => {
         if (disabled || !candidate) return;
-        if (candidate.type !== 'application/pdf') {
-            toast.error('Only PDF resumes are supported');
-            return;
-        }
-        if (candidate.size > MAX_SIZE_MB * 1024 * 1024) {
-            toast.error(`Keep the file under ${MAX_SIZE_MB}MB`);
+        const problem = validateUploadFile(candidate);
+        if (problem) {
+            toast.error(problem);
             return;
         }
         setFile(candidate);
@@ -80,14 +78,14 @@ export function UploadDropzone({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept=".pdf,application/pdf"
+                    accept={UPLOAD_ACCEPT}
                     disabled={disabled}
                     onChange={(e) => validateAndSet(e.target.files?.[0])}
                     className="hidden"
                 />
                 <UploadCloud className="size-6 text-ink-grey" />
                 <p className="text-sm text-ink font-medium">Drop your resume here, or click to browse</p>
-                <p className="text-xs text-ink-grey">PDF only, up to {MAX_SIZE_MB}MB</p>
+                <p className="text-xs text-ink-grey">{UPLOAD_FORMATS_HINT}, up to {MAX_SIZE_MB}MB</p>
             </div>
 
             {file && (

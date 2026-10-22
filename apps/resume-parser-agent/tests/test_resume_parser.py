@@ -89,8 +89,13 @@ class PromptTest(unittest.TestCase):
         self.assertIsNone(parsed.backlogs)
 
     def test_experience_years_still_computed_from_dates(self):
-        parsed, _ = parse_with({"experience": [{"title": "Intern", "company": "X", "startDate": "Jan 2020", "endDate": "Dec 2020"}]})
+        parsed, _ = parse_with({"experience": [{"title": "Developer", "company": "X", "startDate": "Jan 2020", "endDate": "Dec 2020"}]})
         self.assertEqual(parsed.experienceYears, 1.0)
+
+    def test_internships_do_not_count_as_experience_years(self):
+        parsed, _ = parse_with({"experience": [{"title": "Intern", "company": "X", "startDate": "Jan 2020", "endDate": "Dec 2020"}]})
+        self.assertEqual(parsed.experienceYears, 0.0)
+        self.assertEqual(len(parsed.experience), 1)       # the internship is still listed on the resume
 
 
 if __name__ == "__main__":

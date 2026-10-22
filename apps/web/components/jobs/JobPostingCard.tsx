@@ -97,7 +97,7 @@ export function JobPostingCard({
                         <p className="font-medium">Couldn&apos;t extract roles from this document</p>
                         <p className="text-danger/80 mt-0.5">
                             {posting.errorMessage || 'The file may be corrupted, empty, or in an unsupported format.'}
-                            {' '}Upload a new PDF or DOCX to try again, or add roles manually below.
+                            {' '}Upload a new file (PDF, DOCX, TXT or image) to try again, or add roles manually below.
                         </p>
                     </div>
                 </div>

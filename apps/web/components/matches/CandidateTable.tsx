@@ -3,6 +3,7 @@
 import { cn } from '@/lib/cn';
 import { Pill } from '@/components/admin/Pill';
 import { ScoreBadge } from '@/components/matches/ScoreBadge';
+import { isPossibleMatch } from '@/lib/matchReason';
 import type { ApplicantSummary, Match } from '@/types/match';
 
 const action = 'text-xs font-medium px-2.5 py-1 rounded-full border border-hairline text-ink-grey transition-colors disabled:opacity-50';
@@ -46,7 +47,14 @@ export function CandidateTable({
                         return (
                             <tr key={m.id} className="border-b border-hairline last:border-0 hover:bg-paper transition-colors">
                                 <td className="pl-4 pr-3 py-2.5">
-                                    <p className="text-ink font-medium">{name}</p>
+                                    <p className="text-ink font-medium">
+                                        {name}
+                                        {isPossibleMatch(m) && (
+                                            <span className="ml-2 align-middle text-xs font-medium px-2 py-0.5 rounded-full bg-warning-soft text-warning" title="Below the automatic bar but close: review the resume yourself">
+                                                Possible match
+                                            </span>
+                                        )}
+                                    </p>
                                     {person?.headline && <p className="text-xs text-ink-grey truncate max-w-56">{person.headline}</p>}
                                 </td>
                                 <td className="px-3 py-2.5"><ScoreBadge score={m.score} showLabel={false} /></td>

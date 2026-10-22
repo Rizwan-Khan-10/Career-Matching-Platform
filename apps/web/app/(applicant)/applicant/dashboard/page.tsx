@@ -12,6 +12,7 @@ import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { ScoreBadge } from '@/components/matches/ScoreBadge';
 import { StatCard } from '@/components/stats/StatCard';
 import { CardSkeleton } from '@/components/ui/Skeleton';
+import { canApprove } from '@/lib/matchReason';
 import type { Match } from '@/types/match';
 import type { Resume } from '@/types/resume';
 
@@ -48,7 +49,7 @@ export default function ApplicantDashboard() {
   const hasConfirmed = current.some((r) => r.status === 'parsed' && !!r.confirmedAt);
   const hasMatches = (matches?.length ?? 0) > 0;
   const hasApproved = !!matches?.some((m) => m.applicantStatus === 'approved');
-  const waiting = matches?.filter((m) => m.eligible && m.applicantStatus === 'pending' && !m.jobStopped).length ?? 0;
+  const waiting = matches?.filter((m) => canApprove(m) && m.applicantStatus === 'pending' && !m.jobStopped).length ?? 0;
   const eligibleCount = matches?.filter((m) => m.eligible).length ?? 0;
   const top = [...(matches ?? [])].sort((a, b) => b.score - a.score).slice(0, 3);
 

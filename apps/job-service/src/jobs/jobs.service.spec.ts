@@ -33,7 +33,7 @@ describe('JobsService roles (contract 4.1)', () => {
             await service.createRole('p1', 'c1', { title: 'Backend Developer', requiredSkills: ['Java'] });
             expect(storedRequirements(prisma, 'create')).toEqual({
                 title: 'Backend Developer', summary: null, requiredSkills: ['Java'], preferredSkills: [],
-                minExperienceYears: null, qualifications: null, responsibilities: [], level: null,
+                minExperienceYears: null, maxExperienceYears: null, strictMinExperience: null, qualifications: null, responsibilities: [], level: null,
                 track: null, stacks: [], minCgpa: null, allowedBranches: null, passingYears: null, maxBacklogs: null,
             });
         });
@@ -54,6 +54,28 @@ describe('JobsService roles (contract 4.1)', () => {
             const { service, prisma } = setup();
             await service.createRole('p1', 'c1', { title: 'T', requiredSkills: [], allowedBranches: [], passingYears: [] });
             expect(storedRequirements(prisma, 'create')).toMatchObject({ allowedBranches: null, passingYears: null });
+        });
+
+        it('stores the experience band the company set (max null = no upper limit)', async () => {
+            const { service, prisma } = setup();
+            await service.createRole('p1', 'c1', {
+                title: 'Backend Developer', requiredSkills: ['Java'], minExperienceYears: 2, maxExperienceYears: 4, strictMinExperience: true,
+            });
+            expect(storedRequirements(prisma, 'create')).toMatchObject({ minExperienceYears: 2, maxExperienceYears: 4, strictMinExperience: true });
+        });
+
+        it('rejects a max below the min and saves nothing', async () => {
+            const { service, prisma } = setup();
+            await expect(service.createRole('p1', 'c1', {
+                title: 'Backend Developer', requiredSkills: ['Java'], minExperienceYears: 5, maxExperienceYears: 2,
+            })).rejects.toBeInstanceOf(BadRequestException);
+            expect(prisma.jobRole.create).not.toHaveBeenCalled();
+        });
+
+        it('accepts max equal to min, and max without a min', async () => {
+            const { service } = setup();
+            await expect(service.createRole('p1', 'c1', { title: 'A', requiredSkills: ['Java'], minExperienceYears: 3, maxExperienceYears: 3 })).resolves.toBeDefined();
+            await expect(service.createRole('p1', 'c1', { title: 'A', requiredSkills: ['Java'], maxExperienceYears: 1 })).resolves.toBeDefined();
         });
 
         it('rejects stacks that do not belong to the track and saves nothing', async () => {
@@ -103,6 +125,25 @@ describe('JobsService roles (contract 4.1)', () => {
             const { service, prisma } = setup({ ...existing, track: 'backend', stacks: ['rust'] });
             await expect(service.updateRole('r1', 'c1', { title: 'Renamed' })).resolves.toBeDefined();
             expect(prisma.jobRole.update).toHaveBeenCalled();
+        });
+
+        it('checks the experience band on the MERGED values', async () => {
+            const { service, prisma } = setup({ ...existing, minExperienceYears: 3 });
+            await expect(service.updateRole('r1', 'c1', { maxExperienceYears: 2 })).rejects.toBeInstanceOf(BadRequestException);
+            expect(prisma.jobRole.update).not.toHaveBeenCalled();
+            await service.updateRole('r1', 'c1', { maxExperienceYears: 5 });
+            expect(storedRequirements(prisma, 'update')).toMatchObject({ minExperienceYears: 3, maxExperienceYears: 5 });
+        });
+
+        it('null clears the max (= no upper limit again)', async () => {
+            const { service, prisma } = setup({ ...existing, maxExperienceYears: 1 });
+            await service.updateRole('r1', 'c1', { maxExperienceYears: null });
+            expect(storedRequirements(prisma, 'update').maxExperienceYears).toBeNull();
+        });
+
+        it('does not re-check the band when the request does not touch it', async () => {
+            const { service } = setup({ ...existing, minExperienceYears: 5, maxExperienceYears: 2 });   // odd old data
+            await expect(service.updateRole('r1', 'c1', { title: 'Renamed' })).resolves.toBeDefined();
         });
 
         it('still answers 404 for an unknown role', async () => {

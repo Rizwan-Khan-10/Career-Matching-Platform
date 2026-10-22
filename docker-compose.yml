@@ -224,6 +224,13 @@ services:
       LOG_LEVEL: ${AGENT_LOG_LEVEL:-INFO}
       ENABLE_DOCS: "false"
       ENABLE_MATCHING_CONSUMER: "true"
+      # serving bar and review band (see apps/matching-agent/.env.example); the trained scorer.json itself says 0.5
+      ELIGIBILITY_THRESHOLD: ${ELIGIBILITY_THRESHOLD:-0.40}
+      FRESHER_ELIGIBILITY_THRESHOLD: ${FRESHER_ELIGIBILITY_THRESHOLD:-}
+      REVIEW_BAND_WIDTH: ${REVIEW_BAND_WIDTH:-0.10}
+      MAX_REVIEW_PER_RESUME: ${MAX_REVIEW_PER_RESUME:-20}
+      MAX_REVIEW_PER_ROLE: ${MAX_REVIEW_PER_ROLE:-20}
+      OVERQUALIFIED_EXTRA_YEARS: ${OVERQUALIFIED_EXTRA_YEARS:-5}
     volumes:
       - ./apps/matching-agent/app/artifacts:/app/app/artifacts:ro
     depends_on:

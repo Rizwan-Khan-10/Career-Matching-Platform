@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { ACADEMIC_LABELS, type AcademicField } from '@/lib/academic';
 import { ScoreBadge } from '@/components/matches/ScoreBadge';
-import { plainReason } from '@/lib/matchReason';
+import { isPossibleMatch, plainReason } from '@/lib/matchReason';
 import { DecisionSummary } from '@/components/matches/DecisionSummary';
 import type { ApplicantSummary, Match } from '@/types/match';
 
@@ -59,8 +59,16 @@ export function CandidateCard({
                 </div>
             </div>
 
-            {(match.resumeTargetLabel || unverified.length > 0) && (
+            {(match.resumeTargetLabel || unverified.length > 0 || isPossibleMatch(match)) && (
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    {isPossibleMatch(match) && (
+                        <span
+                            title="Below the automatic bar but close. The applicant shared the resume anyway: please review it yourself."
+                            className="bg-warning-soft text-warning text-xs font-medium px-2.5 py-1 rounded-full"
+                        >
+                            Possible match
+                        </span>
+                    )}
                     {match.resumeTargetLabel && (
                         <span className="bg-paper text-ink border border-hairline text-xs font-medium px-2.5 py-1 rounded-full">
                             Resume for: {match.resumeTargetLabel}

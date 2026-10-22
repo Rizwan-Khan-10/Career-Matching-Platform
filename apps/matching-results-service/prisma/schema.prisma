@@ -16,6 +16,9 @@ model Match {
   resumeId      String?
   score         Float
   eligible      Boolean
+  // 'eligible' | 'review' | 'not_eligible'. `eligible` stays true ONLY for 'eligible'; a 'review' pair is a possible match
+  // (below the bar but inside the review band) that the applicant may still approve. Old rows: see prisma/backfill_verdict.sql
+  verdict       String   @default("eligible")
   reason        String?
   matchedSkills String[] @default([])
   partialSkills String[] @default([])
@@ -45,6 +48,7 @@ model Match {
   // one row per (applicant, role): re-matching updates it instead of piling up duplicates
   @@unique([applicantId, jobRoleId])
   @@index([jobRoleId, eligible, applicantStatus, score])
+  @@index([jobRoleId, verdict, applicantStatus, score])
   @@schema("matches_service")
 }
 
@@ -57,6 +61,7 @@ model RoleScan {
   applicantId String
   resumeId    String
   eligible    Boolean
+  verdict     String   @default("eligible") // 'eligible' | 'review' | 'not_eligible' (see Match.verdict)
   score       Float
   inputHash   String?  // sha1 of everything that influenced the score (contract §4.12), lets matching-agent skip unchanged pairs
   scannedAt   DateTime @default(now())

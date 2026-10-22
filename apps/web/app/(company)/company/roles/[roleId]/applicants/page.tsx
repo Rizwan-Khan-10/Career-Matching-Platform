@@ -23,10 +23,11 @@ import { CandidateTable } from '@/components/matches/CandidateTable';
 import { CandidateCard } from '@/components/matches/CandidateCard';
 import { ShortlistModal } from '@/components/matches/ShortlistModal';
 import { RejectModal } from '@/components/matches/RejectModal';
+import { isPossibleMatch } from '@/lib/matchReason';
 import type { ApplicantSummary, Match } from '@/types/match';
 
 type Dialog = { kind: 'shortlist' | 'reject'; matchId: string } | null;
-type Tab = 'all' | 'awaiting' | 'shortlisted' | 'rejected';
+type Tab = 'all' | 'awaiting' | 'shortlisted' | 'rejected' | 'possible';
 type Sort = 'score' | 'name';
 type View = 'cards' | 'table';
 
@@ -112,6 +113,7 @@ export default function RoleApplicantsPage() {
 
     const shortlistedCount = matches?.filter((m) => m.decision === 'shortlisted').length ?? 0;
     const rejectedCount = matches?.filter((m) => m.decision === 'rejected').length ?? 0;
+    const possibleCount = matches?.filter(isPossibleMatch).length ?? 0;
     const undecidedCount = (matches?.length ?? 0) - shortlistedCount - rejectedCount;
 
     const q = search.trim().toLowerCase();
@@ -120,6 +122,7 @@ export default function RoleApplicantsPage() {
             if (tab === 'awaiting' && m.decision) return false;
             if (tab === 'shortlisted' && m.decision !== 'shortlisted') return false;
             if (tab === 'rejected' && m.decision !== 'rejected') return false;
+            if (tab === 'possible' && !isPossibleMatch(m)) return false;
             if (!q) return true;
             const p = byId.get(m.applicantId);
             return `${p?.name ?? ''} ${p?.headline ?? ''} ${p?.location ?? ''}`.toLowerCase().includes(q);
@@ -142,7 +145,7 @@ export default function RoleApplicantsPage() {
             />
             <h1 className="font-heading text-2xl text-ink mb-1">Candidates ready</h1>
             <p className="text-sm text-ink-grey mb-4" title={`Role ID: ${roleId}`}>
-                These applicants matched this role and approved sharing their resume with you. You also get an email when someone approves; view and download their resume here.
+                These applicants matched this role and approved sharing their resume with you. A "Possible match" is close to your requirements but not confirmed: look at those resumes yourself. You also get an email when someone approves; view and download their resume here.
             </p>
 
             {isLoading && <ListSkeleton rows={3} />}
@@ -168,6 +171,7 @@ export default function RoleApplicantsPage() {
                             { id: 'awaiting', label: 'Awaiting decision', count: undecidedCount },
                             { id: 'shortlisted', label: 'Shortlisted', count: shortlistedCount },
                             { id: 'rejected', label: 'Rejected', count: rejectedCount },
+                            ...(possibleCount > 0 ? [{ id: 'possible', label: 'Possible matches', count: possibleCount }] : []),
                         ]}
                         active={tab}
                         onTab={(id) => setTab(id as Tab)}

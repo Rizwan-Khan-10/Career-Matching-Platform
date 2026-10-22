@@ -27,6 +27,7 @@ export interface Match {
     resumeStatus: 'none' | 'ready' | 'failed';
     score: number;
     eligible: boolean;
+    verdict?: 'eligible' | 'review' | 'not_eligible'; // 'review' = possible match (below the bar, inside the review band); eligible is true only for 'eligible'
     reason?: string | null;
     matchedSkills?: string[];
     partialSkills?: string[];

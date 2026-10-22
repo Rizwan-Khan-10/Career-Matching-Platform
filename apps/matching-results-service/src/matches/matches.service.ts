@@ -16,6 +16,8 @@ export interface MatchComputed {
     resumeId?: string | null;
     score: number;
     eligible: boolean;
+    /** eligible | review | not_eligible; older agents omit it (then read from breakdown.verdict, else from `eligible`) */
+    verdict?: string;
     reason?: string;
     matchedSkills?: string[];
     partialSkills?: string[];
@@ -31,8 +33,19 @@ interface ScanInput {
     applicantId: string;
     resumeId: string;
     eligible: boolean;
+    verdict?: string;
     score: number;
     inputHash?: string | null;
+}
+
+export const VERDICTS = ['eligible', 'review', 'not_eligible'] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+/** Verdict of one result. Never trusts a verdict that contradicts `eligible` (eligible=true can only be 'eligible'). */
+export function verdictOf(x: { eligible: boolean; verdict?: unknown; breakdown?: any }): Verdict {
+    if (x.eligible) return 'eligible';
+    const v = x.verdict ?? x.breakdown?.verdict;
+    return v === 'review' ? 'review' : 'not_eligible';
 }
 
 interface RoleInfoRow {
@@ -75,6 +88,7 @@ export class MatchesService {
             resumeId: data.resumeId ?? null,
             score: data.score,
             eligible: data.eligible,
+            verdict: verdictOf(data),
             reason: data.reason ?? null,
             matchedSkills: data.matchedSkills ?? [],
             partialSkills: data.partialSkills ?? [],
@@ -108,8 +122,8 @@ export class MatchesService {
             scans.map((x) =>
                 this.prisma.roleScan.upsert({
                     where: { jobRoleId_resumeId: { jobRoleId: x.jobRoleId, resumeId: x.resumeId } },
-                    create: { jobRoleId: x.jobRoleId, applicantId: x.applicantId, resumeId: x.resumeId, eligible: x.eligible, score: x.score, inputHash: x.inputHash ?? null },
-                    update: { applicantId: x.applicantId, eligible: x.eligible, score: x.score, inputHash: x.inputHash ?? null, scannedAt: new Date() },
+                    create: { jobRoleId: x.jobRoleId, applicantId: x.applicantId, resumeId: x.resumeId, eligible: x.eligible, verdict: verdictOf(x), score: x.score, inputHash: x.inputHash ?? null },
+                    update: { applicantId: x.applicantId, eligible: x.eligible, verdict: verdictOf(x), score: x.score, inputHash: x.inputHash ?? null, scannedAt: new Date() },
                 }),
             ),
         );
@@ -200,15 +214,20 @@ export class MatchesService {
     /** Company side: ONLY candidates who approved sharing, best first. Nothing else about an applicant is visible. */
     async getForJobRole(jobRoleId: string) {
         const matches = await this.prisma.match.findMany({
-            where: { jobRoleId, eligible: true, applicantStatus: 'approved' },
+            // eligible AND review (possible) matches; no cap here: a review pair only shows up after the applicant approved it
+            where: { jobRoleId, OR: [{ eligible: true }, { verdict: 'review' }], applicantStatus: 'approved' },
             orderBy: [{ score: 'desc' }],
         });
         const labels = await this.resumeLabels(matches.map((m) => m.resumeId));
-        return matches.map((m) => ({
-            ...m,
-            unverifiedRules: m.unverifiedRules ?? [],
-            resumeTargetLabel: (m.resumeId && labels.get(m.resumeId)) || null,
-        }));
+        // eligible ones first, then possible matches (each best score first)
+        const tier = (m: { eligible: boolean }) => (m.eligible ? 0 : 1);
+        return matches
+            .sort((a, b) => tier(a) - tier(b) || b.score - a.score)
+            .map((m) => ({
+                ...m,
+                unverifiedRules: m.unverifiedRules ?? [],
+                resumeTargetLabel: (m.resumeId && labels.get(m.resumeId)) || null,
+            }));
     }
 
     // ------------------------------------------------------------------ consent
@@ -224,7 +243,7 @@ export class MatchesService {
             return this.prisma.match.update({ where: { id: matchId }, data: { applicantStatus: 'declined' } });
         }
 
-        if (!match.eligible) throw new BadRequestException('Only matches where you are eligible can be approved');
+        if (!match.eligible && match.verdict !== 'review') throw new BadRequestException('Only matches where you are eligible (or a possible match) can be approved');
         // the company stopped this job: nobody can apply any more (already-approved ones stay as they are)
         if (match.applicantStatus !== 'approved' && (await this.roleInfo([match.jobRoleId])).get(match.jobRoleId)?.stopped) {
             throw new ConflictException('This job is no longer accepting applications');

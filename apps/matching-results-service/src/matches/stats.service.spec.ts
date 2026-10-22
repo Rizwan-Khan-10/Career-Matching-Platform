@@ -97,7 +97,7 @@ describe('StatsService people drill-down', () => {
     it.each([
         ['scanned', 'FROM "matches_service"."RoleScan" rs', null],
         ['matched', 'WHERE rs.eligible', null],
-        ['applied', `m."applicantStatus" = 'approved' AND m.eligible`, null],
+        ['applied', `m."applicantStatus" = 'approved' AND (m.eligible OR m.verdict = 'review')`, null],
         ['shortlisted', `m.decision = 'shortlisted'`, null],
         ['rejected', `m.decision = 'rejected'`, null],
     ])('stage %s uses the same predicate as the dashboard count', (stage, predicate) => {

@@ -147,7 +147,7 @@ function baseCte(stage: Exclude<PeopleStage, 'parsed'>): string {
         case 'applied':
             return `SELECT m."jobRoleId", m."applicantId", m."resumeId" AS "baseResumeId", m.score, m.eligible
                     FROM "matches_service"."Match" m
-                    WHERE m."applicantStatus" = 'approved' AND m.eligible`;
+                    WHERE m."applicantStatus" = 'approved' AND (m.eligible OR m.verdict = 'review')`;
         case 'shortlisted':
             return `SELECT m."jobRoleId", m."applicantId", m."resumeId" AS "baseResumeId", m.score, m.eligible
                     FROM "matches_service"."Match" m WHERE m.decision = 'shortlisted'`;

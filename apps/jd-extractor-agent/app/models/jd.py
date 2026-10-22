@@ -1,7 +1,7 @@
 from typing import Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from app.services.jd_numbers import (
-    clean_branches, coerce_backlogs, coerce_cgpa, coerce_level, coerce_min_years, coerce_passing_years,
+    clean_branches, coerce_backlogs, coerce_cgpa, coerce_level, coerce_max_years, coerce_min_years, coerce_passing_years,
 )
 from app.services.taxonomy import clean_track
 
@@ -26,6 +26,7 @@ class JobRoleData(BaseModel):
     requiredSkills: list[str] = []
     preferredSkills: list[str] = []
     minExperienceYears: Optional[float] = None
+    maxExperienceYears: Optional[float] = None  # only when the JD states a range / upper limit; the company confirms it
     qualifications: Optional[str] = None
     responsibilities: list[str] = []
     seniority: Optional[str] = None
@@ -64,6 +65,18 @@ class JobRoleData(BaseModel):
     @classmethod
     def v_min_exp(cls, v):
         return coerce_min_years(v)
+
+    @field_validator("maxExperienceYears", mode="before")
+    @classmethod
+    def v_max_exp(cls, v):
+        return coerce_max_years(v)
+
+    @model_validator(mode="after")
+    def v_exp_band(self):
+        # an upper bound below the lower bound is a misread: drop it (no upper limit) rather than create an empty band
+        if self.minExperienceYears is not None and self.maxExperienceYears is not None and self.maxExperienceYears < self.minExperienceYears:
+            self.maxExperienceYears = None
+        return self
 
     @field_validator("level", mode="before")
     @classmethod

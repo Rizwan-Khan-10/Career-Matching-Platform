@@ -12,7 +12,7 @@ import { MatchCard } from '@/components/matches/MatchCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import { ListSkeleton } from '@/components/ui/Skeleton';
-import { matchGroup, type MatchGroup } from '@/lib/matchReason';
+import { canApprove, matchGroup, type MatchGroup } from '@/lib/matchReason';
 import { Target } from 'lucide-react';
 import { ApplicantProfileModal } from '@/components/profile/ApplicantProfileModal';
 import type { Match } from '@/types/match';
@@ -29,7 +29,7 @@ const LIVE_EVENTS = [
 
 const GROUPS: { id: MatchGroup; title: string; text: string }[] = [
   { id: 'eligible', title: 'Eligible', text: 'You fit these roles. Approve to share your resume with the company.' },
-  { id: 'almost', title: 'Almost eligible', text: 'Close. A person needs to review these, or a skill or two would help.' },
+  { id: 'almost', title: 'Possible match', text: 'Close, but not confirmed. You can still share your resume: the company will review it themselves.' },
   { id: 'not_eligible', title: 'Not eligible', text: 'Not a fit right now. Each card shows what to improve.' },
 ];
 
@@ -89,14 +89,14 @@ export default function MatchesPage() {
   const grouped: Record<MatchGroup, Match[]> = { eligible: [], almost: [], not_eligible: [] };
   [...(matches ?? [])].sort((a, b) => b.score - a.score).forEach((m) => grouped[matchGroup(m)].push(m));
 
-  const waitingForYou = matches?.filter((m) => m.eligible && m.applicantStatus === 'pending' && !m.jobStopped).length ?? 0;
+  const waitingForYou = matches?.filter((m) => canApprove(m) && m.applicantStatus === 'pending' && !m.jobStopped).length ?? 0;
   const shortlisted = matches?.filter((m) => m.outcome === 'shortlisted').length ?? 0;
 
   return (
     <div className="max-w-2xl">
       <h1 className="font-heading text-2xl text-ink mb-1">Matches</h1>
       <p className="text-sm text-ink-grey mb-6">
-        Companies you matched with. Your resume is only shared with a company after you approve it.
+        Companies you matched with. Your resume is only shared with a company after you approve it. Matches come from automated screening, so a company may still look at your resume themselves before deciding.
       </p>
 
       <ApplicantProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />

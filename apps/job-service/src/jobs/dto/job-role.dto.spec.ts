@@ -13,6 +13,8 @@ const full = {
     summary: 'Build APIs',
     preferredSkills: ['Docker'],
     minExperienceYears: 0,
+    maxExperienceYears: 1,
+    strictMinExperience: false,
     qualifications: 'B.Tech',
     responsibilities: ['Write services'],
     level: 'fresher',
@@ -34,7 +36,7 @@ describe.each([
 
     it('accepts null for every optional key ("rule not set")', async () => {
         const nulls = Object.fromEntries(
-            ['summary', 'minExperienceYears', 'qualifications', 'responsibilities', 'level', 'track', 'stacks', 'minCgpa', 'allowedBranches', 'passingYears', 'maxBacklogs']
+            ['summary', 'minExperienceYears', 'maxExperienceYears', 'strictMinExperience', 'qualifications', 'responsibilities', 'level', 'track', 'stacks', 'minCgpa', 'allowedBranches', 'passingYears', 'maxBacklogs']
                 .map((k) => [k, null]),
         );
         expect(await errorsFor(nulls)).toHaveLength(0);
@@ -55,6 +57,14 @@ describe.each([
     it('validates level', async () => {
         for (const level of ['fresher', 'experienced', 'any']) expect(await errorsFor({ level })).toHaveLength(0);
         expect(props(await errorsFor({ level: 'senior' }))).toEqual(['level']);
+    });
+
+    it('validates the experience band fields', async () => {
+        expect(props(await errorsFor({ maxExperienceYears: -1 }))).toEqual(['maxExperienceYears']);
+        expect(props(await errorsFor({ maxExperienceYears: 61 }))).toEqual(['maxExperienceYears']);
+        expect(props(await errorsFor({ maxExperienceYears: '3' }))).toEqual(['maxExperienceYears']);
+        expect(props(await errorsFor({ strictMinExperience: 'yes' }))).toEqual(['strictMinExperience']);
+        expect(await errorsFor({ maxExperienceYears: 0, strictMinExperience: true })).toHaveLength(0);
     });
 
     it('validates the academic rules', async () => {

@@ -30,6 +30,25 @@ def coerce_min_years(v):
     return None
 
 
+def coerce_max_years(v):
+    """Upper bound of the experience range, ONLY when the text states one: '2-4 years' -> 4, 'up to 1 year' -> 1,
+    '0-1 yrs' -> 1, a plain number -> that number. '3+', 'fresher', 'minimum 2 years', None -> None (no upper limit)."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v) if 0 <= v <= 40 else None
+    s = str(v).lower().replace("–", "-").replace("—", "-")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)", s)
+    if m:
+        n = float(m.group(2))
+        return n if float(m.group(1)) <= n <= 40 else None
+    m = re.search(r"(?:up\s*to|upto|max(?:imum)?|not more than|at most|below|under)\s*(\d+(?:\.\d+)?)", s)
+    if m:
+        n = float(m.group(1))
+        return n if 0 <= n <= 40 else None
+    return None
+
+
 def coerce_cgpa(v):
     """Minimum CGPA on the 10-point scale (contract §4.3): '7.5' -> 7.5, '7/10' -> 7.0, '3.0/4' -> 7.5,
     '60%' or 60 -> 6.0. Unusable (0, > 100, nonsense) -> None."""

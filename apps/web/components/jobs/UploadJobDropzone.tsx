@@ -6,9 +6,9 @@ import { FileText, UploadCloud, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
+import { UPLOAD_ACCEPT, UPLOAD_FORMATS_HINT, UPLOAD_MAX_MB, validateUploadFile } from '@/lib/uploadTypes';
 
-const MAX_SIZE_MB = 10;
-const ACCEPTED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const MAX_SIZE_MB = UPLOAD_MAX_MB;
 
 export function UploadJobDropzone({
     onUpload,
@@ -27,12 +27,9 @@ export function UploadJobDropzone({
 
     const validateAndSet = (candidate: File | undefined | null) => {
         if (disabled || !candidate) return;
-        if (!ACCEPTED_TYPES.includes(candidate.type)) {
-            toast.error('Only PDF or DOCX requirement docs are supported');
-            return;
-        }
-        if (candidate.size > MAX_SIZE_MB * 1024 * 1024) {
-            toast.error(`Keep the file under ${MAX_SIZE_MB}MB`);
+        const problem = validateUploadFile(candidate);
+        if (problem) {
+            toast.error(problem);
             return;
         }
         setFile(candidate);
@@ -67,14 +64,14 @@ export function UploadJobDropzone({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept=".pdf,.docx"
+                    accept={UPLOAD_ACCEPT}
                     disabled={disabled}
                     onChange={(e) => validateAndSet(e.target.files?.[0])}
                     className="hidden"
                 />
                 <UploadCloud className="size-6 text-ink-grey" />
                 <p className="text-sm text-ink font-medium">Drop your requirement doc here, or click to browse</p>
-                <p className="text-xs text-ink-grey">PDF or DOCX, up to {MAX_SIZE_MB}MB — one doc can describe multiple roles</p>
+                <p className="text-xs text-ink-grey">{UPLOAD_FORMATS_HINT}, up to {MAX_SIZE_MB}MB — one doc can describe multiple roles</p>
             </div>
 
             {file && (

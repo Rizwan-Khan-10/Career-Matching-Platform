@@ -145,7 +145,7 @@ export default function RoleApplicantsPage() {
             />
             <h1 className="font-heading text-2xl text-ink mb-1">Candidates ready</h1>
             <p className="text-sm text-ink-grey mb-4" title={`Role ID: ${roleId}`}>
-                These applicants matched this role and approved sharing their resume with you. A "Possible match" is close to your requirements but not confirmed: look at those resumes yourself. You also get an email when someone approves; view and download their resume here.
+                These applicants matched this role and approved sharing their resume with you. A &quot;Possible match&quot; is close to your requirements but not confirmed: look at those resumes yourself. You also get an email when someone approves; view and download their resume here.
             </p>
 
             {isLoading && <ListSkeleton rows={3} />}

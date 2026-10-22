@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/apiClient';
 import { actionLabel, metaText } from '@/lib/audit';
-import { timeAgo } from '@/lib/time';
 import { useAuthStore } from '@/store/authStore';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { Input } from '@/components/ui/Input';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import { Select } from '@/components/ui/Select';
 import type { AuditEntry } from '@/types/admin';
 
@@ -24,6 +26,7 @@ export default function AdminAuditPage() {
   const { data, isLoading, isError, refetch } = useQuery<AuditEntry[]>({
     queryKey: ['adminAudit', limit, personId],
     queryFn: () => apiClient.get('/admin/audit', { params: { limit, ...(personId ? { personId } : {}) } }).then((r) => r.data),
+    placeholderData: keepPreviousData,
   });
 
   const entries = data ?? [];
@@ -64,16 +67,9 @@ export default function AdminAuditPage() {
         </p>
       )}
 
-      {isLoading && <div className="h-48 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <ListSkeleton rows={5} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load the audit log.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load the audit log." onRetry={() => refetch()} />}
 
       {data && (
         <div className="bg-paper-raised border border-hairline rounded-xl overflow-hidden">
@@ -87,17 +83,11 @@ export default function AdminAuditPage() {
                 <div className={`px-4 py-3 ${i > 0 ? 'border-t border-hairline' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-medium text-ink">{actionLabel(entry.action)}</p>
-                    <time
-                      dateTime={entry.createdAt}
-                      title={timeAgo(entry.createdAt)}
-                      className="text-xs text-ink-grey shrink-0"
-                    >
-                      {new Date(entry.createdAt).toLocaleString()}
-                    </time>
+                    <TimeAgo iso={entry.createdAt} className="text-xs text-ink-grey shrink-0" />
                   </div>
                   <p className="text-xs text-ink-grey mt-0.5 break-all">
                     By{' '}
-                    {entry.actorId === me ? 'you' : (
+                    {entry.actorId === me ? 'You' : (
                       <button type="button" className="text-ink hover:text-accent hover:underline" title={`${entry.actorId} (show only this person)`} onClick={() => setPersonId(entry.actorId)}>
                         {entry.actorName || (isId(entry.actorId) ? 'Admin' : entry.actorId.slice(0, 8))}
                       </button>

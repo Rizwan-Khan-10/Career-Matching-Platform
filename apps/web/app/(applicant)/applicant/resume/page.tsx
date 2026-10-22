@@ -8,6 +8,10 @@ import { getErrorMessage, isConflict } from '@/lib/errors';
 import { useAuthStore } from '@/store/authStore';
 import { getSocket } from '@/lib/socket';
 import { FadeIn } from '@/components/motion/FadeIn';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { FileText } from 'lucide-react';
 import { UploadDropzone } from '@/components/resume/UploadDropzone';
 import { ResumeCard } from '@/components/resume/ResumeCard';
 import { ResumeHistory } from '@/components/resume/ResumeHistory';
@@ -24,6 +28,7 @@ export default function ResumePage() {
   const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const { data: resumes, isLoading, isError, refetch } = useQuery<Resume[]>({
     queryKey: ['resumes'],
@@ -50,8 +55,10 @@ export default function ResumePage() {
       formData.append('file', file);
       formData.append('targetTrack', target.track);
       formData.append('targetStack', target.stack);
+      setUploadProgress(0);
       return apiClient.post('/resumes/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => setUploadProgress(e.total ? Math.round((e.loaded / e.total) * 100) : null),
       });
     },
     onSuccess: () => {
@@ -59,6 +66,7 @@ export default function ResumePage() {
       toast.success('Resume uploaded — processing started');
     },
     onError: (err) => toast.error(getErrorMessage(err, 'Upload failed, try again')),
+    onSettled: () => setUploadProgress(null),
   });
 
   const updateMutation = useMutation({
@@ -127,27 +135,24 @@ export default function ResumePage() {
         <UploadDropzone
           onUpload={(file, target) => uploadMutation.mutate({ file, target })}
           isUploading={uploadMutation.isPending}
+          progress={uploadProgress}
           disabled={atLimit}
           disabledReason={`You already have ${MAX_RESUMES} resumes. Delete one to upload another.`}
         />
       </FadeIn>
 
-      {isLoading && (
-        <div className="mt-6 h-32 rounded-xl bg-paper-raised border border-hairline animate-pulse" />
-      )}
+      {isLoading && <ListSkeleton rows={1} className="mt-6" />}
 
-      {isError && (
-        <div className="mt-6 flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load your resumes.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox className="mt-6" message="Couldn't load your resumes." onRetry={() => refetch()} />}
 
       {!isLoading && !isError && current.length === 0 && (
         <FadeIn delay={0.05}>
-          <p className="text-sm text-ink-grey mt-6">No resume uploaded yet — add one above to get started.</p>
+          <EmptyState
+            className="mt-6"
+            icon={FileText}
+            title="No resume yet"
+            text="Choose the kind of role above and add a PDF. We read it and show you what we found."
+          />
         </FadeIn>
       )}
 

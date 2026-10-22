@@ -10,6 +10,8 @@ import { toast } from '@/lib/toast';
 import { DrawerShell } from '@/components/stats/DrawerShell';
 import { PersonRow } from '@/components/stats/PersonRow';
 import { Input } from '@/components/ui/Input';
+import { ErrorBox } from '@/components/ui/ErrorBox';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Select } from '@/components/ui/Select';
 import type { Drill } from '@/components/stats/stages';
 import type { PersonRowData } from '@/types/stats';
@@ -48,12 +50,24 @@ function csvFor(rows: PersonRowData[], viewer: PeopleViewer) {
 
 /** The real people behind one dashboard number: search, pages, per-person details and the resume. */
 export function PeopleDrawer({ drill, viewer, onClose }: { drill: Drill | null; viewer: PeopleViewer; onClose: () => void }) {
-    if (!drill) return null;
+    // keep the last list around while the panel slides out, so the close animation has something to show
+    const [kept, setKept] = useState<Drill | null>(drill);
+    if (drill && drill !== kept) setKept(drill);
+    const current = drill ?? kept;
+    if (!current) return null;
     // a different number was clicked = a different key = fresh state (page 1, empty search), no effect needed
-    return <PeopleDrawerBody key={`${drill.title}|${JSON.stringify(drill.filters)}`} drill={drill} viewer={viewer} onClose={onClose} />;
+    return (
+        <PeopleDrawerBody
+            key={`${current.title}|${JSON.stringify(current.filters)}`}
+            drill={current}
+            open={!!drill}
+            viewer={viewer}
+            onClose={onClose}
+        />
+    );
 }
 
-function PeopleDrawerBody({ drill, viewer, onClose }: { drill: Drill; viewer: PeopleViewer; onClose: () => void }) {
+function PeopleDrawerBody({ drill, open, viewer, onClose }: { drill: Drill; open: boolean; viewer: PeopleViewer; onClose: () => void }) {
     const [search, setSearch] = useState('');
     const [q, setQ] = useState('');
     const [page, setPage] = useState(1);
@@ -95,7 +109,7 @@ function PeopleDrawerBody({ drill, viewer, onClose }: { drill: Drill; viewer: Pe
 
     return (
         <DrawerShell
-            isOpen
+            isOpen={open}
             onClose={onClose}
             title={`${drill.title}${data ? ` (${total})` : ''}`}
             actions={
@@ -124,14 +138,21 @@ function PeopleDrawerBody({ drill, viewer, onClose }: { drill: Drill; viewer: Pe
                 </Select>
             </div>
 
-            {isLoading && <div className="m-4 h-40 rounded-xl bg-paper border border-hairline animate-pulse" />}
-
-            {isError && (
-                <div className="m-4 flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-lg px-3.5 py-3">
-                    <span>Couldn&apos;t load the list.</span>
-                    <button type="button" onClick={() => refetch()} className="font-medium underline">Try again</button>
+            {isLoading && (
+                <div className="p-4 space-y-4" role="status" aria-label="Loading">
+                    {[0, 1, 2, 3].map((i) => (
+                        <div key={i} className="flex items-start gap-3">
+                            <Skeleton className="size-9 rounded-full" />
+                            <div className="flex-1 space-y-2">
+                                <Skeleton className="h-4 w-1/2" />
+                                <Skeleton className="h-3 w-3/4" />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
+
+            {isError && <ErrorBox className="m-4" message="Couldn't load the list." onRetry={() => refetch()} />}
 
             {data && (
                 <div className={isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}>

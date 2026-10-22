@@ -10,8 +10,9 @@ import { apiClient } from '@/lib/apiClient';
 import { loginSchema, LoginFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Field } from '@/components/ui/Field';
+import { Loader2 } from 'lucide-react';
 import { PasswordInput } from '@/components/ui/PasswordInput';
-import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { TwoFactorStep } from '@/components/auth/TwoFactorStep';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
@@ -161,14 +162,17 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit((v) => { setUnverifiedEmail(null); mutation.mutate(v); })} className="flex flex-col gap-4">
         <StaggerItem>
-          <Input
-            type="email"
-            placeholder="Email"
-            autoComplete="email"
-            {...emailField}
-            onBlur={(e) => { emailField.onBlur(e); setEmailBlurred(true); }}
-          />
-          <FieldError message={errors.email?.message} />
+          <Field id="login-email" label="Email" error={errors.email?.message}>
+            <Input
+              id="login-email"
+              type="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              autoFocus
+              {...emailField}
+              onBlur={(e) => { emailField.onBlur(e); setEmailBlurred(true); }}
+            />
+          </Field>
           {emailFix && (
             <p className="text-xs text-ink-grey mt-1">
               Did you mean{' '}
@@ -184,8 +188,9 @@ export default function LoginPage() {
           )}
         </StaggerItem>
         <StaggerItem>
-          <PasswordInput placeholder="Password" autoComplete="current-password" {...register('password')} />
-          <FieldError message={errors.password?.message} />
+          <Field id="login-password" label="Password" error={errors.password?.message}>
+            <PasswordInput id="login-password" placeholder="Your password" autoComplete="current-password" {...register('password')} />
+          </Field>
         </StaggerItem>
 
         {serverError && (
@@ -206,7 +211,8 @@ export default function LoginPage() {
         )}
 
         <StaggerItem>
-          <Button type="submit" disabled={busy} className="w-full">
+          <Button type="submit" disabled={busy} className="w-full inline-flex items-center justify-center gap-2 min-h-10">
+            {mutation.isPending && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />}
             {mutation.isPending ? 'Logging in...' : 'Log in'}
           </Button>
         </StaggerItem>

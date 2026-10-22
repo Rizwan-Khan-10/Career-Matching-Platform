@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { motion } from 'motion/react';
 import { toast } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 interface Message {
     id: string;
@@ -63,7 +64,13 @@ export default function ChatThreadPage() {
             <h1 className="font-heading text-xl text-ink mb-4">Chat</h1>
 
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 mb-4">
-                {isLoading && <p className="text-sm text-ink-grey">Loading...</p>}
+                {isLoading && (
+                    <div role="status" aria-label="Loading messages" className="flex flex-col gap-3">
+                        <Skeleton className="h-10 w-2/3 self-start rounded-xl" />
+                        <Skeleton className="h-10 w-1/2 self-end rounded-xl" />
+                        <Skeleton className="h-14 w-3/4 self-start rounded-xl" />
+                    </div>
+                )}
 
                 {messages?.length === 0 && !pending && (
                     <p className="text-sm text-ink-grey">
@@ -104,6 +111,7 @@ export default function ChatThreadPage() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     maxLength={2000}
+                    aria-label="Message"
                     placeholder="Type a message..."
                     className="flex-1 border border-hairline bg-paper-raised rounded-lg px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
                 />

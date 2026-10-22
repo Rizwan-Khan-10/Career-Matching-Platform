@@ -7,6 +7,8 @@ import { cn } from '@/lib/cn';
 import { streamLabel } from '@/lib/streams';
 import { Pill } from '@/components/admin/Pill';
 import type { SystemHealth } from '@/types/admin';
+import { TableSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 
 export default function AdminHealthPage() {
   const { data, isLoading, isError, isFetching, refetch, dataUpdatedAt } = useQuery<SystemHealth>({
@@ -40,16 +42,9 @@ export default function AdminHealthPage() {
         {dataUpdatedAt > 0 && <span className="block text-xs mt-1">Last checked {new Date(dataUpdatedAt).toLocaleTimeString()}. Updates every 15 seconds.</span>}
       </p>
 
-      {isLoading && <div className="h-48 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <TableSkeleton rows={6} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load the system health.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load the system health." onRetry={() => refetch()} />}
 
       {data && (
         <>

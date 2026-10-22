@@ -2,6 +2,7 @@
 
 import { NotificationItem } from '@/components/notifications/NotificationItem';
 import { useNotificationList, useOpenNotification } from '@/lib/hooks/useNotifications';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 // the list used by both the bell dropdown and the full page: loading / error / empty / items / load more
 export function NotificationFeed({
@@ -27,7 +28,7 @@ export function NotificationFeed({
         return (
             <div className="p-4 space-y-3" aria-busy="true">
                 {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-12 rounded-lg bg-hairline-soft animate-pulse" />
+                    <Skeleton key={i} className="h-12" />
                 ))}
             </div>
         );

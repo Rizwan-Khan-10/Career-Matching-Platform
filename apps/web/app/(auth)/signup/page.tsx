@@ -10,8 +10,11 @@ import { apiClient } from '@/lib/apiClient';
 import { signupSchema, SignupFormValues } from '@/lib/schemas/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Field } from '@/components/ui/Field';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { PasswordStrength } from '@/components/ui/PasswordStrength';
+import { Loader2 } from 'lucide-react';
 import { PasswordInput } from '@/components/ui/PasswordInput';
-import { FieldError } from '@/components/ui/FieldError';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { toast } from '@/lib/toast';
@@ -39,6 +42,7 @@ export default function SignupPage() {
     });
 
     const role = useWatch({ control, name: 'role' });
+    const password = useWatch({ control, name: 'password' }) ?? '';
 
     const mutation = useMutation({
         mutationFn: (values: SignupFormValues) => apiClient.post<SignupResponse>('/auth/signup', values),
@@ -80,9 +84,9 @@ export default function SignupPage() {
     if (isModeLoading) {
         return (
             <div className="w-full max-w-sm">
-                <div className="h-8 w-48 rounded-lg bg-hairline-soft animate-pulse mb-3" />
-                <div className="h-4 w-64 rounded-lg bg-hairline-soft animate-pulse mb-8" />
-                <div className="h-40 rounded-xl bg-hairline-soft animate-pulse" />
+                <Skeleton className="h-8 w-48 mb-3" />
+                <Skeleton className="h-4 w-64 mb-8" />
+                <Skeleton className="h-40 rounded-xl" />
             </div>
         );
     }
@@ -157,7 +161,8 @@ export default function SignupPage() {
 
             <form onSubmit={handleSubmit((v) => { setServerError(null); mutation.mutate(v); })} className="flex flex-col gap-4">
                 <StaggerItem>
-                    <div className="flex gap-2 p-1 bg-hairline-soft rounded-lg">
+                    <p id="role-label" className="text-sm font-medium text-ink mb-1.5">I am signing up as</p>
+                    <div role="radiogroup" aria-labelledby="role-label" className="flex gap-2 p-1 bg-hairline-soft rounded-lg">
                         <label
                             className={`flex-1 rounded-md px-3 py-2 text-sm font-body text-center cursor-pointer transition-colors ${role === 'APPLICANT' ? 'bg-paper-raised text-ink shadow-sm' : 'text-ink-grey'
                                 }`}
@@ -196,12 +201,15 @@ export default function SignupPage() {
                 )}
 
                 <StaggerItem>
-                    <Input type="email" placeholder="Email" autoComplete="email" {...register('email')} />
-                    <FieldError message={errors.email?.message} />
+                    <Field id="signup-email" label="Email" error={errors.email?.message}>
+                        <Input id="signup-email" type="email" placeholder="you@example.com" autoComplete="email" autoFocus {...register('email')} />
+                    </Field>
                 </StaggerItem>
                 <StaggerItem>
-                    <PasswordInput placeholder="Password" autoComplete="new-password" {...register('password')} />
-                    <FieldError message={errors.password?.message} />
+                    <Field id="signup-password" label="Password" error={errors.password?.message}>
+                        <PasswordInput id="signup-password" placeholder="Choose a password" autoComplete="new-password" {...register('password')} />
+                    </Field>
+                    <PasswordStrength password={password} />
                 </StaggerItem>
 
                 {serverError && (
@@ -211,7 +219,8 @@ export default function SignupPage() {
                 )}
 
                 <StaggerItem>
-                    <Button type="submit" disabled={busy} className="w-full">
+                    <Button type="submit" disabled={busy} className="w-full inline-flex items-center justify-center gap-2 min-h-10">
+                        {mutation.isPending && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />}
                         {mutation.isPending ? 'Creating account...' : 'Sign up'}
                     </Button>
                 </StaggerItem>

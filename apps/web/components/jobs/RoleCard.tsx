@@ -8,6 +8,7 @@ import type { JobRole } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
 import type { RoleStats } from '@/types/stats';
 import { LEVEL_LABELS, describeRules } from '@/lib/roleForm';
+import { MiniFunnel } from '@/components/stats/FunnelBars';
 import { stackLabel, trackLabel } from '@/lib/targetRoles';
 
 export function RoleCard({
@@ -139,20 +140,7 @@ export function RoleCard({
                 <p className="text-xs text-ink-grey mt-2">{role.requirements.qualifications}</p>
             )}
 
-            {stats && (
-                <div className="grid grid-cols-3 gap-2 mt-3">
-                    {[
-                        ['Scanned', stats.scanned],
-                        ['Matched', stats.matched],
-                        ['Applied', stats.applied],
-                    ].map(([label, value]) => (
-                        <div key={label as string} className="bg-paper rounded-lg px-3 py-2">
-                            <p className="text-lg font-heading font-bold text-ink leading-tight">{value}</p>
-                            <p className="text-xs text-ink-grey">{label}</p>
-                        </div>
-                    ))}
-                </div>
-            )}
+            {stats && <MiniFunnel scanned={stats.scanned} matched={stats.matched} applied={stats.applied} />}
 
             <Link
                 href={`/company/roles/${role.id}/applicants`}

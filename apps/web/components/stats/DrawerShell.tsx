@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
+import { useDialogBehavior } from '@/lib/hooks/useDialogBehavior';
 
 /** Right-side panel (full screen on a phone). Same look and Esc / backdrop behaviour as ui/Modal. */
 export function DrawerShell({
@@ -19,18 +20,9 @@ export function DrawerShell({
     actions?: React.ReactNode;
     children: React.ReactNode;
 }) {
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        document.addEventListener('keydown', onKeyDown);
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', onKeyDown);
-            document.body.style.overflow = '';
-        };
-    }, [isOpen, onClose]);
+    const titleId = useId();
+    const panelRef = useRef<HTMLElement>(null);
+    useDialogBehavior(isOpen, onClose, panelRef);
 
     if (typeof document === 'undefined') return null;
 
@@ -46,18 +38,19 @@ export function DrawerShell({
                     onClick={onClose}
                 >
                     <motion.aside
+                        ref={panelRef}
                         role="dialog"
                         aria-modal="true"
-                        aria-label={title}
-                        initial={{ x: 48, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        exit={{ x: 48, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        aria-labelledby={titleId}
+                        initial={{ x: '100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '100%' }}
+                        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                         onClick={(e) => e.stopPropagation()}
                         className="bg-paper-raised border-l border-hairline shadow-xl w-full md:max-w-xl h-full flex flex-col"
                     >
                         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-hairline">
-                            <h2 className="font-heading text-lg text-ink truncate">{title}</h2>
+                            <h2 id={titleId} className="font-heading text-lg text-ink truncate">{title}</h2>
                             <div className="flex items-center gap-3 shrink-0">
                                 {actions}
                                 <button type="button" onClick={onClose} className="text-ink-grey hover:text-ink transition-colors" aria-label="Close">

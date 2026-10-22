@@ -1,43 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ShieldCheck } from 'lucide-react';
-import { useAuthStore } from '@/store/authStore';
+import { Menu } from 'lucide-react';
 import { useNotificationSocket } from '@/lib/hooks/useNotificationSocket';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { SecurityModal } from '@/components/security/SecurityModal';
+import { Logo } from '@/components/ui/Logo';
+import type { NavRole } from '@/lib/navItems';
+import { UserMenu } from './UserMenu';
 
-export function Topbar() {
-    const router = useRouter();
-    const logout = useAuthStore((s) => s.logout);
-    const [securityOpen, setSecurityOpen] = useState(false);
-
+export function Topbar({ role, onMenu }: { role: NavRole; onMenu: () => void }) {
     // live notifications for every role and every page inside the dashboard shell
     useNotificationSocket();
 
-    const handleLogout = () => {
-        logout();
-        router.replace('/login');
-    };
-
     return (
-        <header className="h-14 bg-paper-raised border-b border-hairline flex items-center justify-end gap-3 px-6">
+        <header className="h-14 bg-paper-raised border-b border-hairline flex items-center gap-3 px-3 sm:px-6 sticky top-0 z-30">
+            <button
+                type="button"
+                onClick={onMenu}
+                aria-label="Open menu"
+                className="lg:hidden p-2 -ml-1 rounded-lg text-ink-grey hover:text-ink hover:bg-paper transition-colors"
+            >
+                <Menu className="size-5" />
+            </button>
+            <Logo className="lg:hidden text-base" />
+            <div className="flex-1" />
             <NotificationBell />
-            <button
-                onClick={() => setSecurityOpen(true)}
-                className="flex items-center gap-1.5 text-sm font-body text-ink-grey hover:text-ink transition-colors"
-            >
-                <ShieldCheck className="size-4" />
-                Security
-            </button>
-            <button
-                onClick={handleLogout}
-                className="text-sm font-body text-ink-grey hover:text-danger transition-colors"
-            >
-                Logout
-            </button>
-            <SecurityModal isOpen={securityOpen} onClose={() => setSecurityOpen(false)} />
+            <UserMenu role={role} />
         </header>
     );
 }

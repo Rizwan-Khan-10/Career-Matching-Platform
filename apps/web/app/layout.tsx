@@ -12,7 +12,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 
 export const metadata = {
-  title: 'CareerMatch',
+  title: { default: 'CareerMatch', template: '%s · CareerMatch' },
   description: 'Multi-agent AI career and job matching platform',
 };
 

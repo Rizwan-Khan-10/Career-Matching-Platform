@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
+import { useDialogBehavior } from '@/lib/hooks/useDialogBehavior';
 
 export function Modal({
     isOpen,
@@ -16,18 +17,9 @@ export function Modal({
     title: string;
     children: React.ReactNode;
 }) {
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        document.addEventListener('keydown', onKeyDown);
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', onKeyDown);
-            document.body.style.overflow = '';
-        };
-    }, [isOpen, onClose]);
+    const titleId = useId();
+    const panelRef = useRef<HTMLDivElement>(null);
+    useDialogBehavior(isOpen, onClose, panelRef);
 
     if (typeof document === 'undefined') return null;
 
@@ -43,6 +35,10 @@ export function Modal({
                     onClick={onClose}
                 >
                     <motion.div
+                        ref={panelRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby={titleId}
                         initial={{ opacity: 0, scale: 0.96, y: 8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.96, y: 8 }}
@@ -51,7 +47,7 @@ export function Modal({
                         className="bg-paper-raised border border-hairline rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto"
                     >
                         <div className="flex items-center justify-between px-5 py-4 border-b border-hairline sticky top-0 bg-paper-raised z-999">
-                            <h2 className="font-heading text-lg text-ink">{title}</h2>
+                            <h2 id={titleId} className="font-heading text-lg text-ink">{title}</h2>
                             <button
                                 type="button"
                                 onClick={onClose}

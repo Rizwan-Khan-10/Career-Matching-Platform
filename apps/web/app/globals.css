@@ -6,7 +6,8 @@
   --color-paper-raised: #FFFFFF;
   --color-hairline: #E7E9EE;
   --color-hairline-soft: #EEF0F3;
-  --color-ink-grey: #6B7280;
+  /* darker than before (was #6B7280): hints and explanations sit close to the minimum contrast on the paper background */
+  --color-ink-grey: #5B6270;
 
   --color-accent: #3454D1;
   --color-accent-soft: #E8ECFB;
@@ -17,13 +18,61 @@
   --color-danger: #E2574C;
   --color-danger-soft: #FBEAE8;
 
+  /* amber: "almost eligible", mid scores, warnings (text colour is dark enough to read on the soft background) */
+  --color-warning: #8A5A00;
+  --color-warning-soft: #FDF1DA;
+
   --font-heading: "Space Grotesk", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* hints and captions: 13px instead of 12px, everywhere text-xs is used */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.375;
+
+  --shadow-card: 0 1px 2px rgba(26, 29, 41, 0.04), 0 4px 14px rgba(26, 29, 41, 0.05);
+  --radius-card: 0.75rem;
 }
 
 body {
   background-color: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-body);
+}
+
+/* Visible keyboard focus on every clickable thing. Inputs keep their own border + underline focus style. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+[role='tab']:focus-visible,
+[role='switch']:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Loading placeholders: a soft shimmer instead of flat grey pulsing blocks */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.skeleton {
+  background-color: var(--color-hairline-soft);
+  background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.75) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Sticky table headers keep a solid background while rows scroll under them */
+.stats-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--color-paper-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }

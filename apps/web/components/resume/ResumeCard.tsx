@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/resume/StatusBadge';
 import { ResumeSummary } from '@/components/resume/ResumeSummary';
 import { ResumeEditForm } from '@/components/resume/ResumeEditForm';
 import { ResumeReviewPanel } from '@/components/resume/ResumeReviewPanel';
+import { ResumeProgress } from '@/components/resume/ResumeProgress';
 import { useApplicantProfile } from '@/lib/hooks/useApplicantProfile';
 import { ACADEMIC_FIELDS, effectiveAcademic } from '@/lib/academic';
 import type { Resume } from '@/types/resume';
@@ -92,11 +93,7 @@ export function ResumeCard({
                 </div>
             )}
 
-            {resume.status === 'pending' && (
-                <p className="text-sm text-ink-grey">
-                    Reading through your resume — skills, education and projects will show up here shortly.
-                </p>
-            )}
+            {resume.status === 'pending' && <ResumeProgress />}
 
             {resume.status === 'failed' && (
                 <div className="flex items-start gap-2.5 text-sm text-danger bg-danger-soft rounded-lg px-3.5 py-3">

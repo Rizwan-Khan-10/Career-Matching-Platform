@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { timeAgo } from '@/lib/time';
 import { Avatar } from '@/components/ui/Avatar';
+import { TimeAgo } from '@/components/ui/TimeAgo';
+import { ScoreBadge } from '@/components/matches/ScoreBadge';
 import { Pill } from '@/components/admin/Pill';
 import { ACADEMIC_LABELS, type AcademicField } from '@/lib/academic';
 import { useOpenResume } from '@/lib/hooks/useOpenResume';
@@ -34,7 +35,7 @@ function Timeline({ p }: { p: PersonRowData }) {
             {steps.map((s, i) => (
                 <span key={s.label}>
                     {i > 0 && ' → '}
-                    {s.label} <span title={new Date(s.at!).toLocaleString()}>{timeAgo(s.at!)}</span>
+                    {s.label} <TimeAgo iso={s.at} />
                 </span>
             ))}
         </p>
@@ -61,7 +62,7 @@ export function PersonRow({ person: p, viewer, showRole }: { person: PersonRowDa
                     <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium text-ink truncate">{name}</p>
                         <Pill tone={badge.tone}>{badge.label}</Pill>
-                        {badge.at && <span className="text-xs text-ink-grey">{timeAgo(badge.at)}</span>}
+                        <TimeAgo iso={badge.at} className="text-xs text-ink-grey" />
                     </div>
                     {viewer === 'admin' && p.email && <p className="text-xs text-ink-grey truncate">{p.email}</p>}
                     <p className="text-xs text-ink-grey">
@@ -80,9 +81,7 @@ export function PersonRow({ person: p, viewer, showRole }: { person: PersonRowDa
                     )}
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                    {p.score != null && (
-                        <span className="text-xs font-mono text-success bg-success-soft px-2.5 py-1 rounded-full">{Math.round(p.score * 100)}%</span>
-                    )}
+                    {p.score != null && <ScoreBadge score={p.score} showLabel={false} />}
                     {p.resume.hasPdf && p.resume.resumeId ? (
                         <button
                             type="button"

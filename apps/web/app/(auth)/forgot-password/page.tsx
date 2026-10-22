@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { FieldError } from '@/components/ui/FieldError';
+import { Field } from '@/components/ui/Field';
 import { Stagger, StaggerItem } from '@/components/motion/Stagger';
 import { toast } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors';
@@ -55,8 +55,9 @@ export default function ForgotPasswordPage() {
                         </StaggerItem>
                         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
                             <StaggerItem>
-                                <Input type="email" placeholder="Email" {...register('email')} />
-                                <FieldError message={errors.email?.message} />
+                                <Field id="forgot-email" label="Email" error={errors.email?.message}>
+                                    <Input id="forgot-email" type="email" placeholder="you@example.com" autoComplete="email" autoFocus {...register('email')} />
+                                </Field>
                             </StaggerItem>
                             <StaggerItem>
                                 <Button type="submit" disabled={mutation.isPending} className="w-full">

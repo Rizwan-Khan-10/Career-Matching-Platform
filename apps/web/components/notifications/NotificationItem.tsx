@@ -1,5 +1,5 @@
 import { cn } from '@/lib/cn';
-import { timeAgo } from '@/lib/time';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type { AppNotification } from '@/types/notification';
 
 export function NotificationItem({
@@ -25,7 +25,7 @@ export function NotificationItem({
                     {unread && <span className="sr-only">Unread: </span>}
                     <span className="block text-sm font-medium text-ink">{notification.title}</span>
                     <span className="block text-xs text-ink-grey mt-0.5 line-clamp-2 break-words">{notification.body}</span>
-                    <span className="block text-[11px] text-ink-grey mt-1">{timeAgo(notification.createdAt)}</span>
+                    <TimeAgo iso={notification.createdAt} className="block text-xs text-ink-grey mt-1" />
                 </span>
             </button>
         </li>

@@ -18,11 +18,14 @@ const MAX_SIZE_MB = 10;
 export function UploadDropzone({
     onUpload,
     isUploading,
+    progress = null,
     disabled = false,
     disabledReason,
 }: {
     onUpload: (file: File, target: TargetSelection) => void;
     isUploading: boolean;
+    /** 0 to 100 while the file is being sent; null when unknown */
+    progress?: number | null;
     disabled?: boolean;
     disabledReason?: string;
 }) {
@@ -109,8 +112,23 @@ export function UploadDropzone({
             )}
 
             <Button disabled={!canSubmit} onClick={() => file && onUpload(file, target)} className="mt-4 w-full">
-                {isUploading ? 'Uploading…' : 'Upload resume'}
+                {isUploading ? `Uploading…${progress != null ? ` ${progress}%` : ''}` : 'Upload resume'}
             </Button>
+            {isUploading && (
+                <div
+                    role="progressbar"
+                    aria-label="Upload progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress ?? undefined}
+                    className="mt-2 h-1.5 rounded-full bg-hairline-soft overflow-hidden"
+                >
+                    <div
+                        className={cn('h-full rounded-full bg-accent transition-[width] duration-200', progress == null && 'w-1/3 animate-pulse')}
+                        style={progress != null ? { width: `${progress}%` } : undefined}
+                    />
+                </div>
+            )}
 
             {disabled && disabledReason && <p className="text-xs text-ink-grey mt-2">{disabledReason}</p>}
             {!disabled && file && !isTargetComplete(target) && (

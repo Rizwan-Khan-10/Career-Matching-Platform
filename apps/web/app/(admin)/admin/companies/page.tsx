@@ -8,6 +8,8 @@ import { CompanyRow, COMPANIES_KEY } from '@/components/admin/CompanyRow';
 import { ListToolbar } from '@/components/admin/ListToolbar';
 import type { AdminCompany } from '@/types/admin';
 import type { CompanyStatus } from '@/types/company';
+import { ListSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBox } from '@/components/ui/ErrorBox';
 
 const PAGE_SIZE = 50;
 const ORDER: Record<CompanyStatus, number> = { pending: 0, approved: 1, rejected: 2 };
@@ -51,16 +53,9 @@ export default function AdminCompaniesPage() {
         onTab={(id) => { setTab(id as 'all' | CompanyStatus); setVisible(PAGE_SIZE); }}
       />
 
-      {isLoading && <div className="h-40 rounded-xl bg-paper-raised border border-hairline animate-pulse" />}
+      {isLoading && <ListSkeleton rows={4} />}
 
-      {isError && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-danger-soft text-danger rounded-xl px-4 py-3">
-          <span>Couldn&apos;t load the companies.</span>
-          <button type="button" onClick={() => refetch()} className="font-medium underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {isError && <ErrorBox message="Couldn't load the companies." onRetry={() => refetch()} />}
 
       {data && (
         <div className="bg-paper-raised border border-hairline rounded-xl overflow-hidden">

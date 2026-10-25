@@ -80,11 +80,30 @@ Input hash: `rules.academic_hash_part(req, parsed, profile)` returns the effecti
 ## Role level (decision)
 | `level` | experience gate | `exp_score` / `exp_over` | extra features |
 |---|---|---|---|
-| `experienced` | on (unchanged) | real ratio | `is_fresher_role = project_evidence = has_internship = 0` -> scoring identical to before |
-| `fresher`, `any` | **off** | neutral: `exp_score = 1.0`, `exp_over = 0` | `is_fresher_role = 1`, `project_evidence` (share of required skills backed by projects/experience text), `has_internship` |
+| `experienced` | on (soft ratio rule, see below) | real ratio | `is_fresher_role = project_evidence = has_internship = 0` -> scoring identical to before |
+| `fresher`, `any` | soft ratio rule **off** (company band and strict minimum still apply) | neutral: `exp_score = 1.0`, `exp_over = 0` | `is_fresher_role = 1`, `project_evidence` (share of required skills backed by projects/experience text), `has_internship` |
 | missing / invalid | same as `experienced` (old roles keep behaving as before) | | |
 
-`any` is treated like `fresher` (the spec groups them). A role with `level` fresher/any but `minExperienceYears` set is **not** gated on experience.
+`any` is treated like `fresher` (the spec groups them). For fresher/any roles the soft ratio rule is off; the company's experience band below still applies.
+
+## Company experience band and verdicts
+The company sets, per role (job-service `requirements`): `minExperienceYears` (default 0), `maxExperienceYears` (empty = no upper limit; ignored when below the minimum) and `strictMinExperience`. Implemented in `app/services/experience.py`, applied in `scorer.judge()`.
+| situation | result |
+|---|---|
+| experience above the max | hard gate: not eligible (reason names the limit) |
+| below the minimum and `strictMinExperience` | hard gate: not eligible |
+| below the minimum, not strict, `experienced` role | soft rule: only a big shortfall (ratio `EXPERIENCE_GATE_RATIO`, gap >= `EXPERIENCE_GATE_MIN_GAP_YEARS`) fails |
+| candidate experience unknown | never rejected; flagged `unverified`; an `eligible` result is downgraded one step to `review` when the role asks about experience |
+| much more than the minimum, max empty | only a recruiter note (`OVERQUALIFIED_EXTRA_YEARS`), never changes verdict or score |
+
+Resume `experienceYears` counts work only: internship / trainee entries are left out (resume-parser-agent).
+
+**Verdict** (`eligible | review | not_eligible`, `MatchResult.verdict`, published in `match.computed` and `match.scanned`):
+- hard gates fail -> `not_eligible` (never `review`);
+- probability >= threshold -> `eligible` (`eligible = true` only here);
+- `threshold - REVIEW_BAND_WIDTH <= probability < threshold` -> `review` (a *possible match*; the applicant may still share the resume, the company reviews it);
+- otherwise `not_eligible`. The score is kept consistent with the verdict order.
+`FRESHER_ELIGIBILITY_THRESHOLD` (optional) sets a separate bar for fresher/any roles. The policy values (thresholds, band width, gates, ratios) are part of `inputHash`, so changing one re-scores every pair once.
 The three new features are appended to `FEATURE_NAMES`. A `scorer.json` trained on the 14 base features still loads; for the new features it uses **interim** weights
 `FRESHER_PROJECT_WEIGHT` (0.6) and `FRESHER_INTERNSHIP_WEIGHT` (0.3) (logit units, `0` switches them off) and `modelVersion` gets the suffix `+fresher-interim`.
 After retraining with the new features (task 2.10) the trained weights are used and the suffix disappears.
@@ -130,7 +149,11 @@ Reads `resumes_service."Resume"`, `jobs_service."JobRole"` / `"JobPosting"`, `ma
 | `EMBEDDING_BACKEND` | no | `minilm` | `minilm` real model; `hash` offline stand-in for tests/CI only |
 | `EMBEDDING_MODEL_NAME` | no | `all-MiniLM-L6-v2` | sentence-transformers model |
 | `SCORER_PATH` | no | `app/artifacts/scorer.json` | trained scorer file |
-| `ELIGIBILITY_THRESHOLD` | no | unset (trained one) | overrides the trained threshold |
+| `ELIGIBILITY_THRESHOLD` | no | unset (trained one; the shipped model trained at 0.5) | serving bar. Set `0.40` (compose does) |
+| `FRESHER_ELIGIBILITY_THRESHOLD` | no | unset (= same bar) | separate bar for fresher/any roles |
+| `REVIEW_BAND_WIDTH` | no | `0.10` | width of the *possible match* band below the bar (0 = off) |
+| `MAX_REVIEW_PER_RESUME` / `MAX_REVIEW_PER_ROLE` | no | `20` | max possible-match pairs published per run (eligible ones are never capped) |
+| `OVERQUALIFIED_EXTRA_YEARS` | no | `5` | years above the minimum before the recruiter note appears |
 | `MIN_REQUIRED_SKILL_COVERAGE` | no | `0.35` | gate: required-skill coverage below this = not eligible |
 | `EXPERIENCE_GATE_RATIO` | no | `0.5` | gate: experience below ratio x minimum ... |
 | `EXPERIENCE_GATE_MIN_GAP_YEARS` | no | `1` | ... and gap at least this many years |

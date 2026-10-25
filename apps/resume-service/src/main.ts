@@ -3,12 +3,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { JsonLogger } from './common/json-logger';
 import { requestIdMiddleware } from './common/request-context';
+import { webCorsOptions } from './common/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger: new JsonLogger() });
   app.use(requestIdMiddleware);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.enableCors();
+  app.enableCors(webCorsOptions()); // WEB_URL only (any origin when unset: local dev)
 
   // Swagger only when ENABLE_DOCS=true (contract 3.8)
   if (process.env.ENABLE_DOCS === 'true') {

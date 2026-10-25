@@ -47,6 +47,8 @@ Scope: one institution per deployment, tech jobs only.
   "requiredSkills": ["Java", "Spring"],
   "preferredSkills": ["Docker"],
   "minExperienceYears": 0,
+  "maxExperienceYears": null,        // company's upper bound; null = no limit (must not be below the minimum)
+  "strictMinExperience": null,       // true = below the minimum is rejected outright
   "qualifications": "B.Tech",
   "responsibilities": ["..."],
   "level": "fresher | experienced | any",

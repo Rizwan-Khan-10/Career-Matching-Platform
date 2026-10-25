@@ -5,14 +5,14 @@ An AI-assisted hiring platform for tech roles (fresher and experienced). Applica
 ## Features
 
 **Applicants**
-- Upload up to 5 resumes, each for a target role (track + stack, e.g. *Backend · Java*); review and confirm the parsed data before any matching starts.
-- See matches with matched and missing skills; approve sharing a resume with a company.
+- Upload up to 5 resumes, each for a target role (track + stack, e.g. *Backend · Java*); review and confirm the parsed data before any matching starts. Accepted files: PDF, DOCX, TXT, JPG/JPEG, PNG, BMP, TIFF, WEBP (max 10 MB; old `.doc` is not supported, save it as DOCX or PDF).
+- See matches with matched and missing skills; approve sharing a resume with a company. Close-but-not-confirmed results show as **Possible match**: you may still share your resume, the company then reviews it themselves.
 - Get shortlist details with an AI interview-prep guide, or specific improvement feedback after a rejection.
 - AI career assistant and live notifications.
 
 **Companies**
-- Upload requirement documents (one file can describe several roles); edit roles and rules (level, track, stacks, CGPA, branch, passing year, backlogs).
-- See only approved candidates, download the resume PDF, shortlist with a form or reject with a reason.
+- Upload requirement documents (same file formats as resumes; one file can describe several roles); edit roles and rules (level, experience range min/max with an optional "reject below minimum", track, stacks, CGPA, branch, passing year, backlogs).
+- See only approved candidates (eligible ones first, then *Possible matches* that need your own review), download the resume PDF, shortlist with a form or reject with a reason.
 - AI assistant that explains the dashboard.
 
 **Accounts and login**
@@ -33,8 +33,9 @@ An AI-assisted hiring platform for tech roles (fresher and experienced). Applica
 2. A company uploads a requirement document; roles and requirements are extracted and can be edited.
 3. The matching agent applies a **target-role gate** (track + stack, in SQL), then scores the pair with a small logistic model on semantic features (MiniLM embeddings), then applies **campus rules** as hard gates. **No LLM takes part in the decision**: it is explainable, repeatable and immune to prompt injection inside resumes.
 4. Unknown academic values never fail a candidate; they are flagged as unverified.
-5. Eligible applicants approve sharing; only then does the company see the resume. An approved resume is frozen for that match.
-6. Matching is efficient by design: best-first batches, early stop, skip of unchanged pairs (`inputHash`), in-process caches.
+5. The result is a **verdict**: `eligible`, `review` (a *possible match*: just below the bar, inside a narrow band) or `not_eligible`. Hard gates (campus rules, strict minimum experience) can never produce `review`. The company sets an experience range per role (min, optional max, optional strict minimum); a candidate over the max is rejected, below the min is rejected when strict, otherwise only a big shortfall counts. Unknown experience is flagged, never rejected. Internships do not count as work experience.
+6. Applicants with an `eligible` or `review` verdict may approve sharing; only then does the company see the resume. An approved resume is frozen for that match.
+7. Matching is efficient by design: best-first batches, early stop, skip of unchanged pairs (`inputHash`), in-process caches.
 
 ## Architecture
 
@@ -144,6 +145,12 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - Service-to-service calls carry `x-internal-key` (`INTERNAL_API_KEY`); Nginx returns 404 for `/internal/`.
 - Applicants never receive recruiter-only fields (`rejectReason`, `decidedBy`, scoring breakdown); companies only see candidates who approved sharing.
 - Never commit `.env` files; the `Secret Scan` workflow checks every push.
+- Browser access (CORS): every API only answers browsers from `WEB_URL` (comma separated for several). If `WEB_URL` is not set, any origin is allowed (local development only). `docker-compose.yml` sets it from `PUBLIC_URL`.
+- Nginx limits requests per IP on `/auth/` (20/s, burst 40) and `/chat/` (5/s, burst 10) and answers 429 beyond that; the real login and sign-up limits live in auth-service.
+- The web app sends `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` headers. There is no CSP yet.
+- Tokens are kept in the browser's localStorage (zustand persist). Never render user text as HTML (`dangerouslySetInnerHTML`).
+- Logout (and signing in as a different user, or another tab doing either) clears the whole client query cache, so one user never sees the previous user's pages on a shared browser.
+- Dependencies: run `pnpm audit --prod` before a release. `pnpm-workspace.yaml` `overrides` pin patched versions of transitive packages (multer, proxy-addr, follow-redirects, sharp, mysql2, source-map-js, fast-uri, deepmerge-ts); remove an override once the parent package ships the fix. Rebuild Docker images with `docker compose build --pull --no-cache` before a release so base-image patches (Node, nginx) come in.
 - 2FA secrets are encrypted at rest (`TWO_FACTOR_ENCRYPTION_KEY`, 32 bytes hex). Back this key up like `JWT_SECRET`: if it is lost, every user with 2FA must be reset by an admin.
 - Google sign-in verifies the ID token on the server (`GOOGLE_CLIENT_ID`); it is available only while registration is `open`.
 - Lost every admin authenticator and recovery code (and no other admin can reset it)? Turn 2FA off for that account directly in the database:
@@ -158,6 +165,9 @@ See `e2e/README.md` for what the end-to-end suite covers.
 - [ ] Groq key and plan limits sized for your traffic
 - [ ] Secrets only in env files; admin password changed after first login
 - [ ] Every app answers `GET /health`; `ENABLE_DOCS` is not `true`
+- [ ] `WEB_URL` / `PUBLIC_URL` set to the real site address (it is also the CORS allow-list)
+- [ ] `pnpm audit --prod` checked and Docker images rebuilt with `--pull --no-cache`
+- [ ] Matching: `ELIGIBILITY_THRESHOLD` (0.40) and `REVIEW_BAND_WIDTH` (0.10) set; database backfills run (`matching-results-service/prisma/backfill_verdict.sql`, `job-service/prisma/backfill_fresher_max_experience.sql`)
 - [ ] Daily jobs run: resume cleanup, notification expiry
 - [ ] `TWO_FACTOR_ENCRYPTION_KEY` generated (`openssl rand -hex 32`) and backed up
 - [ ] Google sign-in (optional): OAuth client created, your real domain added under *Authorized JavaScript origins*, consent screen published (not "Testing"), `GOOGLE_CLIENT_ID` set; leave it empty to keep Google off

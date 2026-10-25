@@ -38,8 +38,8 @@ pnpm --filter web lint
 |---|---|
 | `app/` | App Router pages and layouts |
 | `components/` | UI pieces by area (`ui`, `resume`, `matches`, `jobs`, `profile`, `layout`, ...) |
-| `lib/` | `apiClient.ts` (axios, bearer token, single refresh on 401), `socket.ts`, `queryClient.ts`, `schemas/` (zod), `hooks/`, helpers |
-| `store/` | `authStore.ts` (Zustand) |
+| `lib/` | `apiClient.ts` (axios, bearer token, single refresh on 401), `socket.ts`, `queryClient.ts`, `uploadTypes.ts` (allowed upload files, must match the backend `ALLOWED_EXTENSIONS`), `matchReason.ts` (verdict helpers: *Possible match*), `schemas/` (zod), `hooks/`, helpers |
+| `store/` | `authStore.ts` (Zustand). `logout()` / signing in as another user / another tab changing the session also clears the React Query cache (`staleTime` is `Infinity`, query keys are not per user) |
 | `types/` | shared TypeScript types (match the contracts in `00_TEAM_PLAN_AND_CONTRACTS.md`) |
 
 Errors from the API are Nest JSON (`{ statusCode, message, error }`); the web shows `message` (`lib/errors.ts`).

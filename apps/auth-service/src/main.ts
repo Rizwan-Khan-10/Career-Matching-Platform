@@ -6,13 +6,14 @@ import { AppModule } from './app.module';
 import { SeedService } from './seed/seed.service';
 import { JsonLogger } from './common/json-logger';
 import { requestIdMiddleware } from './common/request-id.middleware';
+import { webCorsOptions } from './common/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   app.useLogger(new JsonLogger());
   app.use(requestIdMiddleware);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.enableCors();
+  app.enableCors(webCorsOptions()); // WEB_URL only (any origin when unset: local dev)
 
   // Behind nginx set TRUST_PROXY_HOPS=1 so the login lock sees the real client IP (X-Forwarded-For).
   // Leave it unset when clients reach the service directly, otherwise the header could be spoofed.

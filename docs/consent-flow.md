@@ -17,6 +17,8 @@ edits after confirming publish resume.updated; edits before confirming publish n
 
 ## Match → approval → company
 
+Verdicts: `eligible` (e-mail "you're eligible" is sent), `review` (possible match: no e-mail, visible on the applicant's Matches page and approvable) and `not_eligible`. `Match.eligible` is true only for `eligible`; `Match.verdict` carries the three-way result.
+
 ```
 matching-agent ──match.computed──▶ results-service      Match(applicantStatus = pending)
                ──match.scanned───▶ results-service      RoleScan row for EVERY evaluated pair (dashboard numbers)
@@ -81,7 +83,8 @@ Company → Jobs → **Stop job** (any time) → `POST /jobs/:id/stop` sets `Job
 ## Dashboard numbers
 * **Scanned** = distinct applicants the matching-agent evaluated against the job(s) (eligible or not)
 * **Matched** = of those, eligible
-* **Applied** = of those, the applicant approved sharing their resume (approved AND eligible)
+* **Applied** = of those, the applicant approved sharing their resume (approved AND eligible, or approved AND a *possible match*)
+* Possible matches (`verdict = review`) are NOT counted in **Matched**; they only appear in the company's candidate list after the applicant approved them
 * **Shortlisted** = recruiter pressed Shortlist
 * **Rejected** = recruiter pressed Reject
 
@@ -96,7 +99,7 @@ Numbers appear after the matching-agent has (re)scanned: for data that existed b
 ## Rules enforced on the server (not just in the UI)
 * Company sees a match / applicant name / resume **only after** `applicantStatus = approved` (`/matches/role/:id`,
   `/applicants/summaries`, `/resumes/:id/pdf` all check it, and that the role belongs to that company).
-* Only an **eligible** match can be approved. Approving twice is a no-op (no second e-mail). Approval can't be undone
+* Only an **eligible** match or a **possible match** (`verdict = review`) can be approved. A possible match is shown to the applicant as "possible, not confirmed" and to the company with a *Possible match* badge, because nobody (not even the engine) confirmed it. The company list shows eligible first, then possible matches, each best score first. Approving twice is a no-op (no second e-mail). Approval can't be undone
   (the company already has access); "declined" can be changed to "approved" later.
 * A resume that cannot be converted → `resumeStatus = failed`; applicant sees a "Try again" button.
 * The company gets exactly the resume the match was computed on (`Match.resumeId`), not a newer upload (frozen after approval, see above).

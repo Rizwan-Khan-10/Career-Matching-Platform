@@ -189,7 +189,7 @@ Stores match results and runs the consent and decision flow.
 ### 5.6 notification-service (:3006)
 Consumes the domain streams, writes in-app notifications and runs a BullMQ worker for queue `email-queue` that sends the four email types (section 9.4),
 resolving the recipient via `auth-service /internal/users/:id/email`. Transport: Gmail (Nodemailer) or Resend via `EMAIL_PROVIDER`;
-`EMAIL_DEV_REDIRECT_TO` sends all dev mail to one inbox. All dynamic text is HTML-escaped.
+`EMAIL_DEV_REDIRECT_TO` is a dev fallback inbox: mail goes to the real recipient first and is redirected there only if that delivery fails. All dynamic text is HTML-escaped.
 It is the single place that decides in-app vs email (section 9.4).
 
 ### 5.7 websocket-gateway (:3007)

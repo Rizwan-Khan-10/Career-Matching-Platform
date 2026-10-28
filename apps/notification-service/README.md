@@ -51,7 +51,7 @@ Daily job (`CLEANUP_*`) deletes rows whose `expiresAt` has passed, in batches, u
 | `EMAIL_PROVIDER` | yes | `gmail` or `resend` | transport |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `GMAIL_FROM_NAME` | gmail only | | Gmail SMTP |
 | `RESEND_API_KEY`, `EMAIL_FROM` | resend only | | Resend |
-| `EMAIL_DEV_REDIRECT_TO` | no | `you@example.com` | send ALL mail to one inbox |
+| `EMAIL_DEV_REDIRECT_TO` | no | `you@example.com` | fallback inbox: used only when delivery to the real recipient fails (transient errors are retried, not redirected) |
 | `CLEANUP_ENABLED` / `CLEANUP_INTERVAL_HOURS` / `CLEANUP_BATCH_SIZE` | no | `true` / `24` / `1000` | daily clean-up |
 | `ENABLE_DOCS` | no | `false` | Swagger at `/docs` |
 | `LOG_LEVEL` | no | `info` | JSON logs (`requestId` included) |

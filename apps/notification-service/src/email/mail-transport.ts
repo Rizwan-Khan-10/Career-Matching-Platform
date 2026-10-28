@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import * as nodemailer from 'nodemailer';
 
@@ -32,7 +33,14 @@ class ResendTransport implements MailTransport {
   async send(p: MailPayload): Promise<void> {
     // Resend does not throw on API errors, it RETURNS them -> turn them into exceptions
     const { error } = await this.client.emails.send({ from: p.from || this.from, to: p.to, subject: p.subject, html: p.html });
-    if (error) throw new Error(`Resend: ${error.message ?? JSON.stringify(error)}`);
+    if (error) {
+      const status = (error as { statusCode?: number | null }).statusCode ?? undefined;
+      const name = (error as { name?: string }).name;
+      throw Object.assign(new Error(`Resend: ${error.message ?? JSON.stringify(error)}`), {
+        // rate limit / Resend-side outage: the address itself is fine, so retrying later makes sense
+        transient: status === 429 || (status !== undefined && status >= 500) || name === 'rate_limit_exceeded' || name === 'application_error' || name === 'internal_server_error',
+      });
+    }
   }
 }
 
@@ -69,15 +77,50 @@ class GmailTransport implements MailTransport {
   }
 }
 
+const logger = new Logger('MailTransport');
+
+const escHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 /**
- * Dev safety net: test accounts usually have fake addresses. With EMAIL_DEV_REDIRECT_TO set, EVERY mail goes to that one
- * inbox instead (subject is prefixed with the original recipient) - nothing bounces, nobody real gets test mails.
+ * True when the failure says nothing about the recipient address (network down, timeout, provider 4xx/5xx-outage,
+ * rate limit). Those must NOT fall back: the job should fail so BullMQ retries the real recipient later.
  */
-function withDevRedirect(inner: MailTransport, redirectTo: string): MailTransport {
+export function isTransientMailError(err: unknown): boolean {
+  const e = err as { transient?: boolean; code?: string; responseCode?: number };
+  if (e?.transient) return true;
+  if (typeof e?.responseCode === 'number' && e.responseCode >= 400 && e.responseCode < 500) return true; // SMTP 4xx = "try again later"
+  return ['ETIMEDOUT', 'ETIMEOUT', 'ECONNECTION', 'ECONNRESET', 'ECONNREFUSED', 'ESOCKET', 'EDNS', 'EAI_AGAIN'].includes(e?.code ?? '');
+}
+
+/**
+ * Dev safety net (EMAIL_DEV_REDIRECT_TO): the mail ALWAYS goes to the real recipient first. Only when delivery to that
+ * address is refused (invalid / rejected / unverified-recipient errors) is it sent to the fallback inbox instead, with the
+ * original recipient and the reason in the subject and at the top of the mail - so nothing gets lost and no test
+ * account has to be real. Transient failures are re-thrown (BullMQ retries); if the fallback fails too, that throws as well.
+ *
+ * Note for Gmail SMTP: an address that does not exist is often accepted by Gmail and only bounces afterwards by e-mail
+ * to the sender, which cannot be detected here. Only errors reported at send time trigger the fallback.
+ */
+export function withFallback(inner: MailTransport, fallbackTo: string): MailTransport {
   return {
-    name: `${inner.name} -> all mail redirected to ${redirectTo}`,
+    name: `${inner.name} (falls back to ${fallbackTo} if the real recipient fails)`,
     verify: inner.verify ? () => inner.verify!() : undefined,
-    send: (p) => inner.send({ ...p, to: redirectTo, subject: `[to: ${p.to}] ${p.subject}` }),
+    async send(p) {
+      // a mail that is already addressed to the fallback inbox has nothing left to fall back to
+      if (p.to.trim().toLowerCase() === fallbackTo.toLowerCase()) return inner.send(p);
+      try {
+        await inner.send(p);
+      } catch (err) {
+        if (isTransientMailError(err)) throw err;
+        const reason = (err as Error)?.message ?? String(err);
+        logger.warn(`mail to ${p.to} failed (${reason}); sending to fallback ${fallbackTo} instead`);
+        const note =
+          `<div style="font-family:Arial,sans-serif;font-size:13px;background:#fff8e1;border:1px solid #f0c36d;padding:10px;margin-bottom:16px">` +
+          `This mail could not be delivered to <b>${escHtml(p.to)}</b> and was sent to the fallback inbox instead.<br>` +
+          `Reason: ${escHtml(reason)}</div>`;
+        await inner.send({ ...p, to: fallbackTo, subject: `[failed for: ${p.to}] ${p.subject}`, html: note + p.html });
+      }
+    },
   };
 }
 
@@ -89,5 +132,5 @@ export function createMailTransport(env: Env = process.env): MailTransport {
   else throw new Error(`EMAIL_PROVIDER must be "gmail" or "resend", got "${provider}"`);
 
   const redirect = env.EMAIL_DEV_REDIRECT_TO?.trim();
-  return redirect ? withDevRedirect(transport, redirect) : transport;
+  return redirect ? withFallback(transport, redirect) : transport;
 }

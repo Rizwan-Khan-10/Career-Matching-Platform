@@ -51,8 +51,8 @@ Inside docker compose (task 4.13) use `E2E_BASE_URL=http://nginx`, `E2E_REDIS_UR
 
 - **Cloudinary deletion** (checkpoint 6): the suite has no Cloudinary access. It checks the DB row and the API.
   Manually: after a replace, the old original and PDF must be gone from the Cloudinary media library.
-- **E-mails** (checkpoints 2, 8): there is no mail catcher. Manually: with `EMAIL_DEV_REDIRECT_TO` set, the invite,
-  "candidate ready" and "shortlisted" e-mails arrive. The in-app notifications are asserted.
+- **E-mails** (checkpoints 2, 8): there is no mail catcher. Manually: with `EMAIL_DEV_REDIRECT_TO` set (fallback inbox for test accounts with fake addresses), the invite,
+  "candidate ready" and "shortlisted" e-mails arrive there. The in-app notifications are asserted.
 
 ## Troubleshooting
 

@@ -93,7 +93,7 @@ Useful commands:
 | Stop and wipe all data | `docker compose --env-file .env.compose down -v` |
 | End-to-end suite | `docker compose --env-file .env.compose --profile e2e run --rm e2e` |
 
-Notes: every service applies its own schema on start; only Nginx publishes a port (set `HTTP_PORT` and `PUBLIC_URL` if 80 is busy; `PUBLIC_URL` is baked into the web build, so rebuild after changing it). Set `EMAIL_DEV_REDIRECT_TO` to your own address in development so every email goes to you.
+Notes: every service applies its own schema on start; only Nginx publishes a port (set `HTTP_PORT` and `PUBLIC_URL` if 80 is busy; `PUBLIC_URL` is baked into the web build, so rebuild after changing it). Set `EMAIL_DEV_REDIRECT_TO` to your own address in development as a fallback: emails go to the real recipient first and only land in your inbox if sending to that address fails.
 
 ## Run locally (without Docker for the apps)
 

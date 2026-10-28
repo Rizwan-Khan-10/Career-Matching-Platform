@@ -73,7 +73,7 @@ class TaxonomyTest(unittest.TestCase):
 
     def test_every_contract_key_is_written(self):
         keys = set(self.one().model_dump())
-        for key in ("title", "summary", "requiredSkills", "preferredSkills", "minExperienceYears", "maxExperienceYears", "qualifications",
+        for key in ("title", "summary", "requiredSkills", "preferredSkills", "minExperienceYears", "maxExperienceYears", "salaryMin", "salaryMax", "salaryCurrency", "salaryPeriod", "qualifications",
                     "responsibilities", "level", "track", "stacks", "minCgpa", "allowedBranches", "passingYears",
                     "maxBacklogs"):
             self.assertIn(key, keys)
@@ -90,6 +90,29 @@ class MaxExperienceTest(unittest.TestCase):
         self.assertIsNone(JobRoleData(minExperienceYears=3, maxExperienceYears=1).maxExperienceYears)
         self.assertEqual(JobRoleData(minExperienceYears=2, maxExperienceYears="2-4 years").maxExperienceYears, 4.0)
         self.assertIsNone(JobRoleData().maxExperienceYears)
+
+
+class SalaryTest(unittest.TestCase):
+    def test_amounts_only_when_clearly_a_number(self):
+        for raw, expected in [(600000, 600000.0), ("6,00,000", 600000.0), ("450000.5", 450000.5), (0, None), (-5, None),
+                              ("4-6 LPA", None), ("competitive", None), (None, None), (True, None), (5e12, None)]:
+            self.assertEqual(jn.coerce_salary(raw), expected, raw)
+
+    def test_currency_and_period(self):
+        self.assertEqual(jn.coerce_salary_currency("inr"), "INR")
+        self.assertEqual(jn.coerce_salary_currency("$"), "USD")
+        self.assertIsNone(jn.coerce_salary_currency("rupees"))
+        self.assertEqual(jn.coerce_salary_period("Annual"), "year")
+        self.assertEqual(jn.coerce_salary_period("per month"), "month")
+        self.assertIsNone(jn.coerce_salary_period("week"))
+
+    def test_role_model_cleans_the_salary(self):
+        from app.models.jd import JobRoleData
+        r = JobRoleData(salaryMin="400,000", salaryMax=600000)
+        self.assertEqual((r.salaryMin, r.salaryMax, r.salaryCurrency, r.salaryPeriod), (400000.0, 600000.0, "INR", "year"))
+        self.assertIsNone(JobRoleData(salaryMin=900000, salaryMax=300000).salaryMax)          # misread max dropped
+        none = JobRoleData(salaryCurrency="USD", salaryPeriod="month")                          # no amount -> no currency / period
+        self.assertEqual((none.salaryMin, none.salaryCurrency, none.salaryPeriod), (None, None, None))
 
 
 class LevelTest(unittest.TestCase):

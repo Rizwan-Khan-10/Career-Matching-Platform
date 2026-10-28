@@ -8,7 +8,7 @@ import { SkillsInput } from '@/components/ui/SkillsInput';
 import { RoleStackPicker } from '@/components/jobs/RoleStackPicker';
 import { EligibilityFields } from '@/components/jobs/EligibilityFields';
 import { jobRoleSchema, type JobRoleValues } from '@/lib/schemas/job';
-import { experienceWarning, LEVEL_LABELS, onLevelChange, toFormState, toPayload, type RoleFormState } from '@/lib/roleForm';
+import { experienceWarning, LEVEL_LABELS, onLevelChange, SALARY_CURRENCY_OPTIONS, SALARY_PERIOD_OPTIONS, toFormState, toPayload, type RoleFormState } from '@/lib/roleForm';
 import type { JobRoleRequirements } from '@/types/job';
 
 const selectClass =
@@ -140,6 +140,56 @@ export function RoleForm({
                     </span>
                 </span>
             </label>
+
+            <div>
+                <label className="text-xs text-ink-grey mb-1.5 block">Salary offered (optional, shown to applicants)</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        aria-label="Minimum salary"
+                        value={form.salaryMin}
+                        onChange={(e) => update({ salaryMin: e.target.value })}
+                        placeholder="Min, e.g. 400000"
+                    />
+                    <Input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        aria-label="Maximum salary"
+                        value={form.salaryMax}
+                        onChange={(e) => update({ salaryMax: e.target.value })}
+                        placeholder="Max, e.g. 600000"
+                    />
+                    <select
+                        aria-label="Salary currency"
+                        value={form.salaryCurrency}
+                        onChange={(e) => update({ salaryCurrency: e.target.value as RoleFormState['salaryCurrency'] })}
+                        className={selectClass}
+                    >
+                        {SALARY_CURRENCY_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                                {o.label}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        aria-label="Salary period"
+                        value={form.salaryPeriod}
+                        onChange={(e) => update({ salaryPeriod: e.target.value as RoleFormState['salaryPeriod'] })}
+                        className={selectClass}
+                    >
+                        {SALARY_PERIOD_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                                {o.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+                <p className="text-xs text-ink-grey mt-1">Full amounts, e.g. 600000 for 6 LPA. Leave empty to not show a salary. It never affects matching.</p>
+                <FieldError message={errors.salaryMin ?? errors.salaryMax} />
+            </div>
 
             <div>
                 <label className="text-xs text-ink-grey mb-1.5 block">Qualifications</label>

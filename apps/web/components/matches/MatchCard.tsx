@@ -5,6 +5,8 @@ import { SkillChips } from '@/components/matches/SkillChips';
 import { ConsentSection } from '@/components/matches/ConsentSection';
 import { ScoreBadge, SCORE_MEANING } from '@/components/matches/ScoreBadge';
 import { matchGroup, plainReason } from '@/lib/matchReason';
+import { describeSalary } from '@/lib/roleForm';
+import type { SalaryCurrency, SalaryPeriod } from '@/types/job';
 import { UnverifiedRulesNote } from '@/components/matches/UnverifiedRulesNote';
 import { ShortlistCard } from '@/components/matches/ShortlistCard';
 import { RejectionCard } from '@/components/matches/RejectionCard';
@@ -30,6 +32,9 @@ export function MatchCard({
     onOpenProfile: () => void;
 }) {
     const badge = badgeFor(match);
+    const salary = match.salary
+        ? describeSalary({ salaryMin: match.salary.min, salaryMax: match.salary.max, salaryCurrency: match.salary.currency as SalaryCurrency, salaryPeriod: match.salary.period as SalaryPeriod })
+        : null;
 
     return (
         <div className="bg-paper-raised border border-hairline rounded-xl p-4">
@@ -40,6 +45,7 @@ export function MatchCard({
                         {match.companyName}
                         {match.companyIndustry ? ` · ${match.companyIndustry}` : ''}
                     </p>
+                    {salary && <p className="text-xs text-ink-grey">Salary: {salary}</p>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                         <ScoreBadge score={match.score} />
                         <span className="text-xs text-ink-grey">{SCORE_MEANING}</span>

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Put, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CompaniesService } from './companies.service';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { ShortlistDefaultsDto } from './dto/shortlist-defaults.dto';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -22,6 +23,18 @@ export class CompaniesController {
   @Patch('me')
   updateMe(@Req() req: AuthenticatedRequest, @Body() dto: UpdateCompanyDto) {
     return this.service.update(req.user.userId, dto);
+  }
+
+  @Roles('COMPANY')
+  @Get('me/shortlist-defaults')
+  getShortlistDefaults(@Req() req: AuthenticatedRequest) {
+    return this.service.getShortlistDefaults(req.user.userId);
+  }
+
+  @Roles('COMPANY')
+  @Put('me/shortlist-defaults')
+  setShortlistDefaults(@Req() req: AuthenticatedRequest, @Body() dto: ShortlistDefaultsDto) {
+    return this.service.setShortlistDefaults(req.user.userId, dto);
   }
 
   @Roles('COMPANY')

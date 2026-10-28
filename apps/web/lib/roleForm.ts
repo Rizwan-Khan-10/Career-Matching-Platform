@@ -1,4 +1,4 @@
-import type { JobRoleRequirements, RoleLevel } from '@/types/job';
+import type { JobRoleRequirements, RoleLevel, SalaryCurrency, SalaryPeriod } from '@/types/job';
 
 export const LEVEL_LABELS: Record<RoleLevel, string> = {
     fresher: 'Fresher',
@@ -14,6 +14,10 @@ export interface RoleFormState {
     minExperienceYears: string;
     maxExperienceYears: string; // '' = no upper limit
     strictMinExperience: boolean;
+    salaryMin: string; // '' = not shown
+    salaryMax: string;
+    salaryCurrency: SalaryCurrency;
+    salaryPeriod: SalaryPeriod;
     qualifications: string;
     level: string; // '' = not set
     track: string; // '' = no filter
@@ -38,6 +42,10 @@ export function toFormState(initial?: {
         minExperienceYears: text(r?.minExperienceYears),
         maxExperienceYears: text(r?.maxExperienceYears),
         strictMinExperience: r?.strictMinExperience === true,
+        salaryMin: text(r?.salaryMin),
+        salaryMax: text(r?.salaryMax),
+        salaryCurrency: r?.salaryCurrency ?? 'INR',
+        salaryPeriod: r?.salaryPeriod ?? 'year',
         qualifications: r?.qualifications ?? '',
         level: r?.level ?? '',
         track: r?.track ?? '',
@@ -92,6 +100,11 @@ export function toPayload(form: RoleFormState) {
         maxExperienceYears: numberOrNull(form.maxExperienceYears),
         // only meaningful with a minimum; null = "not set" so clearing it really removes it
         strictMinExperience: form.strictMinExperience && form.minExperienceYears.trim() !== '' ? true : null,
+        // currency / period only travel with an amount; no amount = the whole salary is cleared on the server
+        salaryMin: numberOrNull(form.salaryMin),
+        salaryMax: numberOrNull(form.salaryMax),
+        salaryCurrency: form.salaryMin.trim() !== '' || form.salaryMax.trim() !== '' ? form.salaryCurrency : null,
+        salaryPeriod: form.salaryMin.trim() !== '' || form.salaryMax.trim() !== '' ? form.salaryPeriod : null,
         qualifications: form.qualifications.trim() || null,
         level: form.level || null,
         track: form.track || null,
@@ -127,4 +140,40 @@ export function describeExperience(req: JobRoleRequirements | null | undefined):
     else if (max != null) text = `Up to ${yrs(max)} experience`;
     else return null;
     return min != null && min > 0 && req?.strictMinExperience ? `${text} (minimum required)` : text;
+}
+
+
+export const SALARY_CURRENCY_OPTIONS: { value: SalaryCurrency; label: string }[] = [
+    { value: 'INR', label: '₹ INR' },
+    { value: 'USD', label: '$ USD' },
+    { value: 'EUR', label: '€ EUR' },
+    { value: 'GBP', label: '£ GBP' },
+];
+export const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; label: string }[] = [
+    { value: 'year', label: 'per year' },
+    { value: 'month', label: 'per month' },
+];
+
+const SYMBOL: Record<SalaryCurrency, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+const trim = (n: number) => String(Number(n.toFixed(2))); // 4 -> "4", 4.5 -> "4.5"
+
+/**
+ * "₹4-6 LPA", "From ₹4.5 LPA", "Up to $5,000 per month"; null when no salary is set.
+ * Indian yearly amounts of a lakh or more are shown as LPA, everything else as full numbers.
+ */
+export function describeSalary(req: JobRoleRequirements | null | undefined): string | null {
+    const min = req?.salaryMin ?? null;
+    const max = req?.salaryMax ?? null;
+    if (min == null && max == null) return null;
+    const currency = req?.salaryCurrency ?? 'INR';
+    const period = req?.salaryPeriod ?? 'year';
+    const symbol = SYMBOL[currency];
+
+    const lpa = currency === 'INR' && period === 'year' && [min, max].every((v) => v == null || v >= 100000);
+    const amount = (n: number) => (lpa ? trim(n / 100000) : n.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US'));
+    const suffix = lpa ? ' LPA' : period === 'month' ? ' per month' : ' per year';
+
+    if (min != null && max != null) return min === max ? `${symbol}${amount(min)}${suffix}` : `${symbol}${amount(min)}-${amount(max)}${suffix}`;
+    if (min != null) return `From ${symbol}${amount(min)}${suffix}`;
+    return `Up to ${symbol}${amount(max as number)}${suffix}`;
 }

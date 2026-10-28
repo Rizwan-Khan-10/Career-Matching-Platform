@@ -4,6 +4,8 @@ import {
 import { ALL_STACK_IDS, TRACK_IDS } from '../../taxonomy/taxonomy';
 
 export const ROLE_LEVELS = ['fresher', 'experienced', 'any'] as const;
+export const SALARY_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'] as const;
+export const SALARY_PERIODS = ['year', 'month'] as const;
 
 /**
  * Every key of contract 4.1. Optional keys: absent or null = "rule not set".
@@ -52,6 +54,28 @@ export class CreateJobRoleDto {
     @IsOptional()
     @IsBoolean()
     strictMinExperience?: boolean | null;
+
+    // Salary the company offers (optional, shown to applicants, never used for matching). Either bound alone is fine
+    // ("from X" / "up to Y"). Amounts are whole money units per period, e.g. 600000 INR per year.
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(1000000000)
+    salaryMin?: number | null;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(1000000000)
+    salaryMax?: number | null;
+
+    @IsOptional()
+    @IsIn(SALARY_CURRENCIES as unknown as string[])
+    salaryCurrency?: string | null;
+
+    @IsOptional()
+    @IsIn(SALARY_PERIODS as unknown as string[])
+    salaryPeriod?: string | null;
 
     @IsOptional()
     @IsString()

@@ -21,6 +21,17 @@ function normalizeRequirements(req: Record<string, any>): Record<string, any> {
     for (const key of EMPTY_MEANS_UNSET) {
         if (Array.isArray(out[key]) && out[key].length === 0) out[key] = null;
     }
+    // salary: currency / period only make sense with an amount (default INR per year); no amount = all four cleared
+    const hasSalary = out.salaryMin != null || out.salaryMax != null;
+    if (hasSalary) {
+        out.salaryCurrency = out.salaryCurrency ?? 'INR';
+        out.salaryPeriod = out.salaryPeriod ?? 'year';
+    } else if ('salaryMin' in out || 'salaryMax' in out || 'salaryCurrency' in out || 'salaryPeriod' in out) {
+        out.salaryMin = null;
+        out.salaryMax = null;
+        out.salaryCurrency = null;
+        out.salaryPeriod = null;
+    }
     return out;
 }
 
@@ -30,6 +41,19 @@ export function experienceBandError(min: unknown, max: unknown): string | null {
         return `maxExperienceYears (${max}) cannot be below minExperienceYears (${min})`;
     }
     return null;
+}
+
+/** Salary range: max must not be below min (both optional). */
+export function salaryBandError(min: unknown, max: unknown): string | null {
+    if (typeof min === 'number' && typeof max === 'number' && max < min) {
+        return `salaryMax (${max}) cannot be below salaryMin (${min})`;
+    }
+    return null;
+}
+
+function assertValidSalaryBand(requirements: Record<string, any>) {
+    const error = salaryBandError(requirements.salaryMin, requirements.salaryMax);
+    if (error) throw new BadRequestException(error);
 }
 
 function assertValidExperienceBand(requirements: Record<string, any>) {
@@ -91,6 +115,7 @@ export class JobsService {
         const posting = await this.assertOwnsPosting(jobPostingId, companyId);
         assertValidTarget(dto.track, dto.stacks);
         assertValidExperienceBand({ minExperienceYears: dto.minExperienceYears, maxExperienceYears: dto.maxExperienceYears });
+        assertValidSalaryBand({ salaryMin: dto.salaryMin, salaryMax: dto.salaryMax });
         const role = await this.prisma.jobRole.create({
             data: {
                 jobPostingId,
@@ -103,6 +128,10 @@ export class JobsService {
                     minExperienceYears: dto.minExperienceYears ?? null,
                     maxExperienceYears: dto.maxExperienceYears ?? null,       // null = no upper limit
                     strictMinExperience: dto.strictMinExperience ?? null,
+                    salaryMin: dto.salaryMin ?? null,
+                    salaryMax: dto.salaryMax ?? null,
+                    salaryCurrency: dto.salaryCurrency ?? null,
+                    salaryPeriod: dto.salaryPeriod ?? null,
                     qualifications: dto.qualifications ?? null,
                     responsibilities: dto.responsibilities ?? [],
                     level: dto.level ?? null,
@@ -133,6 +162,7 @@ export class JobsService {
         if ('track' in changes || 'stacks' in changes) assertValidTarget(merged.track, merged.stacks);
         // same idea for the experience band: checked on the merged values, only when this request touches them
         if ('minExperienceYears' in changes || 'maxExperienceYears' in changes) assertValidExperienceBand(merged);
+        if ('salaryMin' in changes || 'salaryMax' in changes) assertValidSalaryBand(merged);
 
         const updated = await this.prisma.jobRole.update({
             where: { id: roleId },

@@ -49,6 +49,40 @@ def coerce_max_years(v):
     return None
 
 
+def coerce_salary(v):
+    """A salary amount in whole money units (the prompt asks for full numbers): 600000, '6,00,000', '600000.0' -> 600000.0.
+    Zero, negative, text without digits or absurd values (> 1e9) -> None. Ranges / 'LPA' texts are NOT guessed: None."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        n = float(v)
+    else:
+        s = str(v).strip().replace(",", "").replace("_", "")
+        if not re.fullmatch(r"\d+(?:\.\d+)?", s):
+            return None
+        n = float(s)
+    return n if 0 < n <= 1_000_000_000 else None
+
+
+def coerce_salary_currency(v):
+    """'INR' | 'USD' | 'EUR' | 'GBP' (case-insensitive, a few symbols); anything else -> None."""
+    if v is None:
+        return None
+    s = str(v).strip().upper()
+    s = {"RS": "INR", "₹": "INR", "$": "USD", "€": "EUR", "£": "GBP"}.get(s, s)
+    return s if s in ("INR", "USD", "EUR", "GBP") else None
+
+
+def coerce_salary_period(v):
+    """'year' | 'month' (also 'annual', 'yearly', 'per month' ...); anything else -> None."""
+    s = str(v or "").strip().lower()
+    if s in ("year", "yearly", "annual", "annually", "per year", "per annum", "pa", "p.a.", "lpa"):
+        return "year"
+    if s in ("month", "monthly", "per month", "pm", "p.m."):
+        return "month"
+    return None
+
+
 def coerce_cgpa(v):
     """Minimum CGPA on the 10-point scale (contract §4.3): '7.5' -> 7.5, '7/10' -> 7.0, '3.0/4' -> 7.5,
     '60%' or 60 -> 6.0. Unusable (0, > 100, nonsense) -> None."""

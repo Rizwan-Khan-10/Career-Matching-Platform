@@ -2,7 +2,7 @@ import {
     ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, MaxLength, Min,
 } from 'class-validator';
 import { ALL_STACK_IDS, TRACK_IDS } from '../../taxonomy/taxonomy';
-import { ROLE_LEVELS } from './create-job-role.dto';
+import { ROLE_LEVELS, SALARY_CURRENCIES, SALARY_PERIODS } from './create-job-role.dto';
 
 // Note: IsOptional() lets BOTH undefined ("don't touch") and null ("clear this field") through.
 // Same limits as CreateJobRoleDto. The track/stacks pair is checked against the merged role in JobsService.
@@ -49,6 +49,28 @@ export class UpdateJobRoleDto {
     @IsOptional()
     @IsBoolean()
     strictMinExperience?: boolean | null;
+
+    // Salary the company offers (optional, shown to applicants, never used for matching). Either bound alone is fine
+    // ("from X" / "up to Y"). Amounts are whole money units per period, e.g. 600000 INR per year.
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(1000000000)
+    salaryMin?: number | null;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(1000000000)
+    salaryMax?: number | null;
+
+    @IsOptional()
+    @IsIn(SALARY_CURRENCIES as unknown as string[])
+    salaryCurrency?: string | null;
+
+    @IsOptional()
+    @IsIn(SALARY_PERIODS as unknown as string[])
+    salaryPeriod?: string | null;
 
     @IsOptional()
     @IsString()

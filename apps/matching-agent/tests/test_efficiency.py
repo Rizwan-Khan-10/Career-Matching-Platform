@@ -32,6 +32,11 @@ class InputHashTest(unittest.TestCase):
                      {"requirements": {"requiredSkills": ["Go"]}}, {"model_version": "m2"}, {"academic": {"cgpa": 7.0}}):
             self.assertNotEqual(self.h(), self.h(**over), over)
 
+    def test_salary_never_changes_the_hash(self):
+        with_salary = {"requiredSkills": ["Java"], "salaryMin": 400000, "salaryMax": 600000, "salaryCurrency": "INR", "salaryPeriod": "year"}
+        self.assertEqual(self.h(), self.h(requirements=with_salary))
+        self.assertEqual(self.h(requirements=with_salary), self.h(requirements={**with_salary, "salaryMax": 900000}))
+
     def test_academic_values_only_matter_when_given(self):
         self.assertEqual(self.h(), self.h(academic=None))
         self.assertNotEqual(self.h(academic={"cgpa": 7.0}), self.h(academic={"cgpa": 8.0}))

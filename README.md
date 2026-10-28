@@ -13,6 +13,8 @@ An AI-assisted hiring platform for tech roles (fresher and experienced). Applica
 **Companies**
 - Upload requirement documents (same file formats as resumes; one file can describe several roles); edit roles and rules (level, experience range min/max with an optional "reject below minimum", track, stacks, CGPA, branch, passing year, backlogs).
 - See only approved candidates (eligible ones first, then *Possible matches* that need your own review), download the resume PDF, shortlist with a form or reject with a reason.
+- Optional **salary** per role (min / max, currency, per year or month): shown to applicants on their matches, never used for matching. The requirement-document extractor suggests it only when the document states one.
+- The shortlist form is **pre-filled from your saved details** (round name, mode, link, address, what to bring, note); edit anything for each candidate, tick *Save these details* to keep the new version. The date and time is never saved.
 - AI assistant that explains the dashboard.
 
 **Accounts and login**

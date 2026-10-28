@@ -12,6 +12,7 @@
 | POST | `/applicants/me/avatar` | APPLICANT | image upload |
 | POST | `/applicants/summaries` | COMPANY, ADMIN | short profiles for a list of applicant ids |
 | GET, PATCH | `/companies/me` | COMPANY | own company profile |
+| GET, PUT | `/companies/me/shortlist-defaults` | COMPANY | saved defaults for the shortlist form (private to the company) |
 | POST | `/companies/me/avatar` | COMPANY | image upload |
 | GET | `/admin/applicants` · `/admin/companies` | ADMIN | lists |
 | PATCH | `/admin/companies/:userId/status` | ADMIN | approve / reject a company |

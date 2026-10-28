@@ -19,6 +19,14 @@ def content_hash(obj) -> str:
     return hashlib.sha1(canonical_json(obj).encode("utf-8")).hexdigest()
 
 
+# keys of the role requirements that never influence the score: changing them must not re-score every pair
+NON_SCORING_REQUIREMENT_KEYS = ("salaryMin", "salaryMax", "salaryCurrency", "salaryPeriod")
+
+
+def _scoring_requirements(requirements) -> dict:
+    return {k: v for k, v in (requirements or {}).items() if k not in NON_SCORING_REQUIREMENT_KEYS}
+
+
 def compute_input_hash(resume_id: str, parsed_data, role_title: str, requirements, model_version: str,
                        academic: dict | None = None, policy: str | None = None) -> str:
     """`academic` = the effective academic values the role's rules read ({"cgpa": 7.2, ...}); None when the role has no
@@ -26,7 +34,7 @@ def compute_input_hash(resume_id: str, parsed_data, role_title: str, requirement
     payload = {
         "resumeId": resume_id,
         "resume": parsed_data or {},
-        "role": {"title": role_title or "", "requirements": requirements or {}},
+        "role": {"title": role_title or "", "requirements": _scoring_requirements(requirements)},
         "modelVersion": model_version,
     }
     if academic is not None:

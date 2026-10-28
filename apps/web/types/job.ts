@@ -1,5 +1,7 @@
 export type JobPostingStatus = 'pending' | 'extracted' | 'failed';
 export type JobApprovalStatus = 'approved' | 'pending' | 'rejected'; // contract 4.6
+export type SalaryCurrency = 'INR' | 'USD' | 'EUR' | 'GBP';
+export type SalaryPeriod = 'year' | 'month';
 export type RoleLevel = 'fresher' | 'experienced' | 'any'; // contract 4.1
 
 export interface JobRoleRequirements {
@@ -10,6 +12,10 @@ export interface JobRoleRequirements {
   minExperienceYears?: number | null;
   maxExperienceYears?: number | null; // company's upper bound; empty = no limit
   strictMinExperience?: boolean | null; // true = below the minimum is rejected outright (no soft rule)
+  salaryMin?: number | null; // what the company offers; optional, shown to applicants, never used for matching
+  salaryMax?: number | null;
+  salaryCurrency?: SalaryCurrency | null;
+  salaryPeriod?: SalaryPeriod | null;
   qualifications?: string | null;
   responsibilities?: string[];
   seniority?: string | null;

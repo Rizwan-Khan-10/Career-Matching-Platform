@@ -231,7 +231,7 @@ optional `on_dead` callback so the user-facing status never stays "pending" fore
 - Consumes `jd.uploaded`: downloads the JD document, extracts text (same file types), LLM → one or more **roles**, validates, and in one DB transaction (under a row lock)
   inserts `JobRole` rows plus `job_role_embeddings`, sets the posting `extracted`, then publishes `jd.extracted { jobPostingId, companyId, roleIds }`.
 - Skips stopped postings and already-extracted ones; if the company stops the job while the LLM is reading, the result is discarded.
-- Role requirements shape: `title, summary, requiredSkills[], preferredSkills[], minExperienceYears, maxExperienceYears (optional upper bound), strictMinExperience (optional), qualifications, responsibilities[]`.
+- Role requirements shape: `title, summary, requiredSkills[], preferredSkills[], minExperienceYears, maxExperienceYears (optional upper bound), strictMinExperience (optional), salaryMin / salaryMax / salaryCurrency / salaryPeriod (optional, never used for matching), qualifications, responsibilities[]`.
   plus `level` (fresher | experienced | any), `track` and `stacks[]` (taxonomy ids; `other` when unsure, section 9.10) and optional eligibility rules (section 9.5).
 
 ### 6.3 matching-agent

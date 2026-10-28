@@ -55,6 +55,10 @@ interface RoleInfoRow {
     companyName: string | null;
     industry: string | null;
     stopped: boolean;
+    salaryMin?: number | null;
+    salaryMax?: number | null;
+    salaryCurrency?: string | null;
+    salaryPeriod?: string | null;
 }
 
 /**
@@ -199,6 +203,10 @@ export class MatchesService {
                 companyName: r?.companyName || 'A hiring company',
                 companyIndustry: r?.industry ?? null,
                 jobStopped: r?.stopped ?? false,
+                // what the company offers (optional); shown to the applicant, never used for matching
+                salary: r && (r.salaryMin != null || r.salaryMax != null)
+                    ? { min: r.salaryMin ?? null, max: r.salaryMax ?? null, currency: r.salaryCurrency ?? 'INR', period: r.salaryPeriod ?? 'year' }
+                    : null,
                 outcome,
                 // each AI text / form is only meaningful for its own outcome
                 shortlistInfo: outcome === 'shortlisted' ? m.shortlistInfo : null,
@@ -490,7 +498,11 @@ export class MatchesService {
         const rows = await this.prisma.$queryRaw<RoleInfoRow[]>(Prisma.sql`
             SELECT jr.id AS "jobRoleId", jr.title AS title, jp."companyId" AS "companyId",
                    cp.name AS "companyName", cp.industry AS industry,
-                   (jp."stoppedAt" IS NOT NULL) AS stopped
+                   (jp."stoppedAt" IS NOT NULL) AS stopped,
+                   (jr.requirements::jsonb->>'salaryMin')::float8 AS "salaryMin",
+                   (jr.requirements::jsonb->>'salaryMax')::float8 AS "salaryMax",
+                   jr.requirements::jsonb->>'salaryCurrency' AS "salaryCurrency",
+                   jr.requirements::jsonb->>'salaryPeriod' AS "salaryPeriod"
             FROM "jobs_service"."JobRole" jr
             JOIN "jobs_service"."JobPosting" jp ON jp.id = jr."jobPostingId"
             LEFT JOIN "users_service"."CompanyProfile" cp ON cp."userId" = jp."companyId"

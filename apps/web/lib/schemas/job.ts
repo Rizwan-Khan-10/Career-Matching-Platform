@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
 export const ROLE_LEVELS = ['fresher', 'experienced', 'any'] as const;
+export const SALARY_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'] as const;
+export const SALARY_PERIODS = ['year', 'month'] as const;
+
+const salaryAmount = z
+    .number({ error: 'Enter a number' })
+    .min(0, "Can't be negative")
+    .max(1_000_000_000, 'That looks too high')
+    .nullable()
+    .optional();
 
 const YEAR_MESSAGE = 'Passing years must be numbers like 2026';
 
@@ -22,6 +31,10 @@ export const jobRoleSchema = z.object({
         .nullable()
         .optional(),
     strictMinExperience: z.boolean().nullable().optional(),
+    salaryMin: salaryAmount,
+    salaryMax: salaryAmount,
+    salaryCurrency: z.enum(SALARY_CURRENCIES).nullable().optional(),
+    salaryPeriod: z.enum(SALARY_PERIODS).nullable().optional(),
     qualifications: z.string().max(300, 'Keep it under 300 characters').nullable().optional(),
 
     // contract 4.1: every rule below is optional; null = "rule not set"
@@ -54,6 +67,9 @@ export const jobRoleSchema = z.object({
         .nullable()
         .optional(),
 }).refine(
+    (v) => v.salaryMin == null || v.salaryMax == null || v.salaryMax >= v.salaryMin,
+    { path: ['salaryMax'], message: 'Max salary cannot be below the minimum' },
+).refine(
     (v) => v.minExperienceYears == null || v.maxExperienceYears == null || v.maxExperienceYears >= v.minExperienceYears,
     { path: ['maxExperienceYears'], message: 'Max experience cannot be below the minimum' },
 );

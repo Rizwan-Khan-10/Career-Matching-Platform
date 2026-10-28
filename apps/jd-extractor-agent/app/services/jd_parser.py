@@ -19,6 +19,10 @@ Respond with valid JSON only, exactly this shape (never omit a key; use null / [
       "preferredSkills": ["string"],
       "minExperienceYears": number or null,
       "maxExperienceYears": number or null,
+      "salaryMin": number or null,
+      "salaryMax": number or null,
+      "salaryCurrency": "INR | USD | EUR | GBP or null",
+      "salaryPeriod": "year | month or null",
       "qualifications": "education requirement as written, or null",
       "responsibilities": ["short string"],
       "seniority": "intern | junior | mid | senior | lead | null",
@@ -41,6 +45,9 @@ Rules:
 - minExperienceYears = the LOWER bound in years ("2-4 years" -> 2, "fresher" -> 0), null if not stated.
 - maxExperienceYears = the UPPER bound ONLY when the document gives one ("2-4 years" -> 4, "0-1 years" -> 1, "up to 3 years" -> 3).
   "3+ years", "minimum 2 years", "fresher" or nothing stated -> null. Never guess an upper bound.
+- salaryMin / salaryMax = the salary ONLY when the document states one, as FULL numbers per salaryPeriod ("4-6 LPA" -> 400000 and
+  600000, period year; "Rs 30,000 per month" -> 30000, period month). One amount alone goes in salaryMin ("up to X" in salaryMax).
+  Not stated, "competitive", "as per industry standards" -> all four null. Never invent or estimate a salary.
 - If the document describes only one role, return an array with one item. Never invent roles or requirements.
 - level: "fresher" for freshers / campus hiring / 0 years / recent graduates / interns, "experienced" when experience is
   required, otherwise "any".

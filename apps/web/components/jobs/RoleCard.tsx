@@ -7,7 +7,7 @@ import { RoleForm } from '@/components/jobs/RoleForm';
 import type { JobRole } from '@/types/job';
 import type { JobRoleValues } from '@/lib/schemas/job';
 import type { RoleStats } from '@/types/stats';
-import { LEVEL_LABELS, describeExperience, describeRules } from '@/lib/roleForm';
+import { LEVEL_LABELS, describeExperience, describeRules, describeSalary } from '@/lib/roleForm';
 import { MiniFunnel } from '@/components/stats/FunnelBars';
 import { stackLabel, trackLabel } from '@/lib/targetRoles';
 
@@ -69,6 +69,9 @@ export function RoleCard({
                     </Link>
                     {describeExperience(role.requirements) && (
                         <p className="text-xs text-ink-grey mt-0.5">{describeExperience(role.requirements)}</p>
+                    )}
+                    {describeSalary(role.requirements) && (
+                        <p className="text-xs text-ink-grey mt-0.5">{describeSalary(role.requirements)}</p>
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

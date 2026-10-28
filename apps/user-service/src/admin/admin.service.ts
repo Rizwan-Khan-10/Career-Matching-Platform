@@ -23,7 +23,8 @@ export class AdminService {
 
   async listCompanies() {
     const profiles = await this.prisma.companyProfile.findMany({ orderBy: { createdAt: 'desc' }, take: 500 });
-    return this.withAccountInfo(profiles);
+    // the saved shortlist template belongs to the company only
+    return this.withAccountInfo(profiles.map(({ shortlistDefaults: _private, ...p }) => p));
   }
 
   async setCompanyStatus(actorId: string, userId: string, status: CompanyStatus) {

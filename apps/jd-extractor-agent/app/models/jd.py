@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, field_validator, model_validator
 from app.services.jd_numbers import (
-    clean_branches, coerce_backlogs, coerce_cgpa, coerce_level, coerce_max_years, coerce_min_years, coerce_passing_years,
+    clean_branches, coerce_backlogs, coerce_cgpa, coerce_level, coerce_max_years, coerce_min_years, coerce_salary, coerce_salary_currency, coerce_salary_period, coerce_passing_years,
 )
 from app.services.taxonomy import clean_track
 
@@ -27,6 +27,10 @@ class JobRoleData(BaseModel):
     preferredSkills: list[str] = []
     minExperienceYears: Optional[float] = None
     maxExperienceYears: Optional[float] = None  # only when the JD states a range / upper limit; the company confirms it
+    salaryMin: Optional[float] = None          # only when the JD states a salary; whole money units per period
+    salaryMax: Optional[float] = None
+    salaryCurrency: Optional[str] = None
+    salaryPeriod: Optional[str] = None
     qualifications: Optional[str] = None
     responsibilities: list[str] = []
     seniority: Optional[str] = None
@@ -76,7 +80,31 @@ class JobRoleData(BaseModel):
         # an upper bound below the lower bound is a misread: drop it (no upper limit) rather than create an empty band
         if self.minExperienceYears is not None and self.maxExperienceYears is not None and self.maxExperienceYears < self.minExperienceYears:
             self.maxExperienceYears = None
+        # same for salary: a max below the min is a misread, keep only the min; no amount = no currency / period
+        if self.salaryMin is not None and self.salaryMax is not None and self.salaryMax < self.salaryMin:
+            self.salaryMax = None
+        if self.salaryMin is None and self.salaryMax is None:
+            self.salaryCurrency = None
+            self.salaryPeriod = None
+        else:
+            self.salaryCurrency = self.salaryCurrency or "INR"
+            self.salaryPeriod = self.salaryPeriod or "year"
         return self
+
+    @field_validator("salaryMin", "salaryMax", mode="before")
+    @classmethod
+    def v_salary(cls, v):
+        return coerce_salary(v)
+
+    @field_validator("salaryCurrency", mode="before")
+    @classmethod
+    def v_salary_currency(cls, v):
+        return coerce_salary_currency(v)
+
+    @field_validator("salaryPeriod", mode="before")
+    @classmethod
+    def v_salary_period(cls, v):
+        return coerce_salary_period(v)
 
     @field_validator("level", mode="before")
     @classmethod

@@ -96,6 +96,8 @@ The company sets, per role (job-service `requirements`): `minExperienceYears` (d
 | candidate experience unknown | never rejected; flagged `unverified`; an `eligible` result is downgraded one step to `review` when the role asks about experience |
 | much more than the minimum, max empty | only a recruiter note (`OVERQUALIFIED_EXTRA_YEARS`), never changes verdict or score |
 
+Role salary fields are never scored and are left out of `inputHash` (changing a salary does not re-score anything).
+
 Resume `experienceYears` counts work only: internship / trainee entries are left out (resume-parser-agent).
 
 **Verdict** (`eligible | review | not_eligible`, `MatchResult.verdict`, published in `match.computed` and `match.scanned`):

@@ -49,6 +49,9 @@ Scope: one institution per deployment, tech jobs only.
   "minExperienceYears": 0,
   "maxExperienceYears": null,        // company's upper bound; null = no limit (must not be below the minimum)
   "strictMinExperience": null,       // true = below the minimum is rejected outright
+  "salaryMin": null, "salaryMax": null,   // optional, whole money units per period; max >= min; NEVER used for matching (excluded from inputHash)
+  "salaryCurrency": null,            // INR | USD | EUR | GBP (default INR when an amount is set)
+  "salaryPeriod": null,              // year | month (default year when an amount is set)
   "qualifications": "B.Tech",
   "responsibilities": ["..."],
   "level": "fresher | experienced | any",
@@ -178,6 +181,7 @@ Imported users get a random password and an email job `password-reset` with `inv
 | `GET /applicants/me` | APPLICANT | adds `cgpa, branch, passingYear, backlogs, academicVerified`; creates the profile row if missing |
 | `PATCH /applicants/me` | APPLICANT | accepts the four academic fields; ignores them when `academicVerified`; publishes `profile.updated` when one changed |
 | `GET /companies/me` | COMPANY | adds `status` |
+| `GET /companies/me/shortlist-defaults` · `PUT /companies/me/shortlist-defaults` | COMPANY | the company's saved shortlist form details `{ roundName?, mode?, link?, address?, bring?, note? }` (private; never in admin lists; `{}` = none; PUT replaces, empty clears) |
 | `GET /admin/applicants` | ADMIN | items add `email, isActive, cgpa, branch, passingYear, backlogs, academicVerified` |
 | `GET /admin/companies` | ADMIN | items add `email, isActive, status` |
 | `PATCH /admin/companies/:userId/status` | ADMIN | `{ status }`; publishes `company.status.changed`; audit entry |

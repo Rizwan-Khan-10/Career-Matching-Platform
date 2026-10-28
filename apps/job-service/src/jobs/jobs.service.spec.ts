@@ -33,7 +33,8 @@ describe('JobsService roles (contract 4.1)', () => {
             await service.createRole('p1', 'c1', { title: 'Backend Developer', requiredSkills: ['Java'] });
             expect(storedRequirements(prisma, 'create')).toEqual({
                 title: 'Backend Developer', summary: null, requiredSkills: ['Java'], preferredSkills: [],
-                minExperienceYears: null, maxExperienceYears: null, strictMinExperience: null, qualifications: null, responsibilities: [], level: null,
+                minExperienceYears: null, maxExperienceYears: null, strictMinExperience: null,
+                salaryMin: null, salaryMax: null, salaryCurrency: null, salaryPeriod: null, qualifications: null, responsibilities: [], level: null,
                 track: null, stacks: [], minCgpa: null, allowedBranches: null, passingYears: null, maxBacklogs: null,
             });
         });
@@ -62,6 +63,24 @@ describe('JobsService roles (contract 4.1)', () => {
                 title: 'Backend Developer', requiredSkills: ['Java'], minExperienceYears: 2, maxExperienceYears: 4, strictMinExperience: true,
             });
             expect(storedRequirements(prisma, 'create')).toMatchObject({ minExperienceYears: 2, maxExperienceYears: 4, strictMinExperience: true });
+        });
+
+        it('stores the salary; currency and period default to INR per year', async () => {
+            const { service, prisma } = setup();
+            await service.createRole('p1', 'c1', { title: 'A', requiredSkills: ['Java'], salaryMin: 400000, salaryMax: 600000 });
+            expect(storedRequirements(prisma, 'create')).toMatchObject({ salaryMin: 400000, salaryMax: 600000, salaryCurrency: 'INR', salaryPeriod: 'year' });
+        });
+
+        it('accepts one salary bound alone, and keeps a given currency / period', async () => {
+            const { service, prisma } = setup();
+            await service.createRole('p1', 'c1', { title: 'A', requiredSkills: ['Java'], salaryMax: 5000, salaryCurrency: 'USD', salaryPeriod: 'month' });
+            expect(storedRequirements(prisma, 'create')).toMatchObject({ salaryMin: null, salaryMax: 5000, salaryCurrency: 'USD', salaryPeriod: 'month' });
+        });
+
+        it('rejects a salary max below the min and saves nothing', async () => {
+            const { service, prisma } = setup();
+            await expect(service.createRole('p1', 'c1', { title: 'A', requiredSkills: ['Java'], salaryMin: 9, salaryMax: 3 })).rejects.toBeInstanceOf(BadRequestException);
+            expect(prisma.jobRole.create).not.toHaveBeenCalled();
         });
 
         it('rejects a max below the min and saves nothing', async () => {
@@ -133,6 +152,13 @@ describe('JobsService roles (contract 4.1)', () => {
             expect(prisma.jobRole.update).not.toHaveBeenCalled();
             await service.updateRole('r1', 'c1', { maxExperienceYears: 5 });
             expect(storedRequirements(prisma, 'update')).toMatchObject({ minExperienceYears: 3, maxExperienceYears: 5 });
+        });
+
+        it('salary: merged check, and clearing both bounds clears currency and period too', async () => {
+            const { service, prisma } = setup({ ...existing, salaryMin: 500000, salaryMax: 700000, salaryCurrency: 'INR', salaryPeriod: 'year' });
+            await expect(service.updateRole('r1', 'c1', { salaryMax: 100000 })).rejects.toBeInstanceOf(BadRequestException);
+            await service.updateRole('r1', 'c1', { salaryMin: null, salaryMax: null });
+            expect(storedRequirements(prisma, 'update')).toMatchObject({ salaryMin: null, salaryMax: null, salaryCurrency: null, salaryPeriod: null });
         });
 
         it('null clears the max (= no upper limit again)', async () => {

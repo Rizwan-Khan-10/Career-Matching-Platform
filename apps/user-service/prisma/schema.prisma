@@ -46,6 +46,10 @@ model CompanyProfile {
   location    String?
   description String?
 
+  // The company's saved default for the shortlist form (round name, mode, link, address, bring, note). Private to the
+  // company: never returned by the admin list. null = nothing saved yet.
+  shortlistDefaults Json?
+
   // pending | approved | rejected (contract §4.4). Existing rows become "approved".
   status      String   @default("approved")
 

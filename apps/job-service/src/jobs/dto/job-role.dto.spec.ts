@@ -24,6 +24,10 @@ const full = {
     allowedBranches: ['Computer Science', 'Information Technology'],
     passingYears: [2026, 2027],
     maxBacklogs: 0,
+    salaryMin: 400000,
+    salaryMax: 600000,
+    salaryCurrency: 'INR',
+    salaryPeriod: 'year',
 };
 
 describe.each([
@@ -36,7 +40,7 @@ describe.each([
 
     it('accepts null for every optional key ("rule not set")', async () => {
         const nulls = Object.fromEntries(
-            ['summary', 'minExperienceYears', 'maxExperienceYears', 'strictMinExperience', 'qualifications', 'responsibilities', 'level', 'track', 'stacks', 'minCgpa', 'allowedBranches', 'passingYears', 'maxBacklogs']
+            ['summary', 'minExperienceYears', 'maxExperienceYears', 'strictMinExperience', 'salaryMin', 'salaryMax', 'salaryCurrency', 'salaryPeriod', 'qualifications', 'responsibilities', 'level', 'track', 'stacks', 'minCgpa', 'allowedBranches', 'passingYears', 'maxBacklogs']
                 .map((k) => [k, null]),
         );
         expect(await errorsFor(nulls)).toHaveLength(0);
@@ -52,6 +56,14 @@ describe.each([
         expect(props(await errorsFor({ stacks: ['rust'] }))).toEqual(['stacks']);
         expect(props(await errorsFor({ stacks: ['java', 'java'] }))).toEqual(['stacks']);
         expect(props(await errorsFor({ stacks: 'java' }))).toEqual(['stacks']);
+    });
+
+    it('validates the salary keys', async () => {
+        expect(await errorsFor({ salaryMin: 400000, salaryMax: 600000, salaryCurrency: 'INR', salaryPeriod: 'year' })).toHaveLength(0);
+        expect(props(await errorsFor({ salaryMin: -1 }))).toEqual(['salaryMin']);
+        expect(props(await errorsFor({ salaryMax: 'lots' }))).toEqual(['salaryMax']);
+        expect(props(await errorsFor({ salaryCurrency: 'XYZ' }))).toEqual(['salaryCurrency']);
+        expect(props(await errorsFor({ salaryPeriod: 'week' }))).toEqual(['salaryPeriod']);
     });
 
     it('validates level', async () => {

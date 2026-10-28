@@ -52,6 +52,7 @@ marked superseded (and kept) instead of being deleted. An applicant's re-score n
 Only the company that owns the role, only for **approved** candidates: `PATCH /matches/:id/decision`.
 ```
 Shortlist form  roundName + mode (online|offline|phone) required; scheduledAt, bring, link, address, note optional
+                (pre-filled from the company's saved defaults, GET/PUT /companies/me/shortlist-defaults; scheduledAt never saved)
    ──candidate.shortlisted──▶ notification-service: e-mail + in-app to the applicant (company details verbatim, sent at once)
                            ──▶ feedback-agent writes an AI prep guide ──prep.ready──▶ results-service: Match.prepGuide (shown as "AI prep tips")
 Reject form     reasonCategory (skills_gap | experience | resume_quality | position_filled | other) required; message optional

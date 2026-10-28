@@ -20,6 +20,7 @@ export interface Match {
     resumeId?: string | null;
     companyName?: string;          // applicant side only
     companyIndustry?: string | null;
+    salary?: { min: number | null; max: number | null; currency: string; period: string } | null; // applicant side: what the role offers (optional)
     jobStopped?: boolean;          // company stopped this job: it no longer accepts applications
     // consent flow: company sees a match only after the applicant approved it
     applicantStatus: 'pending' | 'approved' | 'declined';
